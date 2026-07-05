@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Python (server/)
+__pycache__/
+.venv/
+.pytest_cache/
+server/data/

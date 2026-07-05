@@ -1,0 +1,12 @@
+.git
+*.md
+client/node_modules
+client/.svelte-kit
+client/build
+client/test-results
+client/playwright-report
+client/static/stockfish
+server/.venv
+server/data
+**/__pycache__
+**/.pytest_cache
