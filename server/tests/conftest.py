@@ -13,24 +13,46 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture()
-def db_session(tmp_path):
+def db_engine(tmp_path):
     """Throwaway SQLite database per test — never touches the dev database."""
     engine = create_engine(
         f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(bind=engine)
-    TestSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture()
+def db_session(db_engine):
+    TestSession = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
     session = TestSession()
     try:
         yield session
     finally:
         session.close()
-        engine.dispose()
 
 
 @pytest.fixture()
-def client(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
+def client(db_engine, monkeypatch):
+    """Each request gets its own session, exactly like production get_db —
+    sharing one session across requests leaks stale identity-map state
+    (a cached Game can mask the analysis job's committed writes)."""
+    TestSession = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
+
+    def override_get_db():
+        db = TestSession()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    # The analysis background job opens its own session — point it at the
+    # same throwaway database (TestClient runs background tasks inline).
+    monkeypatch.setattr("app.analysis.session_factory", TestSession)
     try:
         with TestClient(app) as test_client:
             yield test_client

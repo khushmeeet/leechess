@@ -8,6 +8,7 @@
 
 	const links = [
 		{ href: resolve('/'), label: 'Play' },
+		{ href: resolve('/review'), label: 'Review' },
 		{ href: resolve('/puzzles'), label: 'Puzzles' },
 		{ href: resolve('/progress'), label: 'Progress' }
 	];
@@ -29,9 +30,6 @@
 					{link.label}
 				</a>
 			{/each}
-			<span class="text-sm text-stone-400" title="Review is reached from a finished game">
-				Review
-			</span>
 		</div>
 	</nav>
 	<main class="mx-auto max-w-5xl px-4 py-6">

@@ -12,6 +12,10 @@ export interface GameSummary {
 	analysis_status: string;
 }
 
+export interface GameCreated extends GameSummary {
+	fen: string;
+}
+
 export interface MoveRecord {
 	ply: number;
 	san: string;
@@ -21,6 +25,15 @@ export interface MoveRecord {
 	eval_after: number | null;
 	classification: string | null;
 	best_move: string | null;
+}
+
+export interface MoveAccepted {
+	ply: number;
+	san: string;
+	uci: string;
+	fen_after: string;
+	turn: 'white' | 'black';
+	game_over: boolean;
 }
 
 export interface GameDetail extends GameSummary {
@@ -40,10 +53,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	return response.json();
 }
 
-export function createGame(pgn: string, mode = 'local'): Promise<GameSummary> {
-	return request('/games', { method: 'POST', body: JSON.stringify({ pgn, mode }) });
+export function startGame(mode: string): Promise<GameCreated> {
+	return request('/games', { method: 'POST', body: JSON.stringify({ mode }) });
+}
+
+export function postMove(gameId: number, uci: string): Promise<MoveAccepted> {
+	return request(`/games/${gameId}/moves`, { method: 'POST', body: JSON.stringify({ uci }) });
+}
+
+export function completeGame(gameId: number, result: string): Promise<GameSummary> {
+	return request(`/games/${gameId}/complete`, {
+		method: 'POST',
+		body: JSON.stringify({ result })
+	});
 }
 
 export function getGame(id: number | string): Promise<GameDetail> {
 	return request(`/games/${id}`);
+}
+
+export function getReview(id: number | string): Promise<GameDetail> {
+	return request(`/games/${id}/review`);
+}
+
+export function listGames(): Promise<GameSummary[]> {
+	return request('/games');
 }

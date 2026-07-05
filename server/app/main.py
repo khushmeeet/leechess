@@ -1,5 +1,4 @@
 import os
-import shutil
 from pathlib import Path
 
 import chess
@@ -9,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.analysis import stockfish_binary
 from app.db import Base, engine
 from app.routers import games
 
@@ -47,7 +47,7 @@ def healthz() -> dict[str, str]:
 def debug_engine(fen: str = chess.STARTING_FEN, depth: int = 12) -> dict:
     """Confirms native Stockfish works via python-chess wherever the server
     runs (Phase 0 plumbing check — becomes the analysis job in Phase 1)."""
-    binary = shutil.which("stockfish")
+    binary = stockfish_binary()
     if binary is None:
         raise HTTPException(status_code=500, detail="stockfish not in PATH")
     try:

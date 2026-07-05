@@ -5,6 +5,10 @@
  * to the single-threaded build. Check `stockfish.flavor` to see which one
  * actually loaded — a silent single-threaded fallback is the failure mode the
  * implementation plan warns about.
+ *
+ * There is one engine process, so requests are serialized through a promise
+ * queue: evaluate() (full strength, used for classification) and play()
+ * (skill-limited, the engine opponent) can be issued freely and run in order.
  */
 
 export interface EngineEval {
@@ -18,10 +22,20 @@ export interface EngineEval {
 	ms: number;
 }
 
+interface SearchOptions {
+	depth?: number;
+	movetimeMs?: number;
+	/** Stockfish "Skill Level" (0-20). 20 = full strength. */
+	skill: number;
+}
+
+const FULL_STRENGTH = 20;
+
 class StockfishClient {
 	private worker: Worker | null = null;
 	private initPromise: Promise<void> | null = null;
-	private busy = false;
+	private queue: Promise<unknown> = Promise.resolve();
+	private currentSkill = FULL_STRENGTH;
 
 	flavor: 'multi-threaded' | 'single-threaded' | null = null;
 
@@ -50,12 +64,36 @@ class StockfishClient {
 		return this.initPromise;
 	}
 
-	/** Evaluate a FEN at the given depth. Rejects if a search is already running. */
-	async evaluate(fen: string, depth = 16): Promise<EngineEval> {
+	/** Compile the WASM and load the network up front so the first real
+	 * search doesn't pay the init cost (live badges must land in 500ms). */
+	warmup(): Promise<void> {
+		return this.init();
+	}
+
+	private enqueue<T>(job: () => Promise<T>): Promise<T> {
+		const run = this.queue.then(job, job);
+		this.queue = run.catch(() => {});
+		return run;
+	}
+
+	/** Full-strength eval of a FEN — feeds move classification. */
+	evaluate(fen: string, depth = 16): Promise<EngineEval> {
+		return this.enqueue(() => this.search(fen, { depth, skill: FULL_STRENGTH }));
+	}
+
+	/** The engine opponent: skill-limited, time-boxed pick of a move. */
+	play(fen: string, skill: number, movetimeMs = 400): Promise<EngineEval> {
+		return this.enqueue(() => this.search(fen, { movetimeMs, skill }));
+	}
+
+	private async search(fen: string, options: SearchOptions): Promise<EngineEval> {
 		await this.init();
 		const worker = this.worker!;
-		if (this.busy) throw new Error('engine is busy');
-		this.busy = true;
+
+		if (options.skill !== this.currentSkill) {
+			worker.postMessage(`setoption name Skill Level value ${options.skill}`);
+			this.currentSkill = options.skill;
+		}
 
 		const whiteToMove = fen.split(' ')[1] !== 'b';
 		const start = performance.now();
@@ -83,7 +121,6 @@ class StockfishClient {
 						}
 					}
 				} else if (line.startsWith('bestmove ')) {
-					this.busy = false;
 					resolve({
 						cp: lastCp,
 						mate: lastMate,
@@ -94,9 +131,10 @@ class StockfishClient {
 				}
 			};
 
-			worker.postMessage('ucinewgame');
 			worker.postMessage(`position fen ${fen}`);
-			worker.postMessage(`go depth ${depth}`);
+			worker.postMessage(
+				options.movetimeMs ? `go movetime ${options.movetimeMs}` : `go depth ${options.depth}`
+			);
 		});
 	}
 }

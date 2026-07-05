@@ -14,6 +14,7 @@ test('play screen renders the board with no console errors', async ({ page }) =>
 
 	// nav links for the four screens
 	await expect(page.getByRole('link', { name: 'Play' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Review' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Puzzles' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Progress' })).toBeVisible();
 

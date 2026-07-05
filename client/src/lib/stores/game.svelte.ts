@@ -5,6 +5,7 @@ import { SvelteMap } from 'svelte/reactivity';
 export interface PlayedMove {
 	ply: number;
 	san: string;
+	uci: string;
 	fenBefore: string;
 	fenAfter: string;
 }
@@ -37,23 +38,26 @@ export class GameStore {
 
 	turnColor: 'white' | 'black' = $derived(this.fen.split(' ')[1] === 'b' ? 'black' : 'white');
 
-	/** Apply a move coming from the board. Returns false if illegal (chessground
-	 * already restricts to legal dests, so this is a safety net). */
-	tryMove(orig: Key, dest: Key): boolean {
+	/** Apply a move coming from the board. Returns the move or null if illegal
+	 * (chessground already restricts to legal dests, so this is a safety net). */
+	tryMove(orig: Key, dest: Key, promotion = 'q'): PlayedMove | null {
+		if (this.isGameOver) return null;
 		const fenBefore = this.chess.fen();
 		let move;
 		try {
-			// Promotion picker deferred: auto-queen is fine for Phase 0.
-			move = this.chess.move({ from: orig as Square, to: dest as Square, promotion: 'q' });
+			// Promotion picker deferred: auto-queen is fine for now.
+			move = this.chess.move({ from: orig as Square, to: dest as Square, promotion });
 		} catch {
-			return false;
+			return null;
 		}
-		this.moves.push({
+		const played: PlayedMove = {
 			ply: this.moves.length + 1,
 			san: move.san,
+			uci: move.from + move.to + (move.promotion ?? ''),
 			fenBefore,
 			fenAfter: this.chess.fen()
-		});
+		};
+		this.moves.push(played);
 		this.fen = this.chess.fen();
 		this.dests = computeDests(this.chess);
 		this.lastMove = [move.from, move.to];
@@ -61,21 +65,31 @@ export class GameStore {
 			this.isGameOver = true;
 			this.result = this.computeResult();
 		}
-		return true;
+		return played;
+	}
+
+	/** Apply an engine move given as UCI ("e2e4", "e7e8q"). */
+	applyUci(uci: string): PlayedMove | null {
+		return this.tryMove(uci.slice(0, 2) as Key, uci.slice(2, 4) as Key, uci[4] ?? 'q');
+	}
+
+	/** End the game by resignation of `color`. */
+	resign(color: 'white' | 'black'): void {
+		if (this.isGameOver) return;
+		this.isGameOver = true;
+		this.result = color === 'white' ? '0-1' : '1-0';
+	}
+
+	/** True when the position on the board is checkmate/stalemate/draw
+	 * (false for resignations — the board itself is still playable). */
+	get boardGameOver(): boolean {
+		return this.chess.isGameOver();
 	}
 
 	private computeResult(): string {
 		if (this.chess.isCheckmate()) return this.chess.turn() === 'w' ? '0-1' : '1-0';
 		if (this.chess.isDraw()) return '1/2-1/2';
 		return '*';
-	}
-
-	pgn(): string {
-		this.chess.setHeader('Event', 'leechess casual game');
-		this.chess.setHeader('White', 'player');
-		this.chess.setHeader('Black', 'player');
-		this.chess.setHeader('Result', this.result);
-		return this.chess.pgn();
 	}
 
 	reset(): void {
