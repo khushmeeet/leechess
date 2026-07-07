@@ -49,6 +49,26 @@ def test_analysis_job_fills_every_move(client, clientside_game):
 
 
 @requires_stockfish
+def test_analysis_tags_hung_queen_blunder(client):
+    """Phase 2: the analysis job runs the rule-based tagger before marking
+    the game complete. Same scripted game as test_motifs.py and the
+    Playwright review spec: 3.Qxe5+?? hangs the queen to 3...Nxe5."""
+    game_id = client.post("/games", json={}).json()["id"]
+    for san in ["e4", "e5", "Qh5", "Nc6", "Qxe5+", "Nxe5"]:
+        response = client.post(f"/games/{game_id}/moves", json={"san": san})
+        assert response.status_code == 201
+
+    client.post(f"/games/{game_id}/complete", json={"result": "0-1"})
+    review = client.get(f"/games/{game_id}/review").json()
+    assert review["analysis_status"] == "complete"
+
+    qxe5, nxe5 = review["moves"][4], review["moves"][5]
+    assert qxe5["classification"] == "blunder"
+    assert "hanging_piece" in qxe5["motifs"]  # the tactic the blunder allowed
+    assert "hanging_piece" in nxe5["motifs"]  # ...and the punish that took it
+
+
+@requires_stockfish
 def test_analysis_of_checkmate_game(client):
     game_id = client.post("/games", json={}).json()["id"]
     for san in ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]:  # Scholar's mate

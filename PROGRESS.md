@@ -7,10 +7,201 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 |---|---|---|
 | 0 — Scaffolding | ✅ Done | 2026-07-04 |
 | 1 — Play + basic Review | ✅ Done (one manual check pending, see below) | 2026-07-04 |
-| 2 — Motif tagging (rule-based) | Not started | — |
-| 3 — Puzzles + spaced repetition | Not started | — |
+| 2 — Motif tagging (rule-based) | 🔶 Code complete; manual validation vs 15–20 real games pending | 2026-07-05 |
+| 3 — Puzzles + spaced repetition | 🔶 Code complete; two manual checks pending (see below) | 2026-07-06 |
 | 4 — Progress screen | Not started | — |
 | 5 — LLM explanations (deferred) | Not started | — |
+
+---
+
+## Phase 3 — Puzzles + spaced repetition (code complete 2026-07-06)
+
+**Goal:** missed tactics become a personal puzzle queue with Leitner-box scheduling;
+generic Lichess puzzles fill gaps; the full hint ladder (Levels 1–5) ships as the shared
+component. All automatable exit criteria met; two manual checks gate calling it fully done.
+
+### Backend
+
+- **Tables** (`app/models.py`): `puzzles` `(id, source_move_id NULLABLE→moves, fen,
+  solution, motif, difficulty)` per the spec's data model, plus Leitner state on the row
+  (`box` 1–5, `due_at`; new puzzles start box 1, due immediately). `puzzle_attempts`
+  `(id, puzzle_id, correct, hint_level_used, attempted_at)`. `solution` is stored as one
+  space-separated UCI string (solver first, opponent replies interleaved), served as a list
+- **`app/spaced_repetition.py`** — Leitner boxes, deliberately not SM-2: correct → box+1
+  (max 5), wrong → box 1; intervals 10min / 1d / 3d / 7d / 21d. Extra rule: "correct" with
+  the move already revealed (hint level ≥ 4) keeps the box — recognizing ≠ retrieving,
+  but using the ladder isn't punished either
+- **`app/puzzle_generation.py`** — pure python-chess over stored analysis (re-runnable, no
+  engine), ≤1 puzzle per flagged move: *missed tactic* (best move from the position faced
+  executes a motif → drill that position) else *allowed tactic* (opponent's punishing best
+  reply has a motif → drill the position after the mistake, Lichess-style). Wired into
+  `run_game_analysis` after tagging; `scripts/retag.py` now also backfills puzzles for
+  games analyzed pre-Phase-3 (idempotent — moves that already have a puzzle are skipped)
+- **`app/lichess_import.py` + `scripts/import_lichess_puzzles.py`** — one-time CSV import
+  (CC0 dump, decompress with zstd; no live API). Handles the dump's convention that FEN is
+  *before* the opponent's setup move (`Moves[0]` applied, solution = `Moves[1:]`); maps 12
+  Lichess themes onto the fixed taxonomy and drops the rest; dedups by FEN (re-run safe);
+  `--max-per-motif` (default 500) keeps the pool bounded; malformed rows logged + skipped
+- **`app/routers/puzzles.py`** — `GET /puzzles/next` (read-only: due personal puzzles
+  first ordered by weakest motif then due date; generic fallback with the same weak-motif
+  priority, easiest first; optional `?motif=` filter for Phase 4's drill links; 404 when
+  nothing is due). "Weakest" = success rate over the ≤20 most recent attempts per motif;
+  no attempts counts as 0. `POST /puzzles/{id}/attempt` records + reschedules,
+  `GET /puzzles/{id}` returns attempt history. `POST /games/{id}/practice` (Review's
+  button): creates any missing puzzles and makes the game's puzzles due now (box kept)
+
+### Frontend
+
+- **`HintLadder.svelte`** — full ladder: Level 0 nudge unchanged, Levels 1–5 reveal one
+  rung at a time (category → motif chip → board highlight → move + templated reason →
+  full line). Parent owns `level` (bindable) for board highlights + attempt reporting;
+  `hint` content prop omitted = nudge-only (Play unchanged — see deferred)
+- **Puzzles screen** — `PuzzleSession` store (`stores/puzzle.svelte.ts`): solver plays the
+  FEN's side to move, board flipped accordingly; scripted opponent replies auto-play;
+  alternate checkmates count as solved (Lichess convention); first wrong try records the
+  incorrect attempt immediately, then retries are free; reveal-answer jumps to Level 5.
+  Level 3 = circles, Level 4+ = arrow via chessground autoShapes. `?motif=` filter chip,
+  session counter, personal-vs-Lichess source line. Templated reasons in `lib/motifs.ts`
+- **Review** — "Practice these misses" button (analysis-complete games) → queued count +
+  link to /puzzles. `Board.svelte` grew a `syncKey` prop (see gotchas)
+
+### Testing
+
+- **pytest: 102 passed** (97 unit ~0.5s, 5 engine, ~2s total). New: `test_spaced_repetition.py`
+  (14 — transitions incl. max box, first attempt, reveal gate, interval monotonicity),
+  `test_puzzle_generation.py` (8 — punish vs missed branch, untaggable blunder → no puzzle,
+  idempotency, practice endpoint incl. backfill + 409, engine-marked job E2E),
+  `test_lichess_import.py` (7 — mapping/drop, setup-move convention, first-theme-wins,
+  per-motif cap, idempotent re-import, taxonomy guard, illegal-row skip),
+  `test_puzzle_selection.py` (13 — every priority rule separately + attempt scheduling
+  through the API)
+- **Playwright: 11 passed** (~15s). New `hint-ladder.e2e.ts` (Levels 0→5 click-through on
+  Puzzles: content per rung, board shapes at 3, no skip/reset), `puzzles.e2e.ts` (solve
+  correct → attempt recorded + box advances + queue moves on; wrong move → retry banner,
+  incorrect recorded immediately, reveal answer, solution still playable after snap-back).
+  `review.e2e.ts` extended with the practice button. Helpers: orientation-aware `move()`,
+  shared `seedGame`/`waitForAnalysis`
+
+### Exit criteria — status
+
+| Criterion | Result |
+|---|---|
+| Deliberate blunders show up in the queue within one analysis cycle | ✅ automated (engine test + e2e assert the exact position/solution); ⚠️ confirm once with a real played game |
+| Missed puzzles resurface sooner than correct ones across sessions | ✅ scheduling pinned by unit tests (wrong → 10min, correct → 1d+); ⚠️ **pending manual multi-session check** |
+| `pytest` passes for all four new test files | ✅ 102/102 full suite |
+| Full Playwright suite before phase close | ✅ 11/11 |
+
+### Gotchas hit (so they aren't re-hit)
+
+- **SQLite round-trips datetimes naive**: we store aware-UTC, but the SQLAlchemy sqlite
+  dialect drops the offset on read. Keep every stored datetime aware-UTC, do due-date
+  filtering in SQL (`Puzzle.due_at <= utcnow()`), and only compare loaded values with
+  other loaded values — tests compare against `datetime.now(utc).replace(tzinfo=None)`.
+- **chessground doesn't snap back a legal-but-rejected move**: on a wrong puzzle answer the
+  FEN state is unchanged, so no prop changes and the piece stays visually moved. Fixed
+  with a `syncKey` prop on `Board.svelte` — bump it to force `api.set()` re-sync.
+- **Lichess dump FEN is pre-setup-move** — importing FEN+Moves verbatim produces puzzles
+  where the *opponent* is to move. Apply `Moves[0]` first; solution is `Moves[1:]`.
+- **e2e determinism with a shared queue**: `hint-ladder.e2e.ts` runs first alphabetically,
+  so its seeded hung-queen puzzle is the only one due → motif assertions are safe there.
+  `puzzles.e2e.ts` never assumes which puzzle is served — it reads `/puzzles/next`
+  (read-only) and drives the board from the response.
+
+### Not done yet / deferred
+
+- Play screen still nudge-only: the spec's "Full ladder" in-game hint toggle needs hint
+  *content* client-side (motif detection or a server hint endpoint) — the component is
+  ready, feed it `hint` data when that exists
+- Generic pool not imported into the dev/prod DB yet — run
+  `scripts/import_lichess_puzzles.py` once, after the Phase 2 manual tag validation
+- Underpromotion solutions auto-queen on the puzzle board (same limitation as Play)
+- Remaining Phase 2 motif detectors (discovered attack, overloading, deflection, x-ray,
+  zwischenzug, trapped piece, strategic set) still deferred — puzzles inherit whatever
+  the tagger can detect
+
+## Next: manual checks, then Phase 4 — Progress screen
+
+1. Phase 2's pending step: play/import 15–20 real games, validate tags (add regression
+   cases to `test_motifs.py` for anything wrong before fixing rules)
+2. Phase 3's pending step: confirm a real game's misses land in the queue, and solve
+   puzzles across a few sessions to feel the Leitner scheduling work
+3. Optionally run the Lichess import for the generic pool
+4. Then Phase 4 per the plan: `GET /progress` aggregates, motif chart, CPL trend,
+   weakest-motif callout linking to `/puzzles?motif=…`
+
+---
+
+## Phase 2 — Motif tagging, rule-based (code complete 2026-07-05)
+
+**Goal:** every flagged move gets motif tags from the fixed taxonomy, rule-based only, no
+LLM. All automatable exit criteria met; the human validation step (below) gates calling the
+phase fully done.
+
+### Backend
+
+- `motif_tags` table (`app/models.py`): `(id, move_id, motif, source)` per the spec's data
+  model, `source` = `rule_based | manual`; `Move.motifs` property exposes sorted tag names,
+  `MoveOut.motifs` serializes them through every game/review endpoint
+- `app/motifs.py` — **standalone tagger module**, pure python-chess over already-stored
+  FENs/best moves: re-runnable without touching Stockfish. Tagging semantics — two
+  best-line passes per move:
+  - *missed/executed*: motifs of the engine's best move from the position the player faced —
+    stored when the move is flagged (mistake/blunder) or the player played exactly the best
+    move (executed the tactic; feeds "you found it" data)
+  - *allowed*: for mistakes/blunders only, motifs of the opponent's best reply to the played
+    move (the tactic the blunder walked into). Re-derivable offline because move N+1's stored
+    `best_move` *is* the best reply to move N
+- Detectors implemented (7 of the taxonomy's tactical motifs): **fork** (destination attacks
+  ≥2 of king/higher-value/undefended-minor+, forking square must be "safe": no cheaper
+  attacker, defended if attacked at all), **pin** / **skewer** (first-two-pieces ray walk from
+  the moved slider; pinned pawns and pawn-behind-king "skewers" rejected as noise),
+  **back_rank_mate** (checkmate + mated king on its back rank + R/Q checker on that rank),
+  **hanging_piece** (capture of an undefended piece ≥ minor, or a defended one taken by
+  something cheaper; pawn grabs excluded), **discovered_check** (a checker other than the
+  moved piece; castling rook counted as "moved" so O-O rook checks don't false-positive),
+  **double_check** (≥2 checkers)
+- Wired into `run_game_analysis` after `_analyze`, before `analysis_status = "complete"`;
+  `scripts/retag.py` re-runs tagging over all analyzed games (`uv run python scripts/retag.py`)
+  after rule refinements — deletes/rebuilds `rule_based` tags, preserves `manual` ones
+- Deferred (per plan, implement one at a time with tests): discovered attack (non-check),
+  overloading, deflection, x-ray, zwischenzug, trapped piece, and all strategic motifs
+
+### Frontend
+
+- Review screen: violet motif chips for the selected move (`data-testid="motif-tags"`,
+  underscores humanized), violet dot next to move-list entries that carry tags (hover shows
+  the names)
+
+### Testing
+
+- **pytest: 60 passed** (56 unit ~1s, 4 engine). New `test_motifs.py` (25 tests): exact-set
+  detector table with positives AND near-miss negatives per motif (fork square attacked by a
+  pawn, Ruy-Lopez lookalike where only a pawn is behind the "pinned" knight, mate that isn't
+  on the back rank, defended equal trade, plain pawn grab, castling rook check…), gating
+  tests for `tags_for_move`, and `apply_rule_based_tags` DB tests (blunder + punish tagged,
+  idempotent re-run, manual tags survive). New engine test: hung-queen game
+  (1.e4 e5 2.Qh5 Nc6 3.Qxe5+?? Nxe5) through the real job → blunder classified + tagged
+- **Playwright: 8 passed.** `review.e2e.ts` extended with a motif test seeding the same
+  hung-queen game via the API: analysis completes, clicking Qxe5 shows the "hanging piece"
+  chip
+
+### Exit criteria — status
+
+| Criterion | Result |
+|---|---|
+| `pytest` passes for `test_motifs.py` incl. near-miss negatives | ✅ 60/60 full suite (~1.5s) |
+| Playwright full suite before phase close | ✅ 8/8 in ~11s |
+| Manual spot-check of tags vs 15–20 real games | ⚠️ **Pending manual step** — needs real games played through the app; add every false positive/negative found as a `test_motifs.py` regression case before fixing the rule |
+
+### Notes / conventions
+
+- Test scripted game for tactics is the **hung-queen game** (`Qxe5+??`/`Nxe5`) — used
+  identically in `test_motifs.py`, `test_analysis_job.py`, and `review.e2e.ts`. Scholar's
+  mate deliberately yields *no* tags (Qxf7# is neither back-rank nor a detectable fork) —
+  it stays the mate-lifecycle fixture
+- Games analyzed before this phase have no tags — run `scripts/retag.py` once to backfill
+  (needs `analysis_status = complete`; evals/best moves are already stored). As of Phase 3
+  the same script also backfills the personal puzzle queue
 
 ---
 
@@ -110,14 +301,6 @@ sanity-check remains (below).
   single-user, revisit if it ever happens
 - Depth 18 on the Fly shared-cpu-1x will be ~3–5× slower than local (~1–2 min/game) — tune
   `LEECHESS_ANALYSIS_DEPTH` on Fly if that's annoying
-
-## Next: Phase 2 — Motif tagging (rule-based)
-
-Per the plan: `motif_tags` table, standalone rule-based tagger module (re-runnable without
-re-running Stockfish), detection rules one motif at a time (fork → pin → back-rank → skewer →
-hanging piece → the rest), wire into the analysis job before `analysis_status = complete`,
-`test_motifs.py` with positive AND near-miss negative FEN cases, motif chips on Review,
-manual validation against 15–20 real games.
 
 ---
 

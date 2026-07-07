@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 RESULTS = {"1-0", "0-1", "1/2-1/2", "*"}
 
@@ -51,6 +51,7 @@ class MoveOut(BaseModel):
     eval_after: float | None
     classification: str | None
     best_move: str | None
+    motifs: list[str]
 
 
 class GameOut(BaseModel):
@@ -84,3 +85,59 @@ class MoveAccepted(BaseModel):
 class GameDetail(GameOut):
     pgn: str
     moves: list[MoveOut]
+
+
+class PuzzleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    fen: str
+    # Stored as one space-separated UCI string; served as a list, solver's
+    # move first, opponent replies interleaved.
+    solution: list[str]
+    motif: str
+    difficulty: int | None
+    source_move_id: int | None  # None = generic Lichess import
+    box: int
+    due_at: datetime
+
+    @field_validator("solution", mode="before")
+    @classmethod
+    def split_solution(cls, value: object) -> object:
+        return value.split() if isinstance(value, str) else value
+
+
+class AttemptIn(BaseModel):
+    correct: bool
+    # Highest ladder level revealed while solving (0-5); >= 4 means the move
+    # itself was shown, which gates Leitner advancement.
+    hint_level_used: int = Field(default=0, ge=0, le=5)
+
+
+class AttemptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    puzzle_id: int
+    correct: bool
+    hint_level_used: int
+    attempted_at: datetime
+
+
+class AttemptRecorded(AttemptOut):
+    """POST /puzzles/{id}/attempt response: the attempt plus the puzzle's
+    updated Leitner state, so the client can show what happens next."""
+
+    box: int
+    due_at: datetime
+
+
+class PuzzleDetail(PuzzleOut):
+    attempts: list[AttemptOut]
+
+
+class PracticeQueued(BaseModel):
+    """POST /games/{id}/practice response."""
+
+    game_id: int
+    queued: int  # puzzles from this game now due for drilling

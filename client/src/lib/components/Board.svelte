@@ -20,6 +20,10 @@
 		viewOnly?: boolean;
 		/** Engine/annotation arrows (e.g. best move vs played move on Review). */
 		autoShapes?: DrawShape[];
+		/** Bump to force a resync even when no prop changed — needed to snap
+		 * a piece back after a legal-but-rejected move (wrong puzzle answer),
+		 * where the FEN stays the same but chessground moved the piece. */
+		syncKey?: number;
 		/** Called when the user completes a move on the board. */
 		onmove?: (orig: Key, dest: Key) => void;
 	}
@@ -33,6 +37,7 @@
 		orientation = 'white',
 		viewOnly = false,
 		autoShapes = [],
+		syncKey = 0,
 		onmove
 	}: Props = $props();
 
@@ -67,6 +72,7 @@
 	});
 
 	$effect(() => {
+		void syncKey;
 		api?.set(config());
 		api?.setAutoShapes(autoShapes);
 	});

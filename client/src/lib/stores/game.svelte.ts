@@ -10,7 +10,7 @@ export interface PlayedMove {
 	fenAfter: string;
 }
 
-function computeDests(chess: Chess): Map<Key, Key[]> {
+export function computeDests(chess: Chess): Map<Key, Key[]> {
 	const dests = new SvelteMap<Key, Key[]>();
 	for (const square of SQUARES) {
 		const moves = chess.moves({ square, verbose: true });

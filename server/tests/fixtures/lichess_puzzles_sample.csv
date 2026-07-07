@@ -1,0 +1,7 @@
+PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
+FORK1,r3k3/1p6/8/1N6/8/8/8/4K3 b - - 0 1,b7b6 b5c7,1200,80,95,4000,fork short,https://lichess.org/abc#10,
+BACKRANK,6k1/5ppp/8/8/8/8/8/4R1K1 b - - 0 1,g8h8 e1e8,900,75,97,12000,backRankMate mate mateIn1 oneMove short,https://lichess.org/def#20,
+DROPPED,8/8/8/8/8/4k3/8/4K2R b K - 0 1,e3e4 h1h5,1500,90,80,300,crushing endgame rookEndgame short,https://lichess.org/ghi#30,
+MULTI,3qk3/8/8/8/8/8/8/3RK3 b - - 0 1,d8d4 d1d4,1100,85,92,7000,hangingPiece fork middlegame short,https://lichess.org/jkl#40,
+FORK2,q3k3/1p6/8/1N6/8/8/8/4K3 b - - 0 1,b7b6 b5c7,1350,70,90,2500,fork middlegame short,https://lichess.org/mno#50,
+BADFEN,not a real fen,e2e4 e7e5,1000,80,90,100,fork short,https://lichess.org/pqr#60,

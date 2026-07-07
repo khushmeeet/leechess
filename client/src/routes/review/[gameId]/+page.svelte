@@ -3,7 +3,8 @@
 	import type { Key } from 'chessground/types';
 	import type { DrawShape } from 'chessground/draw';
 	import { page } from '$app/state';
-	import { getReview, type GameDetail, type MoveRecord } from '$lib/api/client';
+	import { resolve } from '$app/paths';
+	import { getReview, practiceGame, type GameDetail, type MoveRecord } from '$lib/api/client';
 	import type { Classification } from '$lib/classification';
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
@@ -149,6 +150,20 @@
 		if (game) selectedPly = Math.min(Math.max(1, ply), game.moves.length);
 	}
 
+	// "Practice these misses" — this game's puzzles become due immediately.
+	let practiceQueued = $state<number | null>(null);
+	let practiceError = $state<string | null>(null);
+
+	async function practice() {
+		if (!game) return;
+		try {
+			practiceQueued = (await practiceGame(game.id)).queued;
+			practiceError = null;
+		} catch (e) {
+			practiceError = e instanceof Error ? e.message : String(e);
+		}
+	}
+
 	const sideNames = ['white', 'black'] as const;
 </script>
 
@@ -217,6 +232,19 @@
 				</p>
 			{/if}
 
+			{#if selectedMove && selectedMove.motifs.length > 0}
+				<div class="mt-2 flex flex-wrap items-center gap-1.5" data-testid="motif-tags">
+					<span class="text-sm text-stone-500">Motifs:</span>
+					{#each selectedMove.motifs as motif (motif)}
+						<span
+							class="inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800"
+						>
+							{motif.replaceAll('_', ' ')}
+						</span>
+					{/each}
+				</div>
+			{/if}
+
 			<div class="mt-4">
 				<CplGraph moves={game.moves} {selectedPly} onselect={select} />
 			</div>
@@ -245,6 +273,27 @@
 					</tbody>
 				</table>
 			{/if}
+
+			{#if game.analysis_status === 'complete'}
+				<div class="mt-4 flex flex-wrap items-center gap-3">
+					<button
+						data-testid="practice-misses"
+						onclick={practice}
+						class="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100"
+					>
+						Practice these misses
+					</button>
+					{#if practiceQueued !== null}
+						<span class="text-sm text-green-700" data-testid="practice-result">
+							{practiceQueued} puzzle{practiceQueued === 1 ? '' : 's'} queued —
+							<a class="underline" href={resolve('/puzzles')}>drill now</a>
+						</span>
+					{/if}
+					{#if practiceError}
+						<span class="text-sm break-all text-red-700">{practiceError}</span>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<aside>
@@ -270,6 +319,12 @@
 													classification={move.classification as Classification}
 													compact
 												/>
+											{/if}
+											{#if move.motifs.length > 0}
+												<span
+													class="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500"
+													title={move.motifs.join(', ').replaceAll('_', ' ')}
+												></span>
 											{/if}
 										</button>
 									{/if}

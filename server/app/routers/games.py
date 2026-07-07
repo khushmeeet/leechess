@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.analysis import run_game_analysis
 from app.db import get_db
-from app.models import Game, Move
+from app.models import Game, Move, utcnow
+from app.puzzle_generation import create_puzzles_for_game
 from app.schemas import (
     GameComplete,
     GameCreate,
@@ -18,6 +19,7 @@ from app.schemas import (
     GameOut,
     MoveAccepted,
     MoveIn,
+    PracticeQueued,
 )
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -179,3 +181,23 @@ def get_review(game_id: int, db: Session = Depends(get_db)) -> Game:
     """Full move list with evals/classifications once analysis is done;
     the client shows an "analyzing…" state while analysis_status says so."""
     return _get_game_or_404(game_id, db)
+
+
+@router.post("/{game_id}/practice", response_model=PracticeQueued)
+def practice_game(game_id: int, db: Session = Depends(get_db)) -> PracticeQueued:
+    """Review's "practice these misses": the analysis job already created
+    puzzles for this game's flagged moves — this makes them all due right
+    now (and fills any gaps, e.g. games analyzed before Phase 3)."""
+    game = _get_game_or_404(game_id, db)
+    if game.analysis_status != "complete":
+        raise HTTPException(status_code=409, detail="Game is not analyzed yet")
+
+    create_puzzles_for_game(game)
+    now = utcnow()
+    queued = 0
+    for move in game.moves:
+        for puzzle in move.puzzles:
+            puzzle.due_at = now
+            queued += 1
+    db.commit()
+    return PracticeQueued(game_id=game.id, queued=queued)

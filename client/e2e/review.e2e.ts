@@ -55,6 +55,40 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	await expect(page.getByTestId('best-move-hint')).toContainText('best was');
 });
 
+test('motif tags render on flagged moves', async ({ page, request }) => {
+	// Phase 2: 3.Qxe5+?? hangs the queen to 3...Nxe5 — a deterministic
+	// hanging_piece tag at any depth. Same scripted game as the backend's
+	// test_analysis_job.py / test_motifs.py, so both suites exercise
+	// identical data.
+	const created = await request.post(`${API}/games`, { data: { mode: 'local' } });
+	const gameId = (await created.json()).id;
+	for (const san of ['e4', 'e5', 'Qh5', 'Nc6', 'Qxe5+', 'Nxe5']) {
+		const response = await request.post(`${API}/games/${gameId}/moves`, { data: { san } });
+		expect(response.ok()).toBe(true);
+	}
+	await request.post(`${API}/games/${gameId}/complete`, { data: { result: '0-1' } });
+
+	await page.goto(`/review/${gameId}`);
+	await expect
+		.poll(
+			async () => {
+				const response = await request.get(`${API}/games/${gameId}/review`);
+				return (await response.json()).analysis_status;
+			},
+			{ timeout: 60_000 }
+		)
+		.toBe('complete');
+
+	// select the blunder; its chip names the tactic it allowed
+	await page.getByTestId('move-list').getByRole('button', { name: /Qxe5/ }).click();
+	await expect(page.getByTestId('motif-tags')).toBeVisible();
+	await expect(page.getByTestId('motif-tags')).toContainText('hanging piece');
+
+	// Phase 3: "practice these misses" makes this game's puzzle due now
+	await page.getByTestId('practice-misses').click();
+	await expect(page.getByTestId('practice-result')).toContainText('1 puzzle queued');
+});
+
 test('review shows analyzing state while the job is pending', async ({ page, request }) => {
 	// a fresh in-progress game reviewed directly shows the raw moves and no crash
 	const created = await request.post(`${API}/games`, { data: { mode: 'local' } });

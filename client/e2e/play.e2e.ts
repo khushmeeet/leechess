@@ -64,14 +64,13 @@ test('vs-Stockfish mode: engine replies and the game stays in sync', async ({ pa
 	await move(page, 'e2', 'e4');
 	await expect(page.getByTestId('move-list')).toContainText('e4');
 
-	// the engine (black) answers within a few seconds; move list gains a reply
+	// the engine (black) answers within a few seconds: the turn indicator only
+	// returns to "white to move" once its reply has been applied to the board.
+	// (Don't count words in the move list — classification badge letters make
+	// that pass before the reply lands.)
+	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
+	// still one move pair: white's move + the engine reply, nothing extra
 	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
-	await expect
-		.poll(
-			async () => (await page.getByTestId('move-list').textContent())!.trim().split(/\s+/).length,
-			{
-				timeout: 15_000
-			}
-		)
-		.toBeGreaterThanOrEqual(3); // "1." + white move + black reply
+	// and the nudge is re-shown after the opponent's (engine's) move
+	await expect(page.getByText('Checks, captures, threats?')).toBeVisible();
 });

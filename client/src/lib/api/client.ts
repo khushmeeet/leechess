@@ -25,6 +25,7 @@ export interface MoveRecord {
 	eval_after: number | null;
 	classification: string | null;
 	best_move: string | null;
+	motifs: string[];
 }
 
 export interface MoveAccepted {
@@ -41,6 +42,15 @@ export interface GameDetail extends GameSummary {
 	moves: MoveRecord[];
 }
 
+export class ApiError extends Error {
+	constructor(
+		public readonly status: number,
+		message: string
+	) {
+		super(message);
+	}
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`${BASE}${path}`, {
 		headers: { 'Content-Type': 'application/json' },
@@ -48,7 +58,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	if (!response.ok) {
 		const body = await response.text();
-		throw new Error(`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`);
+		throw new ApiError(
+			response.status,
+			`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`
+		);
 	}
 	return response.json();
 }
@@ -78,4 +91,54 @@ export function getReview(id: number | string): Promise<GameDetail> {
 
 export function listGames(): Promise<GameSummary[]> {
 	return request('/games');
+}
+
+export interface PuzzleRecord {
+	id: number;
+	fen: string;
+	/** UCI moves, solver's move first, opponent replies interleaved. */
+	solution: string[];
+	motif: string;
+	difficulty: number | null;
+	source_move_id: number | null; // null = generic Lichess import
+	box: number;
+	due_at: string;
+}
+
+export interface AttemptRecorded {
+	id: number;
+	puzzle_id: number;
+	correct: boolean;
+	hint_level_used: number;
+	attempted_at: string;
+	box: number;
+	due_at: string;
+}
+
+export interface PracticeQueued {
+	game_id: number;
+	queued: number;
+}
+
+/** Read-only: returns the same puzzle until an attempt reschedules it.
+ * Throws ApiError with status 404 when nothing is due. */
+export function getNextPuzzle(motif?: string | null): Promise<PuzzleRecord> {
+	const suffix = motif ? `?motif=${encodeURIComponent(motif)}` : '';
+	return request(`/puzzles/next${suffix}`);
+}
+
+export function recordAttempt(
+	puzzleId: number,
+	correct: boolean,
+	hintLevelUsed: number
+): Promise<AttemptRecorded> {
+	return request(`/puzzles/${puzzleId}/attempt`, {
+		method: 'POST',
+		body: JSON.stringify({ correct, hint_level_used: hintLevelUsed })
+	});
+}
+
+/** Review's "practice these misses": make this game's puzzles due now. */
+export function practiceGame(gameId: number): Promise<PracticeQueued> {
+	return request(`/games/${gameId}/practice`, { method: 'POST' });
 }

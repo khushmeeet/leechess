@@ -14,6 +14,8 @@ import chess.engine
 
 from app.db import SessionLocal
 from app.models import Game
+from app.motifs import apply_rule_based_tags
+from app.puzzle_generation import create_puzzles_for_game
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,8 @@ def run_game_analysis(game_id: int) -> None:
         db.commit()
         try:
             _analyze(game)
+            apply_rule_based_tags(game)
+            create_puzzles_for_game(game)
             game.analysis_status = "complete"
         except Exception:
             logger.exception("analysis job failed for game %s", game_id)
