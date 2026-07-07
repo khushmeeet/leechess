@@ -9,10 +9,77 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 | 1 — Play + basic Review | ✅ Done (one manual check pending, see below) | 2026-07-04 |
 | 2 — Motif tagging (rule-based) | 🔶 Code complete; manual validation vs 15–20 real games pending | 2026-07-05 |
 | 3 — Puzzles + spaced repetition | 🔶 Code complete; two manual checks pending (see below) | 2026-07-06 |
-| 4 — Progress screen | Not started | — |
+| 4 — Progress screen | ✅ Done (meaningful once Phases 2–3 manual validations feed it real data) | 2026-07-07 |
 | 5 — LLM explanations (deferred) | Not started | — |
 
 ---
+
+## Phase 4 — Progress screen (completed 2026-07-07)
+
+**Goal:** trend views by motif and overall, computed on read from the tables Phases 1–3
+already write — no snapshot pipeline. All exit criteria met.
+
+### Backend
+
+- **`GET /progress`** (`app/routers/progress.py`): everything computed on read, optional
+  `?days=30|90` window (default all-time) for the spec's 30/90/all-time views
+  - *Motif success rates* from `puzzle_attempts ⋈ puzzles`, all attempts in the window
+    (distinct from the puzzle queue's recent-20 "weakest" — that drives scheduling, this
+    reports totals), returned weakest-first
+  - *Weakest-motif callout*: ≤3 motifs, gated by `MIN_CALLOUT_ATTEMPTS = 3` (a 0% motif
+    attempted once isn't a trend) **and `success_rate < 1.0`** — a perfect record, however
+    the small pool ranks it, isn't a weakness to drill (found via screenshot eyeballing:
+    "100% · weakest — drill these" is a contradiction)
+  - *CPL trend*: per analyzed game, average centipawn loss **from the player's side** —
+    engine games count White's moves only (you always play White vs Stockfish), local
+    pass-and-play counts both sides. Phase-segmented at plies 20/60, same boundaries the
+    Review CPL graph draws; `None` for phases a game never reached. Games with
+    `analysis_status != complete` (or holes in the evals) are skipped, not crashed on
+  - *Streaks*: consecutive UTC days with activity (game played or puzzle attempted),
+    alive if yesterday had activity but today doesn't yet; ignores the window. Plus
+    `puzzles_solved` (correct attempts, windowed)
+
+### Frontend
+
+- **Progress page** (`/progress`): 30/90/all-time segmented control, streak + solved stat
+  tiles, weakest-motif callout cards linking to `/puzzles?motif=…` (Phase 3's filter),
+  motif success bar chart (every motif also links to its drill), CPL trend, empty state
+- **`CplTrend.svelte`**: hand-rolled SVG like `CplGraph` — Overall (ink) + Opening/
+  Middlegame/Endgame lines (sky/amber/violet, CVD-validated ≥3:1 contrast on white),
+  legend limited to series with data, direct end-labels with collision nudging, pen-up
+  line breaks + lone-point dots for games that skip a phase, hover tooltip with per-phase
+  values, click-through to that game's Review, `<details>` table fallback, y-max rounded
+  to 50s so gridline labels stay whole
+
+### Testing
+
+- **pytest: 120 passed** (115 unit, 5 engine, ~2.4s). New `test_progress_api.py` (18):
+  exact hand-calculated aggregates, weakest-first ordering, min-sample + perfect-score
+  callout gates, callout cap at 3, `?days` window on attempts/solved/trend, engine-mode
+  White-only CPL, phase splits at plies 20/60 (61-ply synthetic game), pending/analyzing/
+  failed games excluded, null-eval hole skipped, streak transitions (consecutive, gap,
+  games-count-too, alive-from-yesterday), empty DB returns zeroes
+- **Playwright: 12 passed** (~19s). New `progress.e2e.ts`: seeds the hung-queen game via
+  API + 3 attempts (1/3 correct) so the motif clears the callout gate, asserts stat
+  tiles, motif chart row, CPL trend + table view containing the seeded game, then clicks
+  the weakest-motif card → `/puzzles?motif=…` and the filter chip renders. Runs between
+  `play` and `puzzles` specs — never assumes which puzzle `/puzzles/next` serves
+
+### Exit criteria — status
+
+| Criterion | Result |
+|---|---|
+| Cross-check a motif's displayed rate vs raw `puzzle_attempts` rows | ✅ seeded 4 pin attempts (1 correct) render as "1/4 · 25%" (screenshot-verified); exact aggregates also pinned by unit tests |
+| `pytest` passes `test_progress_api.py` incl. min-sample edge case | ✅ 120/120 full suite |
+| Full Playwright suite before phase close | ✅ 12/12 |
+
+### Notes / conventions
+
+- eslint's `svelte/no-navigation-without-resolve` can't see `resolve()` inside a helper
+  function — build query-string hrefs inline: `href="{resolve('/puzzles')}?motif=…"`
+- CPL "player side" is a heuristic (engine = White only). If color choice vs the engine
+  ever lands (deferred since Phase 1), games need to record which side the user played
+- Streak days are UTC — a late-evening local session can straddle two "days"
 
 ## Phase 3 — Puzzles + spaced repetition (code complete 2026-07-06)
 
@@ -119,15 +186,17 @@ component. All automatable exit criteria met; two manual checks gate calling it 
   zwischenzug, trapped piece, strategic set) still deferred — puzzles inherit whatever
   the tagger can detect
 
-## Next: manual checks, then Phase 4 — Progress screen
+## Next: manual checks, then the Phase 5 decision
 
 1. Phase 2's pending step: play/import 15–20 real games, validate tags (add regression
    cases to `test_motifs.py` for anything wrong before fixing rules)
 2. Phase 3's pending step: confirm a real game's misses land in the queue, and solve
    puzzles across a few sessions to feel the Leitner scheduling work
 3. Optionally run the Lichess import for the generic pool
-4. Then Phase 4 per the plan: `GET /progress` aggregates, motif chart, CPL trend,
-   weakest-motif callout linking to `/puzzles?motif=…`
+4. Phase 4 is built ✅ (2026-07-07, see above) — it becomes genuinely meaningful once
+   steps 1–2 feed it a few weeks of real data
+5. Then the Phase 5 gate: only build LLM explanations if motif tags alone aren't
+   jogging recognition after living with real data
 
 ---
 

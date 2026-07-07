@@ -141,3 +141,37 @@ class PracticeQueued(BaseModel):
 
     game_id: int
     queued: int  # puzzles from this game now due for drilling
+
+
+class MotifProgress(BaseModel):
+    motif: str
+    attempts: int
+    correct: int
+    success_rate: float  # correct / attempts, 0..1
+
+
+class GameCplPoint(BaseModel):
+    """One analyzed game's average centipawn loss, from the player's side
+    (engine games count White only — you always play White vs Stockfish;
+    local pass-and-play counts both sides). Phase splits use the same rough
+    ply boundaries the Review CPL graph draws; None = no moves in that phase.
+    """
+
+    game_id: int
+    created_at: datetime
+    mode: str
+    avg_cpl: float
+    opening_cpl: float | None
+    middlegame_cpl: float | None
+    endgame_cpl: float | None
+
+
+class ProgressOut(BaseModel):
+    """GET /progress response — everything computed on read (spec §4.5)."""
+
+    days: int | None  # echo of the window filter; None = all-time
+    motifs: list[MotifProgress]  # weakest first
+    weakest_motifs: list[MotifProgress]  # ≤3, enough attempts, <100% success
+    cpl_trend: list[GameCplPoint]  # oldest → newest
+    streak_days: int
+    puzzles_solved: int  # correct attempts within the window

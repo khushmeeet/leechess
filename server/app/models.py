@@ -49,6 +49,9 @@ class Move(Base):
     puzzles: Mapped[list["Puzzle"]] = relationship(
         back_populates="source_move", cascade="all, delete-orphan"
     )
+    explanation: Mapped["Explanation | None"] = relationship(
+        back_populates="move", cascade="all, delete-orphan"
+    )
 
     @property
     def motifs(self) -> list[str]:

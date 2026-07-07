@@ -142,3 +142,37 @@ export function recordAttempt(
 export function practiceGame(gameId: number): Promise<PracticeQueued> {
 	return request(`/games/${gameId}/practice`, { method: 'POST' });
 }
+
+export interface MotifProgress {
+	motif: string;
+	attempts: number;
+	correct: number;
+	success_rate: number; // 0..1
+}
+
+/** One analyzed game's avg centipawn loss from the player's side (engine
+ * games count White only). Phase values are null when the game never
+ * reached that phase. */
+export interface GameCplPoint {
+	game_id: number;
+	created_at: string;
+	mode: string;
+	avg_cpl: number;
+	opening_cpl: number | null;
+	middlegame_cpl: number | null;
+	endgame_cpl: number | null;
+}
+
+export interface ProgressSummary {
+	days: number | null; // echo of the window filter; null = all-time
+	motifs: MotifProgress[]; // weakest first
+	weakest_motifs: MotifProgress[]; // ≤3, enough attempts, <100% success
+	cpl_trend: GameCplPoint[]; // oldest → newest
+	streak_days: number;
+	puzzles_solved: number;
+}
+
+export function getProgress(days?: number | null): Promise<ProgressSummary> {
+	const suffix = days ? `?days=${days}` : '';
+	return request(`/progress${suffix}`);
+}
