@@ -13,6 +13,7 @@ import chess
 import chess.engine
 
 from app.db import SessionLocal
+from app.explanations import generate_explanations_for_game
 from app.models import Game
 from app.motifs import apply_rule_based_tags
 from app.puzzle_generation import create_puzzles_for_game
@@ -103,6 +104,7 @@ def run_game_analysis(game_id: int) -> None:
             _analyze(game)
             apply_rule_based_tags(game)
             create_puzzles_for_game(game)
+            generate_explanations_for_game(game)  # fail-soft, never raises
             game.analysis_status = "complete"
         except Exception:
             logger.exception("analysis job failed for game %s", game_id)

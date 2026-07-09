@@ -52,6 +52,13 @@ class MoveOut(BaseModel):
     classification: str | None
     best_move: str | None
     motifs: list[str]
+    explanation: str | None
+
+    @field_validator("explanation", mode="before")
+    @classmethod
+    def explanation_text(cls, value: object) -> object:
+        """The ORM hands over the Explanation row; the API serves its text."""
+        return getattr(value, "text", value)
 
 
 class GameOut(BaseModel):

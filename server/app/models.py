@@ -72,6 +72,23 @@ class MotifTag(Base):
     move: Mapped[Move] = relationship(back_populates="motif_tags")
 
 
+class Explanation(Base):
+    """Cached LLM "why" text for one flagged move (spec §5) — generated once
+    per move by the Phase 5 pass, never regenerated. One row per move."""
+
+    __tablename__ = "explanations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    move_id: Mapped[int] = mapped_column(
+        ForeignKey("moves.id"), index=True, unique=True
+    )
+    text: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    move: Mapped[Move] = relationship(back_populates="explanation")
+
+
 class Puzzle(Base):
     """One drillable position. Personal puzzles point back at the game move
     they came from via source_move_id; generic Lichess imports have NULL

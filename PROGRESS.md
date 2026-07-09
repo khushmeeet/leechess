@@ -10,9 +10,85 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 | 2 — Motif tagging (rule-based) | 🔶 Code complete; manual validation vs 15–20 real games pending | 2026-07-05 |
 | 3 — Puzzles + spaced repetition | 🔶 Code complete; two manual checks pending (see below) | 2026-07-06 |
 | 4 — Progress screen | ✅ Done (meaningful once Phases 2–3 manual validations feed it real data) | 2026-07-07 |
-| 5 — LLM explanations (deferred) | Not started | — |
+| 5 — LLM explanations | 🔶 Code complete; one manual check pending (real-API prompt-quality run) | 2026-07-07 |
 
 ---
+
+## Phase 5 — LLM explanations (code complete 2026-07-07)
+
+**Goal:** the Review "why" panel — a plain-language paragraph on why the best move
+works and why the played move didn't, Claude via API, gated to flagged moves only,
+cached forever. (The plan framed Phase 5 as a judgment gate — "only build if tags
+alone aren't jogging recognition" — built now on explicit request.)
+
+### Backend
+
+- **`explanations` table** (`app/models.py`): `(id, move_id UNIQUE, text, model,
+  created_at)` per spec §5, one-to-one `Move.explanation`. A new table, so
+  `Base.metadata.create_all` adds it to the existing dev/prod DBs at startup — no
+  migration step
+- **`app/explanations.py`** — the whole Phase 5 pipeline:
+  - *Gate* (`needs_explanation`): classification mistake/blunder OR any motif tag —
+    tagged "executed tactic" moves get a "why your move worked" text; never every
+    move (spec §4.2 cost control)
+  - *Prompt*: FEN + played SAN + classification + "lost about N.N pawns" (from the
+    mover's side) + engine best move as SAN (or "this was the engine's best move")
+    + opponent's strongest reply (move N+1's stored `best_move`, same convention as
+    the tagger) + humanized motif names. System prompt: chess coach for a ~1400
+    player, 2–4 sentences, concrete squares, no engine jargon
+  - *Model*: `claude-opus-4-8`, adaptive thinking, generous `max_tokens` so
+    thinking never truncates the answer
+  - *Caching*: one row per move, generated once, an existing row is never re-sent;
+    wired into `run_game_analysis` after tagging (the gate reads `motif_tags`)
+  - *Fail-soft*: any API error (no key, outage) logs, abandons that game's
+    remaining moves, and analysis still completes — `scripts/explain.py` backfills
+    later (also covers games analyzed pre-Phase-5; commits per game so paid calls
+    aren't lost)
+  - `LEECHESS_EXPLANATIONS=off` disables the pass entirely — **both automated
+    suites set it** (pytest autouse fixture in `conftest.py`, Playwright webServer
+    env) so tests can never hit the real paid API
+- `GET /games/{id}/review` now serves `explanation` (text or null) per move
+
+### Frontend
+
+- Review page: amber **Why** panel under the motif chips for the selected move
+  (`data-testid="why-panel"`), hidden when the move has no explanation;
+  `MoveRecord.explanation` added to the API client
+- Level 4 hint text stays templated — the plan's "optionally upgrade" is deferred
+  until prompt quality is validated against real games
+
+### Testing
+
+- **pytest: 136 passed** (131 unit ~1s, 5 engine). New `test_explanations.py`
+  (16): gate table (incl. executed-tactic and unanalyzed cases), only flagged
+  moves trigger the API (mock call count on the tagged hung-queen game), second
+  run reads the cache (mock called exactly once per move across two runs),
+  disabled env makes zero calls, API failure swallowed + earlier texts kept +
+  missed moves retried on the next run, prompt contents (FEN, SANs, pawns lost,
+  humanized motifs), request shape + thinking/text block parsing against a fake
+  anthropic client, review endpoint serves the stored text
+- **Playwright: 12 passed** (~19s, unchanged — e2e runs the real analysis job with
+  explanations off)
+- **Manual browser check**: seeded an explanation row into a scratch DB, drove the
+  built SPA headlessly — Why panel renders on Qxe5+ and hides on unexplained
+  moves (screenshot-verified)
+
+### Exit criteria — status
+
+| Criterion | Result |
+|---|---|
+| Mock-only suite: flagged-only trigger, cache hit on second call, retrievable via Review | ✅ 136/136 full pytest |
+| Full Playwright before phase close | ✅ 12/12 |
+| One real (unmocked) exploratory call to judge prompt quality | ⚠️ **Pending manual step** — no Anthropic credentials on this machine; set `ANTHROPIC_API_KEY` and run `uv run python scripts/explain.py` against a real analyzed game, then read the texts in Review |
+
+### Notes / conventions
+
+- The server needs Anthropic credentials for generation (`ANTHROPIC_API_KEY` or an
+  `ant auth login` profile); on Fly: `fly secrets set ANTHROPIC_API_KEY=…`.
+  Without them analysis still completes — explanations are just skipped
+- Cost shape: one API call per flagged move, ever. A typical casual game has a
+  handful of flagged moves; `scripts/explain.py` is the only thing that re-visits
+  old games and it skips moves that already have a row
 
 ## Phase 4 — Progress screen (completed 2026-07-07)
 
@@ -195,8 +271,9 @@ component. All automatable exit criteria met; two manual checks gate calling it 
 3. Optionally run the Lichess import for the generic pool
 4. Phase 4 is built ✅ (2026-07-07, see above) — it becomes genuinely meaningful once
    steps 1–2 feed it a few weeks of real data
-5. Then the Phase 5 gate: only build LLM explanations if motif tags alone aren't
-   jogging recognition after living with real data
+5. Phase 5 is built ✅ (2026-07-07, see above) — its own pending step: one real
+   (unmocked) API run to judge prompt quality (`scripts/explain.py` with
+   `ANTHROPIC_API_KEY` set), folded into the same play-real-games session as 1–2
 
 ---
 

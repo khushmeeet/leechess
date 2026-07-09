@@ -245,6 +245,16 @@
 				</div>
 			{/if}
 
+			{#if selectedMove?.explanation}
+				<div
+					class="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-stone-800"
+					data-testid="why-panel"
+				>
+					<h2 class="mb-1 text-xs font-semibold tracking-wide text-amber-800 uppercase">Why</h2>
+					<p>{selectedMove.explanation}</p>
+				</div>
+			{/if}
+
 			<div class="mt-4">
 				<CplGraph moves={game.moves} {selectedPly} onselect={select} />
 			</div>

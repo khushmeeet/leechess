@@ -12,6 +12,14 @@ from app.main import app
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _no_real_llm(monkeypatch):
+    """The suite must never call the real (paid) Claude API — engine-marked
+    tests run the full analysis job, which includes the Phase 5 explanation
+    pass. test_explanations.py re-enables this and mocks the client."""
+    monkeypatch.setenv("LEECHESS_EXPLANATIONS", "off")
+
+
 @pytest.fixture()
 def db_engine(tmp_path):
     """Throwaway SQLite database per test — never touches the dev database."""

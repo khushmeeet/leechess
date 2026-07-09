@@ -26,6 +26,8 @@ export interface MoveRecord {
 	classification: string | null;
 	best_move: string | null;
 	motifs: string[];
+	/** Cached LLM "why" text — only flagged moves have one (Phase 5). */
+	explanation: string | null;
 }
 
 export interface MoveAccepted {
