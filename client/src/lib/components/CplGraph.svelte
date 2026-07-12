@@ -44,13 +44,13 @@
 
 <svg
 	viewBox="0 0 {W} {H}"
-	class="w-full rounded-md border border-stone-300 bg-white"
+	class="w-full rounded-xs border border-line bg-card"
 	role="img"
 	aria-label="Evaluation per move"
 	data-testid="cpl-graph"
 >
 	<!-- zero line -->
-	<line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#d6d3d1" stroke-width="1" />
+	<line x1={PAD} y1={H / 2} x2={W - PAD} y2={H / 2} stroke="#e0d6bf" stroke-width="1" />
 
 	{#each phaseBoundaries as ply (ply)}
 		<line
@@ -58,14 +58,14 @@
 			y1={PAD}
 			x2={x(ply)}
 			y2={H - PAD}
-			stroke="#d6d3d1"
+			stroke="#e0d6bf"
 			stroke-width="1"
 			stroke-dasharray="4 4"
 		/>
 	{/each}
 
 	{#if points}
-		<polyline {points} fill="none" stroke="#57534e" stroke-width="1.5" />
+		<polyline {points} fill="none" stroke="#4a4238" stroke-width="1.5" />
 	{/if}
 
 	<!-- selected ply marker -->
@@ -76,11 +76,11 @@
 			y1={PAD}
 			x2={x(selectedPly)}
 			y2={H - PAD}
-			stroke="#f59e0b"
+			stroke="#b5822e"
 			stroke-width="1.5"
 		/>
 		{#if cp !== null}
-			<circle cx={x(selectedPly)} cy={y(cp)} r="3.5" fill="#f59e0b" />
+			<circle cx={x(selectedPly)} cy={y(cp)} r="3.5" fill="#b5822e" />
 		{/if}
 	{/if}
 

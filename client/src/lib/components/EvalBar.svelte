@@ -15,22 +15,31 @@
 	});
 
 	const label = $derived(cp === null ? '–' : (cp / 100).toFixed(1));
+
+	// The readout tab tracks the fill boundary but is clamped a few percent
+	// from each end so it never clips past the bar at decisive evals.
+	const tabPct = $derived(Math.min(94, Math.max(6, 100 - whitePct)));
 </script>
 
-<div
-	class="relative h-full w-4 overflow-hidden rounded-sm border border-stone-400 bg-stone-800"
-	title="eval: {label}"
-	data-testid="eval-bar"
->
+<div class="relative h-full w-14 shrink-0" title="eval: {label}" data-testid="eval-bar">
 	<div
-		class="absolute bottom-0 w-full bg-stone-50 transition-[height] duration-300"
-		style="height: {whitePct}%"
-	></div>
-	<span
-		class="absolute inset-x-0 text-center font-mono text-[9px] leading-none {whitePct >= 50
-			? 'bottom-0.5 text-stone-700'
-			: 'top-0.5 text-stone-200'}"
+		class="absolute inset-y-0 right-0 w-3.5 overflow-hidden rounded-xs bg-body shadow-[0_0_0_1px_var(--color-line)]"
 	>
-		{label}
-	</span>
+		<div
+			class="absolute inset-x-0 bottom-0 rounded-t-xs bg-card transition-[height] duration-300"
+			style="height: {whitePct}%"
+		></div>
+		<div class="absolute inset-x-[-3px] top-1/2 h-px -translate-y-1/2 bg-accent-line"></div>
+	</div>
+	<div
+		class="absolute right-3.5 flex -translate-y-1/2 items-center transition-[top] duration-300"
+		style="top: {tabPct}%"
+	>
+		<span
+			class="whitespace-nowrap rounded-l-xs bg-accent py-0.5 pr-1 pl-1.5 font-mono text-[10px] leading-none font-semibold text-paper shadow-sm"
+		>
+			{label}
+		</span>
+		<span class="h-0 w-0 border-y-4 border-y-transparent border-l-4 border-l-accent"></span>
+	</div>
 </div>

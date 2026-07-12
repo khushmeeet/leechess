@@ -63,24 +63,24 @@
 </script>
 
 <div class="mb-4 flex items-baseline justify-between">
-	<h1 class="text-lg font-semibold">
+	<h1 class="font-display text-2xl">
 		Puzzles
 		{#if motifFilter}
 			<span
-				class="ml-2 inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800"
+				class="ml-2 inline-flex translate-y-[-3px] items-center rounded-xs border border-accent-line px-2 py-0.5 font-sans text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
 			>
 				{humanizeMotif(motifFilter)}
 			</span>
 		{/if}
 	</h1>
-	<span class="text-sm text-stone-500" data-testid="session-count">
+	<span class="text-sm text-muted" data-testid="session-count">
 		{session.completedCount} completed this session
 	</span>
 </div>
 
 {#if session.status === 'empty'}
-	<div class="max-w-xl rounded-md border border-stone-300 bg-white p-4 text-sm text-stone-600">
-		<p class="font-semibold text-stone-800">
+	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
+		<p class="font-semibold text-ink">
 			No puzzles due{motifFilter ? ' for this motif' : ''}.
 		</p>
 		<p class="mt-1">
@@ -89,9 +89,9 @@
 		</p>
 	</div>
 {:else if session.status === 'error'}
-	<p class="text-sm break-all text-red-700">Failed to load a puzzle: {session.error}</p>
+	<p class="text-sm break-all text-err">Failed to load a puzzle: {session.error}</p>
 {:else if session.status === 'loading'}
-	<p class="text-sm text-stone-500">Loading puzzle…</p>
+	<p class="text-sm text-muted">Loading puzzle…</p>
 {:else if session.puzzle}
 	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
 		<div class="max-w-xl">
@@ -109,9 +109,9 @@
 		</div>
 
 		<aside class="flex flex-col gap-4">
-			<section class="rounded-md border border-stone-300 bg-white p-3 text-sm">
+			<section class="rounded-xs border border-line bg-card p-3 text-sm">
 				<p class="font-semibold" data-testid="puzzle-heading">Puzzle #{session.puzzle.id}</p>
-				<p class="mt-1 text-stone-500">
+				<p class="mt-1 text-muted">
 					{#if session.puzzle.source_move_id !== null}
 						From your own game — find what the analysis flagged.
 					{:else}
@@ -125,12 +125,12 @@
 
 			{#if session.status === 'solved'}
 				<div
-					class="rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900"
+					class="rounded-xs border border-ok-line bg-ok-bg px-3 py-2 text-sm text-ok"
 					data-testid="puzzle-correct"
 				>
 					<p class="font-semibold">Correct!</p>
 					{#if session.wrong || session.hintLevel > 0}
-						<p class="mt-0.5 text-green-800">
+						<p class="mt-0.5">
 							{session.wrong
 								? 'Got there after a retry'
 								: `Solved with ${session.hintLevel} hint level${session.hintLevel === 1 ? '' : 's'}`}
@@ -141,21 +141,21 @@
 				<button
 					data-testid="next-puzzle"
 					onclick={loadNext}
-					class="rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-stone-50"
+					class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 				>
 					Next puzzle →
 				</button>
 			{:else}
 				{#if session.wrong}
 					<div
-						class="flex items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+						class="flex items-center justify-between gap-2 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err"
 						data-testid="puzzle-retry"
 					>
 						<span>Not quite — try again.</span>
 						<button
 							data-testid="reveal-answer"
 							onclick={() => session.revealAnswer()}
-							class="shrink-0 rounded border border-red-300 px-2 py-0.5 text-xs hover:bg-red-100"
+							class="shrink-0 rounded-xs border border-err-line px-2 py-0.5 text-xs hover:bg-err-line/40"
 						>
 							Reveal answer
 						</button>

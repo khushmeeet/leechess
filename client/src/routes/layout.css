@@ -1,2 +1,53 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
+
+/* Old Standard TT — the display face of the app's identity ("The Study"):
+ * wordmark, page headings, big numerals. Latin subset, self-hosted. */
+@font-face {
+	font-family: 'Old Standard TT';
+	src: url('../lib/assets/fonts/old-standard-tt-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Old Standard TT';
+	src: url('../lib/assets/fonts/old-standard-tt-700.woff2') format('woff2');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+@theme {
+	--font-display: 'Old Standard TT', 'Iowan Old Style', Palatino, Georgia, serif;
+
+	/* The Study: aged paper, ink, one mahogany accent, hairline rules. */
+	--color-paper: #f7f2e7;
+	--color-card: #fdfaf1;
+	--color-ink: #2a241c;
+	--color-body: #40382c;
+	--color-muted: #7a7060;
+	--color-faint: #a99e8a;
+	--color-line: #e3d9c3;
+	--color-accent: #8a3a2e;
+	--color-accent-line: #cdab9e;
+	--color-accent-soft: #f8ede4;
+
+	/* Status hues, muted to sit on aged paper. ok/info/warn/mist/err also map
+	 * to the move classifications best/good/inaccuracy/mistake/blunder. */
+	--color-ok: #3e6b50;
+	--color-ok-bg: #e9f0e2;
+	--color-ok-line: #b6cbae;
+	--color-info: #3f5873;
+	--color-info-bg: #e9eef3;
+	--color-info-line: #b3c4d4;
+	--color-warn: #7d5a1f;
+	--color-warn-bg: #f7eed3;
+	--color-warn-line: #dcc793;
+	--color-mist: #9c5217;
+	--color-mist-bg: #f8ead9;
+	--color-mist-line: #ddba92;
+	--color-err: #a83a2c;
+	--color-err-bg: #f9e9e2;
+	--color-err-line: #dcb5a8;
+}

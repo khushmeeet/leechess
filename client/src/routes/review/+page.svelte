@@ -5,26 +5,26 @@
 	const gamesPromise = listGames();
 
 	const statusStyles: Record<string, string> = {
-		complete: 'text-green-700',
-		analyzing: 'text-sky-700',
-		failed: 'text-red-700',
-		pending: 'text-stone-400'
+		complete: 'text-ok',
+		analyzing: 'text-info',
+		failed: 'text-err',
+		pending: 'text-faint'
 	};
 </script>
 
-<h1 class="mb-4 text-lg font-semibold">Your games</h1>
+<h1 class="mb-4 font-display text-2xl">Your games</h1>
 
 {#await gamesPromise}
-	<p class="text-stone-500">Loading games…</p>
+	<p class="text-muted">Loading games…</p>
 {:then games}
 	{#if games.length === 0}
-		<p class="text-stone-500">
+		<p class="text-muted">
 			No games yet — <a class="underline" href={resolve('/')}>play one</a>.
 		</p>
 	{:else}
 		<table class="w-full max-w-2xl text-sm" data-testid="games-list">
 			<thead>
-				<tr class="text-left text-stone-500">
+				<tr class="text-left text-muted">
 					<th class="py-1.5 font-normal">#</th>
 					<th class="py-1.5 font-normal">Players</th>
 					<th class="py-1.5 font-normal">Result</th>
@@ -35,10 +35,10 @@
 			</thead>
 			<tbody>
 				{#each games as game (game.id)}
-					<tr class="border-t border-stone-200 hover:bg-white">
+					<tr class="border-t border-line hover:bg-card">
 						<td class="py-1.5">
 							<a
-								class="font-semibold underline"
+								class="font-semibold text-accent underline"
 								href={resolve('/review/[gameId]', { gameId: String(game.id) })}
 							>
 								{game.id}
@@ -57,5 +57,5 @@
 		</table>
 	{/if}
 {:catch error}
-	<p class="text-red-700">Failed to load games: {error.message}</p>
+	<p class="text-err">Failed to load games: {error.message}</p>
 {/await}

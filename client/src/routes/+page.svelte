@@ -22,10 +22,7 @@
 		{ skill: 20, label: 'Max' }
 	];
 
-	const movableColor = $derived.by(() => {
-		if (game.isGameOver) return undefined;
-		return session.mode === 'engine' ? session.playerColor : ('both' as const);
-	});
+	const movableColor = $derived(game.isGameOver ? undefined : session.playerColor);
 
 	const movePairs = $derived.by(() => {
 		const pairs: {
@@ -62,53 +59,40 @@
 	</div>
 
 	<aside class="flex flex-col gap-4">
-		<section class="rounded-md border border-stone-300 bg-white p-3 text-sm">
+		<section class="rounded-xs border border-line bg-card p-3 text-sm">
 			<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
-				<label for="mode" class="text-stone-600">Mode</label>
+				<label for="strength" class="text-muted">Strength</label>
 				<select
-					id="mode"
-					bind:value={session.mode}
+					id="strength"
+					bind:value={session.engineSkill}
 					disabled={session.started}
-					class="rounded border border-stone-300 px-2 py-1 disabled:opacity-50"
+					class="rounded-xs border border-line bg-card px-2 py-1 disabled:opacity-50"
 				>
-					<option value="local">Local (pass &amp; play)</option>
-					<option value="engine">vs Stockfish</option>
+					{#each strengthPresets as preset (preset.skill)}
+						<option value={preset.skill}>{preset.label} (skill {preset.skill})</option>
+					{/each}
 				</select>
 
-				{#if session.mode === 'engine'}
-					<label for="strength" class="text-stone-600">Strength</label>
-					<select
-						id="strength"
-						bind:value={session.engineSkill}
-						disabled={session.started}
-						class="rounded border border-stone-300 px-2 py-1 disabled:opacity-50"
-					>
-						{#each strengthPresets as preset (preset.skill)}
-							<option value={preset.skill}>{preset.label} (skill {preset.skill})</option>
-						{/each}
-					</select>
-				{/if}
-
-				<label for="hints" class="text-stone-600">Hints</label>
+				<label for="hints" class="text-muted">Hints</label>
 				<select
 					id="hints"
 					bind:value={session.hints}
 					disabled={session.started}
-					class="rounded border border-stone-300 px-2 py-1 disabled:opacity-50"
+					class="rounded-xs border border-line bg-card px-2 py-1 disabled:opacity-50"
 				>
 					<option value="nudge">Nudge only</option>
 					<option value="off">Off (real game)</option>
 				</select>
 
-				<label for="evalbar" class="text-stone-600">Eval bar</label>
+				<label for="evalbar" class="text-muted">Eval bar</label>
 				<input id="evalbar" type="checkbox" bind:checked={session.showEvalBar} class="h-4 w-4" />
 			</div>
-			<p class="mt-2 text-xs text-stone-400">
+			<p class="mt-2 text-xs text-faint">
 				engine:
 				<span data-testid="engine-status" class="font-mono">
 					{session.engineReady ? 'ready' : 'warming up…'}
 				</span>
-				{#if session.mode === 'engine'}· you play White{/if}
+				· you play White
 			</p>
 		</section>
 
@@ -121,7 +105,7 @@
 
 		{#if session.lastFeedback}
 			<div class="flex items-center gap-2 text-sm" data-testid="move-badge">
-				<span class="font-mono text-stone-600">
+				<span class="font-mono text-muted">
 					{Math.ceil(session.lastFeedback.ply / 2)}{session.lastFeedback.ply % 2 ? '.' : '…'}
 					{session.lastFeedback.san}
 				</span>
@@ -129,20 +113,20 @@
 			</div>
 		{/if}
 
-		<section class="rounded-md border border-stone-300 bg-white p-3">
-			<h2 class="mb-2 text-sm font-semibold text-stone-700">
+		<section class="rounded-xs border border-line bg-card p-3">
+			<h2 class="mb-2 text-sm font-semibold text-ink">
 				Moves
-				<span class="ml-1 font-normal text-stone-400">
+				<span class="ml-1 font-normal text-faint">
 					({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
 				</span>
 			</h2>
 			{#if movePairs.length === 0}
-				<p class="text-sm text-stone-400">No moves yet.</p>
+				<p class="text-sm text-faint">No moves yet.</p>
 			{:else}
 				<ol class="max-h-64 overflow-y-auto text-sm" data-testid="move-list">
 					{#each movePairs as pair (pair.number)}
 						<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
-							<span class="text-stone-400">{pair.number}.</span>
+							<span class="text-faint">{pair.number}.</span>
 							{#each [pair.white, pair.black] as half, i (i)}
 								<span class="flex items-center gap-1.5">
 									{#if half}
@@ -167,29 +151,21 @@
 				<div class="flex gap-2">
 					<button
 						onclick={() => session.resign()}
-						class="flex-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm hover:bg-stone-50"
+						class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
 					>
 						Resign
 					</button>
-					{#if session.mode === 'local'}
-						<button
-							onclick={() => session.agreeDraw()}
-							class="flex-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm hover:bg-stone-50"
-						>
-							Draw
-						</button>
-					{/if}
 				</div>
 			{/if}
 			<button
 				onclick={() => session.newGame()}
-				class="rounded-md border border-stone-300 bg-white px-3 py-2 text-sm hover:bg-stone-50"
+				class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 			>
 				New game
 			</button>
 
 			{#if session.completedGameId !== null}
-				<p class="text-sm text-green-700">
+				<p class="text-sm text-ok">
 					Saved as game #{session.completedGameId}, analysis queued —
 					<a
 						class="underline"
@@ -199,10 +175,10 @@
 					</a>
 				</p>
 			{:else if session.serverGameId !== null && !session.serverError}
-				<p class="text-xs text-stone-400">syncing to server as game #{session.serverGameId}</p>
+				<p class="text-xs text-faint">syncing to server as game #{session.serverGameId}</p>
 			{/if}
 			{#if session.serverError}
-				<p class="text-sm break-all text-red-700">
+				<p class="text-sm break-all text-err">
 					Server sync failed — the game continues locally. {session.serverError}
 				</p>
 			{/if}

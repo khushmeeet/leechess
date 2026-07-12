@@ -168,27 +168,27 @@
 </script>
 
 {#if error}
-	<p class="text-red-700">Failed to load game: {error}</p>
+	<p class="text-err">Failed to load game: {error}</p>
 {:else if !game}
-	<p class="text-stone-500">Loading game…</p>
+	<p class="text-muted">Loading game…</p>
 {:else}
-	<h1 class="mb-1 text-lg font-semibold">Game #{game.id}</h1>
-	<p class="mb-4 text-sm text-stone-500">
+	<h1 class="mb-1 font-display text-2xl">Game #{game.id}</h1>
+	<p class="mb-4 text-sm text-muted">
 		{game.white} vs {game.black} · {game.result} · {game.mode}
 	</p>
 
 	{#if analyzing}
 		<div
-			class="mb-4 flex items-center gap-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900"
+			class="mb-4 flex items-center gap-2 rounded-xs border border-info-line bg-info-bg px-3 py-2 text-sm text-info"
 			data-testid="analysis-status"
 		>
 			<span
-				class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-sky-600 border-t-transparent"
+				class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-info border-t-transparent"
 			></span>
 			Analyzing with Stockfish… this page refreshes automatically.
 		</div>
 	{:else if game.analysis_status === 'failed'}
-		<div class="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+		<div class="mb-4 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err">
 			Analysis failed — the raw moves are shown without evaluations.
 		</div>
 	{/if}
@@ -201,19 +201,19 @@
 				<button
 					onclick={() => select(selectedPly - 1)}
 					disabled={selectedPly <= 1}
-					class="rounded-md border border-stone-300 bg-white px-3 py-1 text-sm hover:bg-stone-50 disabled:opacity-40"
+					class="rounded-xs border border-line bg-card px-3 py-1 text-sm hover:bg-paper disabled:opacity-40"
 				>
 					← Prev
 				</button>
 				<button
 					onclick={() => select(selectedPly + 1)}
 					disabled={selectedPly >= game.moves.length}
-					class="rounded-md border border-stone-300 bg-white px-3 py-1 text-sm hover:bg-stone-50 disabled:opacity-40"
+					class="rounded-xs border border-line bg-card px-3 py-1 text-sm hover:bg-paper disabled:opacity-40"
 				>
 					Next →
 				</button>
 				{#if selectedMove}
-					<span class="ml-2 text-sm text-stone-600" data-testid="selected-move">
+					<span class="ml-2 text-sm text-body" data-testid="selected-move">
 						{Math.ceil(selectedMove.ply / 2)}{selectedMove.ply % 2 ? '.' : '…'}
 						<span class="font-semibold">{selectedMove.san}</span>
 						{#if selectedMove.classification}
@@ -224,9 +224,9 @@
 			</div>
 
 			{#if selectedMove?.best_move && bestDiffers}
-				<p class="mt-2 text-sm text-stone-600" data-testid="best-move-hint">
+				<p class="mt-2 text-sm text-body" data-testid="best-move-hint">
 					You played <span class="font-mono font-semibold">{selectedMove.san}</span> — best was
-					<span class="font-mono font-semibold text-green-700">
+					<span class="font-mono font-semibold text-ok">
 						{uciToSan(selectedMove.fen_before, selectedMove.best_move)}
 					</span>
 				</p>
@@ -234,10 +234,10 @@
 
 			{#if selectedMove && selectedMove.motifs.length > 0}
 				<div class="mt-2 flex flex-wrap items-center gap-1.5" data-testid="motif-tags">
-					<span class="text-sm text-stone-500">Motifs:</span>
+					<span class="text-sm text-muted">Motifs:</span>
 					{#each selectedMove.motifs as motif (motif)}
 						<span
-							class="inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800"
+							class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
 						>
 							{motif.replaceAll('_', ' ')}
 						</span>
@@ -247,10 +247,10 @@
 
 			{#if selectedMove?.explanation}
 				<div
-					class="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-stone-800"
+					class="mt-3 rounded-xs border border-warn-line bg-warn-bg p-3 text-sm text-body"
 					data-testid="why-panel"
 				>
-					<h2 class="mb-1 text-xs font-semibold tracking-wide text-amber-800 uppercase">Why</h2>
+					<h2 class="mb-1 text-xs font-semibold tracking-wide text-warn uppercase">Why</h2>
 					<p>{selectedMove.explanation}</p>
 				</div>
 			{/if}
@@ -262,7 +262,7 @@
 			{#if summary}
 				<table class="mt-4 w-full max-w-md text-sm" data-testid="game-summary">
 					<thead>
-						<tr class="text-left text-stone-500">
+						<tr class="text-left text-muted">
 							<th class="py-1 font-normal"></th>
 							<th class="py-1 font-normal">avg CPL</th>
 							<th class="py-1 font-normal">Inaccuracies</th>
@@ -272,7 +272,7 @@
 					</thead>
 					<tbody>
 						{#each sideNames as side (side)}
-							<tr class="border-t border-stone-200">
+							<tr class="border-t border-line">
 								<td class="py-1 font-semibold capitalize">{side} ({game[side]})</td>
 								<td class="py-1 font-mono">{summary[side].avgCpl.toFixed(0)}</td>
 								<td class="py-1">{summary[side].inaccuracy}</td>
@@ -289,38 +289,38 @@
 					<button
 						data-testid="practice-misses"
 						onclick={practice}
-						class="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100"
+						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 					>
 						Practice these misses
 					</button>
 					{#if practiceQueued !== null}
-						<span class="text-sm text-green-700" data-testid="practice-result">
+						<span class="text-sm text-ok" data-testid="practice-result">
 							{practiceQueued} puzzle{practiceQueued === 1 ? '' : 's'} queued —
 							<a class="underline" href={resolve('/puzzles')}>drill now</a>
 						</span>
 					{/if}
 					{#if practiceError}
-						<span class="text-sm break-all text-red-700">{practiceError}</span>
+						<span class="text-sm break-all text-err">{practiceError}</span>
 					{/if}
 				</div>
 			{/if}
 		</div>
 
 		<aside>
-			<section class="rounded-md border border-stone-300 bg-white p-3">
-				<h2 class="mb-2 text-sm font-semibold text-stone-700">Moves ({game.moves.length} plies)</h2>
+			<section class="rounded-xs border border-line bg-card p-3">
+				<h2 class="mb-2 text-sm font-semibold text-ink">Moves ({game.moves.length} plies)</h2>
 				<ol class="max-h-[28rem] overflow-y-auto text-sm" data-testid="move-list">
 					{#each movePairs as pair (pair.number)}
 						<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
-							<span class="text-stone-400">{pair.number}.</span>
+							<span class="text-faint">{pair.number}.</span>
 							{#each [pair.white, pair.black] as move, i (i)}
 								<span>
 									{#if move}
 										<button
 											onclick={() => select(move.ply)}
-											class="flex w-full items-center gap-1.5 rounded px-1 text-left hover:bg-stone-100 {selectedPly ===
+											class="flex w-full items-center gap-1.5 rounded-xs px-1 text-left hover:bg-paper {selectedPly ===
 											move.ply
-												? 'bg-amber-100 font-semibold'
+												? 'bg-warn-bg font-semibold'
 												: ''}"
 										>
 											{move.san}
@@ -332,7 +332,7 @@
 											{/if}
 											{#if move.motifs.length > 0}
 												<span
-													class="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500"
+													class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
 													title={move.motifs.join(', ').replaceAll('_', ' ')}
 												></span>
 											{/if}

@@ -4,7 +4,6 @@ import { GameStore, type PlayedMove } from './game.svelte';
 import { stockfish, type EngineEval } from './stockfish';
 import type { Key } from 'chessground/types';
 
-export type PlayMode = 'local' | 'engine';
 export type HintSetting = 'off' | 'nudge';
 
 export interface MoveFeedback {
@@ -32,7 +31,6 @@ export class PlaySession {
 	game = new GameStore();
 
 	// per-game settings, locked once the first move is played
-	mode = $state<PlayMode>('local');
 	engineSkill = $state(5);
 	hints = $state<HintSetting>('nudge');
 	readonly playerColor = 'white' as const; // vs engine; color choice is post-v1
@@ -100,8 +98,7 @@ export class PlaySession {
 
 	get userCanMove(): boolean {
 		if (this.game.isGameOver) return false;
-		if (this.mode === 'engine') return this.game.turnColor === this.playerColor;
-		return true;
+		return this.game.turnColor === this.playerColor;
 	}
 
 	handleBoardMove(orig: Key, dest: Key): void {
@@ -111,25 +108,23 @@ export class PlaySession {
 	}
 
 	private afterMove(played: PlayedMove, byEngine: boolean): void {
-		// Level 0 nudge: re-shown after every opponent move. In pass-and-play
-		// every move is the (next) opponent's; vs the engine only its replies.
-		if (this.hints !== 'off' && (this.mode === 'local' || byEngine)) {
+		// Level 0 nudge: re-shown after every opponent (engine) move.
+		if (this.hints !== 'off' && byEngine) {
 			this.nudgeVisible = true;
 		}
 
 		this.inSync(async () => {
 			if (this.serverGameId === null) {
-				this.serverGameId = (await startGame(this.mode)).id;
+				this.serverGameId = (await startGame('engine')).id;
 			}
 			await postMove(this.serverGameId, played.uci);
 		});
 
-		const badge = this.mode === 'local' || !byEngine;
-		this.inChain(() => this.evaluatePly(played, badge));
+		this.inChain(() => this.evaluatePly(played, !byEngine));
 
 		if (this.game.isGameOver) {
 			this.finish();
-		} else if (this.mode === 'engine' && this.game.turnColor !== this.playerColor) {
+		} else if (this.game.turnColor !== this.playerColor) {
 			this.engineReply();
 		}
 	}
@@ -195,15 +190,7 @@ export class PlaySession {
 
 	resign(): void {
 		if (!this.started || this.game.isGameOver) return;
-		const color = this.mode === 'engine' ? this.playerColor : this.game.turnColor;
-		this.game.resign(color);
-		this.finish();
-	}
-
-	agreeDraw(): void {
-		if (!this.started || this.game.isGameOver || this.mode === 'engine') return;
-		this.game.isGameOver = true;
-		this.game.result = '1/2-1/2';
+		this.game.resign(this.playerColor);
 		this.finish();
 	}
 

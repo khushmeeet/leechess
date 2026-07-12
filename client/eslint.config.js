@@ -37,5 +37,13 @@ export default defineConfig(
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}
+	},
+	{
+		// Literature is a citations page: its hrefs are external source URLs
+		// from data modules, which resolve() can't (and shouldn't) handle.
+		files: ['src/routes/literature/+page.svelte'],
+		rules: {
+			'svelte/no-navigation-without-resolve': ['error', { ignoreLinks: true }]
+		}
 	}
 );

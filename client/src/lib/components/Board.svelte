@@ -5,8 +5,10 @@
 	import type { Color, Key } from 'chessground/types';
 	import type { DrawShape } from 'chessground/draw';
 	import 'chessground/assets/chessground.base.css';
-	import 'chessground/assets/chessground.brown.css';
-	import 'chessground/assets/chessground.cburnett.css';
+	import '$lib/board.css';
+	import '$lib/pieces.css';
+	import { boardImageUrl } from '$lib/boardThemes';
+	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 
 	interface Props {
 		fen: string;
@@ -14,8 +16,8 @@
 		/** Legal destinations; omit (with viewOnly) for a display-only board. */
 		dests?: Map<Key, Key[]>;
 		lastMove?: [Key, Key];
-		/** Which side the user may move ('both' for pass-and-play). undefined = none. */
-		movableColor?: Color | 'both';
+		/** Which side the user may move. undefined = none. */
+		movableColor?: Color;
 		orientation?: Color;
 		viewOnly?: boolean;
 		/** Engine/annotation arrows (e.g. best move vs played move on Review). */
@@ -78,4 +80,12 @@
 	});
 </script>
 
-<div bind:this={el} class="aspect-square w-full"></div>
+<!-- Outer div owns the user's board prefs; chessground mutates the inner
+     element's classes, so Svelte must never re-render attributes on it. -->
+<div
+	class="pieces-{boardPrefs.pieceSet} aspect-square w-full"
+	style="--sq-lt: {boardPrefs.theme.light}; --sq-dk: {boardPrefs.theme
+		.dark}; --board-image: {boardImageUrl(boardPrefs.theme)}"
+>
+	<div bind:this={el} class="h-full w-full"></div>
+</div>

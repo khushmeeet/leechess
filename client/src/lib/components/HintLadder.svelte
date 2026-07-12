@@ -46,13 +46,13 @@
 {#if nudgeVisible}
 	<div
 		role="status"
-		class="flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+		class="flex items-center justify-between gap-2 rounded-xs border border-warn-line bg-warn-bg px-3 py-2 text-sm text-warn"
 	>
 		<span>Checks, captures, threats?</span>
 		<button
 			onclick={ondismiss}
 			aria-label="Dismiss hint"
-			class="rounded px-1.5 text-amber-700 hover:bg-amber-100"
+			class="rounded-xs px-1.5 text-warn hover:bg-warn-line/50"
 		>
 			✕
 		</button>
@@ -61,40 +61,40 @@
 
 {#if hint}
 	<section
-		class="rounded-md border border-stone-300 bg-white p-3 text-sm"
+		class="rounded-xs border border-line bg-card p-3 text-sm"
 		data-testid="hint-ladder"
 	>
-		<h2 class="mb-2 flex items-baseline justify-between font-semibold text-stone-700">
+		<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
 			Hints
-			<span class="text-xs font-normal text-stone-400">level {level}/{MAX_LEVEL}</span>
+			<span class="text-xs font-normal text-faint">level {level}/{MAX_LEVEL}</span>
 		</h2>
 
 		<ol class="flex flex-col gap-1.5">
 			{#if level >= 1}
-				<li data-testid="hint-level-1" class="text-stone-700">{hint.category}</li>
+				<li data-testid="hint-level-1" class="text-body">{hint.category}</li>
 			{/if}
 			{#if level >= 2}
-				<li data-testid="hint-level-2" class="text-stone-700">
+				<li data-testid="hint-level-2" class="text-body">
 					Look for a
 					<span
-						class="inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800"
+						class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
 					>
 						{hint.motif}
 					</span>
 				</li>
 			{/if}
 			{#if level >= 3}
-				<li data-testid="hint-level-3" class="text-stone-700">
+				<li data-testid="hint-level-3" class="text-body">
 					The key squares are highlighted on the board.
 				</li>
 			{/if}
 			{#if level >= 4}
-				<li data-testid="hint-level-4" class="text-stone-700">
+				<li data-testid="hint-level-4" class="text-body">
 					<span class="font-mono font-semibold">{hint.moveSan}</span> — {hint.reason}
 				</li>
 			{/if}
 			{#if level >= 5}
-				<li data-testid="hint-level-5" class="text-stone-700">
+				<li data-testid="hint-level-5" class="text-body">
 					Full line: <span class="font-mono">{hint.line.join(' ')}</span>
 				</li>
 			{/if}
@@ -104,7 +104,7 @@
 			<button
 				data-testid="hint-reveal"
 				onclick={() => (level += 1)}
-				class="mt-2 w-full rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50"
+				class="mt-2 w-full rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 			>
 				{nextLabels[level]}
 			</button>

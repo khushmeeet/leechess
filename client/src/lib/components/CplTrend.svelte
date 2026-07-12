@@ -8,10 +8,10 @@
 
 	let { trend, onselect }: Props = $props();
 
-	// Hues validated for CVD separation + contrast on the white card surface
+	// Hues validated for CVD separation + contrast on the card surface
 	// (dataviz six-checks); "Overall" is ink, not a category color.
 	const series = [
-		{ key: 'avg_cpl', label: 'Overall', color: '#292524', width: 2.5 },
+		{ key: 'avg_cpl', label: 'Overall', color: '#2a241c', width: 2.5 },
 		{ key: 'opening_cpl', label: 'Opening', color: '#0369a1', width: 2 },
 		{ key: 'middlegame_cpl', label: 'Middlegame', color: '#b45309', width: 2 },
 		{ key: 'endgame_cpl', label: 'Endgame', color: '#6d28d9', width: 2 }
@@ -105,11 +105,11 @@
 </script>
 
 {#if trend.length === 0}
-	<p class="text-sm text-stone-500">
+	<p class="text-sm text-muted">
 		No analyzed games yet — finish a game and its CPL lands here.
 	</p>
 {:else}
-	<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600">
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
 		{#each activeSeries as s (s.key)}
 			<span class="inline-flex items-center gap-1.5">
 				<span class="h-0.5 w-4 rounded-full" style="background:{s.color}"></span>
@@ -121,7 +121,7 @@
 	<div class="relative mt-2">
 		<svg
 			viewBox="0 0 {W} {H}"
-			class="w-full rounded-md border border-stone-300 bg-white"
+			class="w-full rounded-xs border border-line bg-card"
 			role="img"
 			aria-label="Average centipawn loss per game over time, split by game phase"
 			data-testid="cpl-trend"
@@ -133,14 +133,14 @@
 					y1={y(value)}
 					x2={W - PAD.right}
 					y2={y(value)}
-					stroke="#e7e5e4"
+					stroke="#eee5d0"
 					stroke-width="1"
 				/>
 				<text
 					x={PAD.left - 6}
 					y={y(value) + 3}
 					text-anchor="end"
-					class="fill-stone-400"
+					class="fill-faint"
 					font-size="9">{value}</text
 				>
 			{/each}
@@ -151,7 +151,7 @@
 					y1={PAD.top}
 					x2={x(hovered)}
 					y2={H - PAD.bottom}
-					stroke="#f59e0b"
+					stroke="#b5822e"
 					stroke-width="1.5"
 				/>
 			{/if}
@@ -159,7 +159,7 @@
 			{#each activeSeries as s (s.key)}
 				<path d={path(s.key)} fill="none" stroke={s.color} stroke-width={s.width} />
 				{#each lonePoints(s.key) as { value, i } (i)}
-					<circle cx={x(i)} cy={y(value!)} r="3" fill={s.color} stroke="#fff" stroke-width="2" />
+					<circle cx={x(i)} cy={y(value!)} r="3" fill={s.color} stroke="#fdfaf1" stroke-width="2" />
 				{/each}
 			{/each}
 
@@ -169,24 +169,24 @@
 					cx={x(i)}
 					cy={y(point.avg_cpl)}
 					r={hovered === i ? 4.5 : 3}
-					fill="#292524"
-					stroke="#fff"
+					fill="#2a241c"
+					stroke="#fdfaf1"
 					stroke-width="2"
 				/>
 			{/each}
 
 			{#each endLabels as label (label.key)}
-				<text x={W - PAD.right + 8} y={label.y + 3} font-size="9" class="fill-stone-500"
+				<text x={W - PAD.right + 8} y={label.y + 3} font-size="9" class="fill-muted"
 					>{label.label}</text
 				>
 			{/each}
 
 			<!-- x-axis: first and last game dates anchor the timeline -->
-			<text x={PAD.left} y={H - 6} font-size="9" class="fill-stone-400">
+			<text x={PAD.left} y={H - 6} font-size="9" class="fill-faint">
 				{formatDate(trend[0].created_at)}
 			</text>
 			{#if trend.length > 1}
-				<text x={W - PAD.right} y={H - 6} text-anchor="end" font-size="9" class="fill-stone-400">
+				<text x={W - PAD.right} y={H - 6} text-anchor="end" font-size="9" class="fill-faint">
 					{formatDate(trend[trend.length - 1].created_at)}
 				</text>
 			{/if}
@@ -212,37 +212,37 @@
 
 		{#if hoveredPoint !== null && hovered !== null}
 			<div
-				class="pointer-events-none absolute top-2 z-10 rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs shadow-sm"
+				class="pointer-events-none absolute top-2 z-10 rounded-xs border border-line bg-card px-2.5 py-1.5 text-xs shadow-sm"
 				style="left: min(max({((x(hovered) / W) * 100).toFixed(
 					1
 				)}% - 60px, 0%), calc(100% - 130px))"
 				data-testid="cpl-tooltip"
 			>
-				<p class="font-semibold text-stone-800">
+				<p class="font-semibold text-ink">
 					Game #{hoveredPoint.game_id}
-					<span class="font-normal text-stone-500">· {formatDate(hoveredPoint.created_at)}</span>
+					<span class="font-normal text-muted">· {formatDate(hoveredPoint.created_at)}</span>
 				</p>
 				{#each series as s (s.key)}
 					{@const value = hoveredPoint[s.key]}
 					{#if value !== null}
-						<p class="mt-0.5 flex items-center gap-1.5 text-stone-600">
+						<p class="mt-0.5 flex items-center gap-1.5 text-muted">
 							<span class="h-0.5 w-3 rounded-full" style="background:{s.color}"></span>
-							{s.label}: <span class="font-mono text-stone-800">{value.toFixed(0)}</span>
+							{s.label}: <span class="font-mono text-ink">{value.toFixed(0)}</span>
 						</p>
 					{/if}
 				{/each}
 				{#if onselect}
-					<p class="mt-1 text-[10px] text-stone-400">click to open review</p>
+					<p class="mt-1 text-[10px] text-faint">click to open review</p>
 				{/if}
 			</div>
 		{/if}
 	</div>
 
-	<details class="mt-2 text-xs text-stone-500">
+	<details class="mt-2 text-xs text-muted">
 		<summary class="cursor-pointer select-none">View as table</summary>
 		<table class="mt-1 w-full max-w-md text-left">
 			<thead>
-				<tr class="text-stone-500">
+				<tr class="text-muted">
 					<th class="py-0.5 font-normal">Game</th>
 					<th class="py-0.5 font-normal">Date</th>
 					{#each activeSeries as s (s.key)}<th class="py-0.5 font-normal">{s.label}</th>{/each}
@@ -250,7 +250,7 @@
 			</thead>
 			<tbody>
 				{#each trend as point (point.game_id)}
-					<tr class="border-t border-stone-200 text-stone-700">
+					<tr class="border-t border-line text-body">
 						<td class="py-0.5">#{point.game_id}</td>
 						<td class="py-0.5">{formatDate(point.created_at)}</td>
 						{#each activeSeries as s (s.key)}

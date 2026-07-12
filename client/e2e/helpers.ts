@@ -22,19 +22,10 @@ export async function move(
 	}
 }
 
-/** Play a scripted sequence, waiting for each SAN to land in the move list —
- * clicks during chessground's move animation are dropped. */
-export async function playMoves(page: Page, moves: readonly (readonly [string, string, string])[]) {
-	for (const [from, to, san] of moves) {
-		await move(page, from, to);
-		await expect(page.getByTestId('move-list')).toContainText(san);
-	}
-}
-
 /** Scholar's mate — shortest deterministic full game (checkmate in 7 plies).
  * The same scripted game is used by the backend's test_analysis_job.py so
  * both suites exercise identical data. */
-export const scholarsMate = [
+const scholarsMate = [
 	['e2', 'e4', 'e4'],
 	['e7', 'e5', 'e5'],
 	['f1', 'c4', 'Bc4'],
