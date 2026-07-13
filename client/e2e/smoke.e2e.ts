@@ -19,9 +19,6 @@ test('play screen renders the board with no console errors', async ({ page }) =>
 	await expect(page.getByRole('link', { name: 'Progress' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Literature' })).toBeVisible();
 
-	// Level 0 nudge is part of the fixed pre-move ritual
-	await expect(page.getByText('Checks, captures, threats?')).toBeVisible();
-
 	// COOP/COEP headers must be in effect or stockfish silently loses threading
 	expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
 

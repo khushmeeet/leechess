@@ -97,7 +97,16 @@ def _import_pgn(payload: GameCreate) -> Game:
 
 @router.get("", response_model=list[GameOut])
 def list_games(db: Session = Depends(get_db)) -> list[Game]:
-    return list(db.scalars(select(Game).order_by(Game.id.desc()).limit(100)))
+    """Finished games only — in-progress and abandoned games ("pending")
+    never appear in the review list."""
+    return list(
+        db.scalars(
+            select(Game)
+            .where(Game.analysis_status != "pending")
+            .order_by(Game.id.desc())
+            .limit(100)
+        )
+    )
 
 
 @router.get("/{game_id}", response_model=GameDetail)
@@ -174,6 +183,17 @@ def complete_game(
     db.commit()
     background.add_task(run_game_analysis, game.id)
     return game
+
+
+@router.delete("/{game_id}", status_code=204)
+def discard_game(game_id: int, db: Session = Depends(get_db)) -> None:
+    """Abandoned mid-game (new game started, page closed): the unfinished
+    game is discarded, not kept for review. Completed games are permanent."""
+    game = _get_game_or_404(game_id, db)
+    if game.analysis_status != "pending":
+        raise HTTPException(status_code=409, detail="Game is already completed")
+    db.delete(game)
+    db.commit()
 
 
 @router.get("/{game_id}/review", response_model=GameDetail)

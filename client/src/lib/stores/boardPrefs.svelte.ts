@@ -1,10 +1,5 @@
 import { browser } from '$app/environment';
-import {
-	BOARD_THEMES,
-	PIECE_SETS,
-	type BoardTheme,
-	type PieceSetId
-} from '$lib/boardThemes';
+import { BOARD_THEMES, PIECE_SETS, type BoardTheme, type PieceSetId } from '$lib/boardThemes';
 
 const THEME_KEY = 'leechess.boardTheme';
 const PIECES_KEY = 'leechess.pieceSet';

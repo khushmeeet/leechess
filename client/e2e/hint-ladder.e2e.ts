@@ -21,8 +21,7 @@ test('hint ladder reveals one level at a time and never resets', async ({ page, 
 	await page.goto('/puzzles');
 	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
 
-	// Level 0: the nudge is up, no ladder rung revealed yet
-	await expect(page.getByText('Checks, captures, threats?')).toBeVisible();
+	// no ladder rung revealed yet
 	for (const level of [1, 2, 3, 4, 5]) {
 		await expect(page.getByTestId(`hint-level-${level}`)).toBeHidden();
 	}

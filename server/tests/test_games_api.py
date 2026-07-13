@@ -157,10 +157,36 @@ def test_review_endpoint_returns_moves_and_status(client, no_analysis):
     assert all(m["classification"] is None for m in body["moves"])
 
 
-def test_list_games_newest_first(client):
-    first = client.post("/games", json={}).json()["id"]
-    second = client.post("/games", json={}).json()["id"]
+def _finished_game(client) -> int:
+    game_id = client.post("/games", json={}).json()["id"]
+    client.post(f"/games/{game_id}/moves", json={"san": "e4"})
+    client.post(f"/games/{game_id}/complete", json={"result": "1-0"})
+    return game_id
+
+
+def test_list_games_newest_first_finished_only(client, no_analysis):
+    first = _finished_game(client)
+    second = _finished_game(client)
+    unfinished = client.post("/games", json={}).json()["id"]
+
     response = client.get("/games")
     assert response.status_code == 200
     ids = [g["id"] for g in response.json()]
+    # in-progress/abandoned games never show up in the review list
+    assert unfinished not in ids
     assert ids.index(second) < ids.index(first)
+
+
+def test_discard_deletes_unfinished_game(client):
+    game_id = client.post("/games", json={}).json()["id"]
+    client.post(f"/games/{game_id}/moves", json={"san": "e4"})
+
+    assert client.delete(f"/games/{game_id}").status_code == 204
+    assert client.get(f"/games/{game_id}").status_code == 404
+    assert client.delete(f"/games/{game_id}").status_code == 404
+
+
+def test_discard_rejects_completed_game(client, no_analysis):
+    game_id = _finished_game(client)
+    assert client.delete(f"/games/{game_id}").status_code == 409
+    assert client.get(f"/games/{game_id}").status_code == 200

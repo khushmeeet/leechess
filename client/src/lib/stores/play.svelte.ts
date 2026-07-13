@@ -1,10 +1,9 @@
-import { completeGame, postMove, startGame } from '$lib/api/client';
+import { completeGame, discardGame, postMove, startGame } from '$lib/api/client';
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
+import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
 import { GameStore, type PlayedMove } from './game.svelte';
-import { stockfish, type EngineEval } from './stockfish';
+import { stockfish, type EngineEval, type EngineLine } from './stockfish';
 import type { Key } from 'chessground/types';
-
-export type HintSetting = 'off' | 'nudge';
 
 export interface MoveFeedback {
 	ply: number;
@@ -12,10 +11,20 @@ export interface MoveFeedback {
 	classification: Classification;
 }
 
+export interface OpeningState {
+	eco: string;
+	family: string;
+	variation: string | null;
+	/** The current position itself is in the book (vs the closest line so far). */
+	inBook: boolean;
+}
+
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Depth for live classification evals — matches the "depth ~16 minimum"
  * acceptance criterion; server batch analysis re-does this deeper. */
 const LIVE_EVAL_DEPTH = 16;
+/** Candidate lines for the insight bar's Ideas row. */
+const IDEAS_MULTIPV = 3;
 
 function normalizeEval(result: EngineEval): number {
 	if (result.mate !== undefined) return result.mate > 0 ? EVAL_CLAMP_CP : -EVAL_CLAMP_CP;
@@ -32,14 +41,20 @@ export class PlaySession {
 
 	// per-game settings, locked once the first move is played
 	engineSkill = $state(5);
-	hints = $state<HintSetting>('nudge');
 	readonly playerColor = 'white' as const; // vs engine; color choice is post-v1
-
-	showEvalBar = $state(false);
-	nudgeVisible = $state(true);
 
 	engineReady = $state(false);
 	engineThinking = $state(false);
+
+	/** Deepest opening-book match along the game so far. */
+	opening = $state<OpeningState | null>(null);
+	openingsLoaded = $state(false);
+	openingsFailed = $state(false);
+	/** Raw eval readout for the insight bar (mate-aware, with depth). */
+	insightEval = $state<{ cp?: number; mate?: number; depth: number } | null>(null);
+	/** Candidate lines for the position in `fen` — user-to-move positions only;
+	 * consumers must check `fen` against the live board to drop stale ones. */
+	ideas = $state<{ fen: string; lines: EngineLine[] } | null>(null);
 
 	/** Eval (cp, white POV, clamped) after each ply; index = ply - 1. */
 	evals = $state<(number | null)[]>([]);
@@ -59,7 +74,7 @@ export class PlaySession {
 
 	private baselineEval = 0;
 	private pendingBestMove: string | null = null;
-	private initialEval: { cp: number; bestMove: string } | null = null;
+	private initialEval: EngineEval | null = null;
 	private chain: Promise<void> = Promise.resolve();
 	private sync: Promise<void> = Promise.resolve();
 	private generation = 0;
@@ -82,18 +97,37 @@ export class PlaySession {
 			})
 			.catch((error) => {
 				// fail soft: the game continues locally, server sync stops
+				// (unless the session was reset — a late failure from a
+				// discarded game must not surface in the fresh one)
+				if (generation !== this.generation) return;
 				this.serverError = error instanceof Error ? error.message : String(error);
 			});
 	}
 
 	/** Warm the engine and establish the starting-position baseline. */
 	async start(): Promise<void> {
+		// opening book loads in parallel — never blocks the engine or the board
+		loadOpenings().then((ok) => {
+			if (ok) {
+				this.openingsLoaded = true;
+				this.refreshOpening();
+			} else {
+				this.openingsFailed = true;
+			}
+		});
 		await stockfish.warmup();
-		const result = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH);
-		this.initialEval = { cp: normalizeEval(result), bestMove: result.bestMove };
-		this.baselineEval = this.initialEval.cp;
+		this.initialEval = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH, IDEAS_MULTIPV);
+		this.baselineEval = normalizeEval(this.initialEval);
 		this.pendingBestMove = this.initialEval.bestMove;
+		this.seedFromInitial();
 		this.engineReady = true;
+	}
+
+	private seedFromInitial(): void {
+		if (!this.initialEval) return;
+		const { cp, mate, depth, lines } = this.initialEval;
+		this.insightEval = { cp, mate, depth };
+		this.ideas = { fen: START_FEN, lines };
 	}
 
 	get userCanMove(): boolean {
@@ -108,14 +142,19 @@ export class PlaySession {
 	}
 
 	private afterMove(played: PlayedMove, byEngine: boolean): void {
-		// Level 0 nudge: re-shown after every opponent (engine) move.
-		if (this.hints !== 'off' && byEngine) {
-			this.nudgeVisible = true;
-		}
+		this.refreshOpening();
 
+		const generation = this.generation;
 		this.inSync(async () => {
 			if (this.serverGameId === null) {
-				this.serverGameId = (await startGame('engine')).id;
+				const id = (await startGame('engine')).id;
+				if (generation !== this.generation) {
+					// session was reset while the game was being created —
+					// the fresh record belongs to an abandoned game; discard it
+					discardGame(id).catch(() => {});
+					return;
+				}
+				this.serverGameId = id;
 			}
 			await postMove(this.serverGameId, played.uci);
 		});
@@ -141,10 +180,18 @@ export class PlaySession {
 			const result = this.game.result;
 			evalAfter = result === '1-0' ? EVAL_CLAMP_CP : result === '0-1' ? -EVAL_CLAMP_CP : 0;
 			this.pendingBestMove = null;
+			this.insightEval = null;
+			this.ideas = null;
 		} else {
-			const result = await stockfish.evaluate(played.fenAfter, LIVE_EVAL_DEPTH);
+			// badge evals stay single-PV so feedback lands inside the 500ms
+			// budget; engine-reply evals (user to move next) also fetch the
+			// candidate lines the insight bar's Ideas row shows.
+			const multiPv = badge ? 1 : IDEAS_MULTIPV;
+			const result = await stockfish.evaluate(played.fenAfter, LIVE_EVAL_DEPTH, multiPv);
 			evalAfter = normalizeEval(result);
 			this.pendingBestMove = result.bestMove;
+			this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
+			if (!badge) this.ideas = { fen: played.fenAfter, lines: result.lines };
 		}
 
 		this.baselineEval = evalAfter;
@@ -162,6 +209,20 @@ export class PlaySession {
 			this.badges[played.ply - 1] = classification;
 			this.lastFeedback = { ply: played.ply, san: played.san, classification };
 		}
+	}
+
+	/** Track the deepest book line reached along the game so far. */
+	private refreshOpening(): void {
+		if (!openingsReady()) return;
+		const line = openingForFens(this.game.moves.map((move) => move.fenAfter));
+		this.opening = line
+			? {
+					eco: line.eco,
+					family: line.family,
+					variation: line.variation,
+					inBook: line.deepestPly === this.game.moves.length
+				}
+			: null;
 	}
 
 	private engineReply(): void {
@@ -194,7 +255,18 @@ export class PlaySession {
 		this.finish();
 	}
 
+	/** An unfinished game is never kept for review — delete its server
+	 * record. Fire-and-forget: a racing postMove that 404s afterwards is
+	 * harmless (the sync chain's generation guard swallows it). */
+	discardUnfinished(): void {
+		if (this.serverGameId === null || this.game.isGameOver) return;
+		const abandoned = this.serverGameId;
+		this.serverGameId = null;
+		discardGame(abandoned).catch(() => {});
+	}
+
 	newGame(): void {
+		this.discardUnfinished();
 		this.generation += 1;
 		this.game.reset();
 		this.evals = [];
@@ -205,10 +277,13 @@ export class PlaySession {
 		this.serverError = null;
 		this.completedGameId = null;
 		this.engineThinking = false;
-		this.nudgeVisible = true;
+		this.opening = null;
+		this.insightEval = null;
+		this.ideas = null;
 		if (this.initialEval) {
-			this.baselineEval = this.initialEval.cp;
+			this.baselineEval = normalizeEval(this.initialEval);
 			this.pendingBestMove = this.initialEval.bestMove;
+			this.seedFromInitial();
 		}
 	}
 }

@@ -8,13 +8,11 @@
 	import { PuzzleSession } from '$lib/stores/puzzle.svelte';
 
 	const session = new PuzzleSession();
-	let nudgeDismissed = $state(false);
 
 	// Progress screen (Phase 4) links here as /puzzles?motif=fork.
 	const motifFilter = $derived(page.url.searchParams.get('motif'));
 
 	function loadNext() {
-		nudgeDismissed = false;
 		session.load(motifFilter);
 	}
 
@@ -162,12 +160,7 @@
 					</div>
 				{/if}
 
-				<HintLadder
-					nudgeVisible={!nudgeDismissed}
-					ondismiss={() => (nudgeDismissed = true)}
-					{hint}
-					bind:level={session.hintLevel}
-				/>
+				<HintLadder {hint} bind:level={session.hintLevel} />
 			{/if}
 		</aside>
 	</div>

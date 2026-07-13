@@ -65,6 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 			`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`
 		);
 	}
+	if (response.status === 204) return undefined as T;
 	return response.json();
 }
 
@@ -81,6 +82,12 @@ export function completeGame(gameId: number, result: string): Promise<GameSummar
 		method: 'POST',
 		body: JSON.stringify({ result })
 	});
+}
+
+/** Abandoned unfinished game: delete the server record instead of leaving
+ * it around. keepalive lets the request survive tab close / navigation. */
+export function discardGame(gameId: number): Promise<void> {
+	return request(`/games/${gameId}`, { method: 'DELETE', keepalive: true });
 }
 
 export function getGame(id: number | string): Promise<GameDetail> {

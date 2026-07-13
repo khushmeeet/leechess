@@ -105,9 +105,7 @@
 </script>
 
 {#if trend.length === 0}
-	<p class="text-sm text-muted">
-		No analyzed games yet — finish a game and its CPL lands here.
-	</p>
+	<p class="text-sm text-muted">No analyzed games yet — finish a game and its CPL lands here.</p>
 {:else}
 	<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
 		{#each activeSeries as s (s.key)}
@@ -136,12 +134,8 @@
 					stroke="#eee5d0"
 					stroke-width="1"
 				/>
-				<text
-					x={PAD.left - 6}
-					y={y(value) + 3}
-					text-anchor="end"
-					class="fill-faint"
-					font-size="9">{value}</text
+				<text x={PAD.left - 6} y={y(value) + 3} text-anchor="end" class="fill-faint" font-size="9"
+					>{value}</text
 				>
 			{/each}
 

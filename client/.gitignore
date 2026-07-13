@@ -27,3 +27,6 @@ playwright-report
 
 # copied from node_modules/stockfish by scripts/copy-stockfish.js
 /static/stockfish
+
+# built from scripts/chess-openings by scripts/build-openings.js
+/static/openings.json

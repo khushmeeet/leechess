@@ -3,6 +3,7 @@
 	// set apply to every Board live and persist via boardPrefs.
 	import { BOARD_THEMES, PIECE_SETS } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
+	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
@@ -47,9 +48,7 @@
 			class="absolute top-full right-0 z-20 mt-2 w-72 rounded-xs border border-line bg-card p-4 shadow-lg"
 			data-testid="settings-menu"
 		>
-			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
-				Board
-			</h2>
+			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Board</h2>
 			<div class="grid grid-cols-4 gap-2">
 				{#each BOARD_THEMES as theme (theme.name)}
 					<button
@@ -97,6 +96,39 @@
 						</span>
 					</button>
 				{/each}
+			</div>
+
+			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Display
+			</h2>
+			<div class="flex flex-col gap-1.5 text-sm">
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Eval bar</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.showEvalBar}
+						onchange={(event) => displayPrefs.setEvalBar(event.currentTarget.checked)}
+						class="h-4 w-4"
+					/>
+				</label>
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Coach</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.showCoach}
+						onchange={(event) => displayPrefs.setCoach(event.currentTarget.checked)}
+						class="h-4 w-4"
+					/>
+				</label>
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Ideas</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.showIdeas}
+						onchange={(event) => displayPrefs.setIdeas(event.currentTarget.checked)}
+						class="h-4 w-4"
+					/>
+				</label>
 			</div>
 		</div>
 	{/if}

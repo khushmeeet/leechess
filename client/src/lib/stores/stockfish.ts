@@ -11,6 +11,14 @@
  * (skill-limited, the engine opponent) can be issued freely and run in order.
  */
 
+/** One candidate line from a (possibly MultiPV) search, scores white-POV. */
+export interface EngineLine {
+	cp?: number;
+	mate?: number;
+	depth: number;
+	pvUci: string[];
+}
+
 export interface EngineEval {
 	/** Centipawns from white's perspective (undefined when a mate was found). */
 	cp?: number;
@@ -20,6 +28,8 @@ export interface EngineEval {
 	depth: number;
 	/** Wall-clock time for the search, ms. */
 	ms: number;
+	/** Candidate lines, best first; lines[0] matches bestMove. */
+	lines: EngineLine[];
 }
 
 interface SearchOptions {
@@ -27,6 +37,8 @@ interface SearchOptions {
 	movetimeMs?: number;
 	/** Stockfish "Skill Level" (0-20). 20 = full strength. */
 	skill: number;
+	/** Number of candidate lines to search (UCI MultiPV). */
+	multiPv?: number;
 }
 
 const FULL_STRENGTH = 20;
@@ -36,6 +48,7 @@ class StockfishClient {
 	private initPromise: Promise<void> | null = null;
 	private queue: Promise<unknown> = Promise.resolve();
 	private currentSkill = FULL_STRENGTH;
+	private currentMultiPv = 1;
 
 	flavor: 'multi-threaded' | 'single-threaded' | null = null;
 
@@ -76,9 +89,10 @@ class StockfishClient {
 		return run;
 	}
 
-	/** Full-strength eval of a FEN — feeds move classification. */
-	evaluate(fen: string, depth = 16): Promise<EngineEval> {
-		return this.enqueue(() => this.search(fen, { depth, skill: FULL_STRENGTH }));
+	/** Full-strength eval of a FEN — feeds move classification, and (with
+	 * multiPv > 1) the insight bar's candidate-move ideas. */
+	evaluate(fen: string, depth = 16, multiPv = 1): Promise<EngineEval> {
+		return this.enqueue(() => this.search(fen, { depth, skill: FULL_STRENGTH, multiPv }));
 	}
 
 	/** The engine opponent: skill-limited, time-boxed pick of a move. */
@@ -95,6 +109,14 @@ class StockfishClient {
 			this.currentSkill = options.skill;
 		}
 
+		// MultiPV is sticky on the engine process — reset to 1 for play() so the
+		// skill-limited opponent never pays the multi-line search cost.
+		const multiPv = options.multiPv ?? 1;
+		if (multiPv !== this.currentMultiPv) {
+			worker.postMessage(`setoption name MultiPV value ${multiPv}`);
+			this.currentMultiPv = multiPv;
+		}
+
 		const whiteToMove = fen.split(' ')[1] !== 'b';
 		const start = performance.now();
 
@@ -102,6 +124,7 @@ class StockfishClient {
 			let lastCp: number | undefined;
 			let lastMate: number | undefined;
 			let lastDepth = 0;
+			const lines: EngineLine[] = [];
 
 			worker.onmessage = (e: MessageEvent<string>) => {
 				const line = e.data;
@@ -109,15 +132,22 @@ class StockfishClient {
 					const depthMatch = line.match(/\bdepth (\d+)/);
 					const scoreMatch = line.match(/\bscore (cp|mate) (-?\d+)/);
 					if (depthMatch && scoreMatch) {
-						lastDepth = Number(depthMatch[1]);
+						const depth = Number(depthMatch[1]);
 						// UCI scores are from the side to move; normalize to white's view.
 						const sign = whiteToMove ? 1 : -1;
-						if (scoreMatch[1] === 'cp') {
-							lastCp = sign * Number(scoreMatch[2]);
-							lastMate = undefined;
-						} else {
-							lastMate = sign * Number(scoreMatch[2]);
-							lastCp = undefined;
+						const cp = scoreMatch[1] === 'cp' ? sign * Number(scoreMatch[2]) : undefined;
+						const mate = scoreMatch[1] === 'mate' ? sign * Number(scoreMatch[2]) : undefined;
+
+						// the primary line (multipv 1 or no multipv token) drives the eval
+						const rank = Number(line.match(/\bmultipv (\d+)/)?.[1] ?? 1);
+						if (rank === 1) {
+							lastDepth = depth;
+							lastCp = cp;
+							lastMate = mate;
+						}
+						const pvMatch = line.match(/\bpv (.+)$/);
+						if (pvMatch) {
+							lines[rank - 1] = { cp, mate, depth, pvUci: pvMatch[1].split(' ') };
 						}
 					}
 				} else if (line.startsWith('bestmove ')) {
@@ -126,7 +156,8 @@ class StockfishClient {
 						mate: lastMate,
 						bestMove: line.split(' ')[1],
 						depth: lastDepth,
-						ms: Math.round(performance.now() - start)
+						ms: Math.round(performance.now() - start),
+						lines
 					});
 				}
 			};

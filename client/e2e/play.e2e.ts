@@ -2,8 +2,25 @@ import { expect, test } from '@playwright/test';
 import { API, move, waitForEngineReady } from './helpers';
 
 // Phase 1 acceptance criteria for the Play screen: live classification badge
-// within 500ms of a move, Level 0 nudge re-shown after the opponent's move,
-// and every finished game auto-completing server-side (no user action).
+// within 500ms of a move, and every finished game auto-completing
+// server-side (no user action).
+
+test('toggling the eval bar does not resize the board', async ({ page }) => {
+	await page.goto('/');
+
+	const board = page.locator('cg-board');
+	const sizeBefore = await board.boundingBox();
+	expect(sizeBefore).not.toBeNull();
+
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('settings-menu').getByLabel('Eval bar').check();
+	await expect(page.getByTestId('eval-bar')).toBeVisible();
+
+	const sizeAfter = await board.boundingBox();
+	expect(sizeAfter).not.toBeNull();
+	expect(sizeAfter!.width).toBe(sizeBefore!.width);
+	expect(sizeAfter!.height).toBe(sizeBefore!.height);
+});
 
 test('live classification badge appears within 500ms of a move', async ({ page }) => {
 	await page.goto('/');
@@ -12,22 +29,9 @@ test('live classification badge appears within 500ms of a move', async ({ page }
 	await move(page, 'e2', 'e4');
 	// the real requirement, not "eventually": depth-16 eval + badge in 500ms
 	await expect(page.getByTestId('move-badge')).toBeVisible({ timeout: 500 });
-	await expect(page.getByTestId('move-badge')).toContainText('e4');
-});
-
-test('nudge banner reappears after the opponent (engine) move', async ({ page }) => {
-	await page.goto('/');
-	await waitForEngineReady(page);
-	const nudge = page.getByText('Checks, captures, threats?');
-
-	// part of the fixed pre-move ritual: shown at start…
-	await expect(nudge).toBeVisible();
-	await page.getByRole('button', { name: 'Dismiss hint' }).click();
-	await expect(nudge).toBeHidden();
-
-	// …and re-shown once the engine replies
-	await move(page, 'e2', 'e4');
-	await expect(nudge).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId('move-list').getByTestId('move-badge')).toContainText(
+		/best|good|inaccuracy|mistake|blunder/
+	);
 });
 
 test('finished game auto-saves, completes, and queues analysis', async ({ page, request }) => {
@@ -56,6 +60,22 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	expect(game.moves.at(0).san).toBe('e4');
 });
 
+test('abandoning a game discards it instead of saving it for review', async ({ page, request }) => {
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await move(page, 'e2', 'e4');
+	const syncing = page.getByText(/syncing to server as game #\d+/);
+	await expect(syncing).toBeVisible();
+	const gameId = (await syncing.textContent())!.match(/#(\d+)/)![1];
+
+	// starting a new game abandons the unfinished one — its server record
+	// is deleted, so it can never show up on the review page
+	await page.getByRole('button', { name: 'New game' }).click();
+	await expect(page.getByText('No moves yet.')).toBeVisible();
+	await expect.poll(async () => (await request.get(`${API}/games/${gameId}`)).status()).toBe(404);
+});
+
 test('engine replies and the game stays in sync', async ({ page }) => {
 	await page.goto('/');
 	await waitForEngineReady(page);
@@ -70,6 +90,4 @@ test('engine replies and the game stays in sync', async ({ page }) => {
 	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
 	// still one move pair: white's move + the engine reply, nothing extra
 	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
-	// and the nudge is re-shown after the opponent's (engine's) move
-	await expect(page.getByText('Checks, captures, threats?')).toBeVisible();
 });

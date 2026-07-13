@@ -16,22 +16,18 @@
 </script>
 
 <script lang="ts">
-	// Shared hint ladder (Play / Review / Puzzles). Level 0 is the always-
-	// shown pre-move nudge; Levels 1-5 reveal one rung at a time, never all
-	// at once, and only when `hint` content is provided. The parent owns
-	// `level` (bindable) — it needs it to highlight Level 3's squares on the
-	// board and to report hint usage with puzzle attempts.
+	// Shared hint ladder (Review / Puzzles). Levels 1-5 reveal one rung at a
+	// time, never all at once, and only when `hint` content is provided. The
+	// parent owns `level` (bindable) — it needs it to highlight Level 3's
+	// squares on the board and to report hint usage with puzzle attempts.
 	interface Props {
-		/** Level 0 nudge visibility — the parent re-shows it after every opponent move. */
-		nudgeVisible: boolean;
-		ondismiss: () => void;
-		/** Ladder content for Levels 1-5; omit for nudge-only usage (Play). */
+		/** Ladder content for Levels 1-5. */
 		hint?: HintContent | null;
 		/** Highest level revealed so far (0-5). */
 		level?: number;
 	}
 
-	let { nudgeVisible, ondismiss, hint = null, level = $bindable(0) }: Props = $props();
+	let { hint = null, level = $bindable(0) }: Props = $props();
 
 	const MAX_LEVEL = 5;
 	const nextLabels: Record<number, string> = {
@@ -43,27 +39,8 @@
 	};
 </script>
 
-{#if nudgeVisible}
-	<div
-		role="status"
-		class="flex items-center justify-between gap-2 rounded-xs border border-warn-line bg-warn-bg px-3 py-2 text-sm text-warn"
-	>
-		<span>Checks, captures, threats?</span>
-		<button
-			onclick={ondismiss}
-			aria-label="Dismiss hint"
-			class="rounded-xs px-1.5 text-warn hover:bg-warn-line/50"
-		>
-			✕
-		</button>
-	</div>
-{/if}
-
 {#if hint}
-	<section
-		class="rounded-xs border border-line bg-card p-3 text-sm"
-		data-testid="hint-ladder"
-	>
+	<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
 		<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
 			Hints
 			<span class="text-xs font-normal text-faint">level {level}/{MAX_LEVEL}</span>
