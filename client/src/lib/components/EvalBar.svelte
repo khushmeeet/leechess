@@ -23,7 +23,7 @@
 
 <div class="relative h-full w-14 shrink-0" title="eval: {label}" data-testid="eval-bar">
 	<div
-		class="absolute inset-y-0 right-0 w-3.5 overflow-hidden rounded-xs bg-body shadow-[0_0_0_1px_var(--color-line)]"
+		class="absolute inset-y-0 right-0 w-[10px] overflow-hidden rounded-xs bg-body shadow-[0_0_0_1px_var(--color-line)]"
 	>
 		<div
 			class="absolute inset-x-0 bottom-0 rounded-t-xs bg-card transition-[height] duration-300"
@@ -32,7 +32,7 @@
 		<div class="absolute inset-x-[-3px] top-1/2 h-px -translate-y-1/2 bg-accent-line"></div>
 	</div>
 	<div
-		class="absolute right-3.5 flex -translate-y-1/2 items-center transition-[top] duration-300"
+		class="absolute right-[10px] flex -translate-y-1/2 items-center transition-[top] duration-300"
 		style="top: {tabPct}%"
 	>
 		<span

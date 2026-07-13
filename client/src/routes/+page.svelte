@@ -95,7 +95,7 @@
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-		<div class="relative flex max-w-xl">
+		<div class="relative flex max-w-xl self-start">
 			{#if displayPrefs.showEvalBar}
 				<div class="absolute inset-y-0 right-full mr-2 w-14">
 					<EvalBar cp={session.currentEval} />

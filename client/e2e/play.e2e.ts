@@ -17,9 +17,12 @@ test('toggling the eval bar does not resize the board', async ({ page }) => {
 	await expect(page.getByTestId('eval-bar')).toBeVisible();
 
 	const sizeAfter = await board.boundingBox();
+	const evalBarSize = await page.getByTestId('eval-bar').boundingBox();
 	expect(sizeAfter).not.toBeNull();
+	expect(evalBarSize).not.toBeNull();
 	expect(sizeAfter!.width).toBe(sizeBefore!.width);
 	expect(sizeAfter!.height).toBe(sizeBefore!.height);
+	expect(evalBarSize!.height).toBe(sizeAfter!.height);
 });
 
 test('live classification badge appears within 500ms of a move', async ({ page }) => {
