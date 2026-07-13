@@ -143,7 +143,7 @@
 			</section>
 
 			<section
-				class="flex h-28 flex-col rounded-xs border border-line bg-card p-3"
+				class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
 				data-testid="moves-panel"
 			>
 				<h2 class="mb-2 text-sm font-semibold text-ink">

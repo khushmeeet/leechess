@@ -26,6 +26,8 @@ const IMPROVE: Record<string, string> = {
 	q: 'Improve queen',
 	k: 'King move'
 };
+const MINOR_NAME: Record<string, string> = { n: 'knight', b: 'bishop' };
+const QUEENSIDE_FILES = new Set(['a', 'b', 'c', 'd']);
 
 /** Squares a pawn of `color` on `square` attacks. */
 function pawnAttacks(square: Square, color: Color): Square[] {
@@ -82,7 +84,8 @@ function labelFor(fen: string, post: Chess, move: Move): string {
 	}
 
 	if ((move.piece === 'n' || move.piece === 'b') && MINOR_HOME[move.color].has(move.from)) {
-		return 'Develop';
+		const side = QUEENSIDE_FILES.has(move.from[0]) ? 'queenside' : 'kingside';
+		return `Develop ${side} ${MINOR_NAME[move.piece]}`;
 	}
 	if (move.piece === 'r' && landsOnOpenFile(post, move)) return 'Open file';
 

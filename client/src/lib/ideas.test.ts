@@ -68,8 +68,9 @@ describe('describeIdea', () => {
 		expect(describeIdea(START, 'a2a3')?.label).toBe('Improve pawn');
 	});
 
-	it('labels a minor piece leaving home as development', () => {
-		expect(describeIdea(START, 'g1f3')?.label).toBe('Develop');
+	it('labels a minor piece leaving home as development, naming its side', () => {
+		expect(describeIdea(START, 'g1f3')?.label).toBe('Develop kingside knight');
+		expect(describeIdea(START, 'b1c3')?.label).toBe('Develop queenside knight');
 	});
 
 	it('labels a rook landing on a file with no own pawns as open file', () => {

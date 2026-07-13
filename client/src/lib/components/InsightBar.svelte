@@ -109,18 +109,22 @@
 			{#if gameOver}
 				<span class="text-faint">—</span>
 			{:else if ideas.length > 0}
-				<div class="flex min-w-0 flex-nowrap gap-1.5">
+				<div class="flex min-w-0 flex-wrap gap-1.5">
 					{#each ideas as idea (idea.uci)}
 						<button
 							type="button"
-							class="min-w-0 whitespace-nowrap rounded-xs border border-line bg-paper px-1.5 py-0.5 text-xs hover:border-accent-line"
+							class="flex min-w-0 items-stretch overflow-hidden rounded-xs border border-line bg-paper text-xs hover:border-accent-line"
 							onmouseenter={() => onideahover?.(idea.uci)}
 							onmouseleave={() => onideahover?.(null)}
 							onfocus={() => onideahover?.(idea.uci)}
 							onblur={() => onideahover?.(null)}
 						>
-							<span class="font-mono font-semibold text-ink">{idea.san}</span>
-							<span class="text-muted">{idea.label}</span>
+							<span
+								class="whitespace-nowrap border-r border-line bg-card px-1.5 py-0.5 font-mono font-semibold text-ink"
+							>
+								{idea.san}
+							</span>
+							<span class="min-w-0 truncate px-1.5 py-0.5 text-muted">{idea.label}</span>
 						</button>
 					{/each}
 				</div>
