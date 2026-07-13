@@ -9,6 +9,7 @@
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import CplGraph from '$lib/components/CplGraph.svelte';
+	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 
 	let game = $state<GameDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -96,6 +97,7 @@
 				brush: 'green'
 			});
 		}
+		if (citedShape) result.push(citedShape);
 		return result;
 	});
 
@@ -147,8 +149,66 @@
 	});
 
 	function select(ply: number) {
-		if (game) selectedPly = Math.min(Math.max(1, ply), game.moves.length);
+		if (!game) return;
+		selectedPly = Math.min(Math.max(1, ply), game.moves.length);
+		citedShape = null;
 	}
+
+	// Move references in the LLM texts ("4. Bc4") become board links.
+	const summarySegments = $derived(game?.summary ? linkMoves(game.summary, game.moves) : []);
+	const explanationSegments = $derived(
+		game && selectedMove?.explanation
+			? linkWhy(
+					selectedMove.explanation,
+					selectedMove.fen_before,
+					selectedMove.fen_after,
+					game.moves
+				)
+			: []
+	);
+
+	// Clicking a cited move/square in the "Why" text previews it on the board
+	// as a blue arrow/circle; clicking again (or changing move) clears it.
+	let citedShape = $state<DrawShape | null>(null);
+
+	function citeWhy(action: WhyAction) {
+		if (action.type === 'ply') {
+			select(action.ply);
+			return;
+		}
+		const shape: DrawShape =
+			action.type === 'arrow'
+				? { orig: action.from as Key, dest: action.to as Key, brush: 'blue' }
+				: { orig: action.square as Key, brush: 'blue' };
+		citedShape = citedShape?.orig === shape.orig && citedShape?.dest === shape.dest ? null : shape;
+	}
+
+	// ← / → scrub through the game like the Prev/Next buttons.
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.metaKey || event.ctrlKey || event.altKey) return;
+		if (event.key === 'ArrowLeft') {
+			select(selectedPly - 1);
+			event.preventDefault();
+		} else if (event.key === 'ArrowRight') {
+			select(selectedPly + 1);
+			event.preventDefault();
+		}
+	}
+
+	// Keep the selected move visible in the move list. Manual scrollTop math
+	// on the list only — scrollIntoView would also scroll the page itself.
+	let moveListEl = $state<HTMLOListElement | null>(null);
+	$effect(() => {
+		const list = moveListEl;
+		if (!list) return;
+		const item = list.querySelector<HTMLElement>(`[data-ply="${selectedPly}"]`);
+		if (!item) return;
+		const top = item.offsetTop;
+		const bottom = top + item.offsetHeight;
+		if (top < list.scrollTop) list.scrollTop = top;
+		else if (bottom > list.scrollTop + list.clientHeight)
+			list.scrollTop = bottom - list.clientHeight;
+	});
 
 	// "Practice these misses" — this game's puzzles become due immediately.
 	let practiceQueued = $state<number | null>(null);
@@ -167,15 +227,39 @@
 	const sideNames = ['white', 'black'] as const;
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if error}
 	<p class="text-err">Failed to load game: {error}</p>
 {:else if !game}
 	<p class="text-muted">Loading game…</p>
 {:else}
-	<h1 class="mb-1 font-display text-2xl">Game #{game.id}</h1>
-	<p class="mb-4 text-sm text-muted">
-		{game.white} vs {game.black} · {game.result} · {game.mode}
-	</p>
+	<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+		<h1 class="font-display text-2xl">Game #{game.id}</h1>
+		<p class="text-sm text-muted">
+			{game.white} vs {game.black} · {game.result} · {game.mode}
+		</p>
+		{#if game.analysis_status === 'complete'}
+			<div class="flex flex-wrap items-center gap-3 sm:ml-auto">
+				{#if practiceQueued !== null}
+					<span class="text-sm text-ok" data-testid="practice-result">
+						{practiceQueued} puzzle{practiceQueued === 1 ? '' : 's'} queued —
+						<a class="underline" href={resolve('/puzzles')}>drill now</a>
+					</span>
+				{/if}
+				{#if practiceError}
+					<span class="text-sm break-all text-err">{practiceError}</span>
+				{/if}
+				<button
+					data-testid="practice-misses"
+					onclick={practice}
+					class="rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+				>
+					Practice these misses
+				</button>
+			</div>
+		{/if}
+	</div>
 
 	{#if analyzing}
 		<div
@@ -193,11 +277,16 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
-		<div class="max-w-xl">
-			<Board fen={boardFen} turnColor={boardTurn} viewOnly autoShapes={shapes} />
+	<div class="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] md:gap-x-10">
+		<div class="min-w-0">
+			<!-- Cap the board by viewport height so board + controls + why panel
+			     fit on screen without page scrolling (22rem ≈ the chrome above
+			     and below the board). -->
+			<div class="w-full" style="max-width: min(100%, clamp(20rem, 100dvh - 22rem, 36rem))">
+				<Board fen={boardFen} turnColor={boardTurn} viewOnly autoShapes={shapes} />
+			</div>
 
-			<div class="mt-2 flex items-center gap-2">
+			<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
 				<button
 					onclick={() => select(selectedPly - 1)}
 					disabled={selectedPly <= 1}
@@ -213,7 +302,7 @@
 					Next →
 				</button>
 				{#if selectedMove}
-					<span class="ml-2 text-sm text-body" data-testid="selected-move">
+					<span class="ml-1 text-sm text-body" data-testid="selected-move">
 						{Math.ceil(selectedMove.ply / 2)}{selectedMove.ply % 2 ? '.' : '…'}
 						<span class="font-semibold">{selectedMove.san}</span>
 						{#if selectedMove.classification}
@@ -221,16 +310,15 @@
 						{/if}
 					</span>
 				{/if}
-			</div>
-
-			{#if selectedMove?.best_move && bestDiffers}
-				<p class="mt-2 text-sm text-body" data-testid="best-move-hint">
-					You played <span class="font-mono font-semibold">{selectedMove.san}</span> — best was
-					<span class="font-mono font-semibold text-ok">
-						{uciToSan(selectedMove.fen_before, selectedMove.best_move)}
+				{#if selectedMove?.best_move && bestDiffers}
+					<span class="text-sm text-body" data-testid="best-move-hint">
+						— best was
+						<span class="font-mono font-semibold text-ok">
+							{uciToSan(selectedMove.fen_before, selectedMove.best_move)}
+						</span>
 					</span>
-				</p>
-			{/if}
+				{/if}
+			</div>
 
 			{#if selectedMove && selectedMove.motifs.length > 0}
 				<div class="mt-2 flex flex-wrap items-center gap-1.5" data-testid="motif-tags">
@@ -251,65 +339,48 @@
 					data-testid="why-panel"
 				>
 					<h2 class="mb-1 text-xs font-semibold tracking-wide text-warn uppercase">Why</h2>
-					<p>{selectedMove.explanation}</p>
+					<!-- One line (prettier-ignore) — template whitespace between
+					     segments would render as stray spaces in the prose. -->
+					<!-- prettier-ignore -->
+					<p>{#each explanationSegments as segment, i (i)}{@const action = segment.action}{#if action === null}{segment.text}{:else}<button onclick={() => citeWhy(action)} class="cursor-pointer font-semibold text-warn underline decoration-warn-line decoration-dotted underline-offset-2 hover:decoration-solid">{segment.text}</button>{/if}{/each}</p>
 				</div>
 			{/if}
 
-			<div class="mt-4">
-				<CplGraph moves={game.moves} {selectedPly} onselect={select} />
-			</div>
-
-			{#if summary}
-				<table class="mt-4 w-full max-w-md text-sm" data-testid="game-summary">
-					<thead>
-						<tr class="text-left text-muted">
-							<th class="py-1 font-normal"></th>
-							<th class="py-1 font-normal">avg CPL</th>
-							<th class="py-1 font-normal">Inaccuracies</th>
-							<th class="py-1 font-normal">Mistakes</th>
-							<th class="py-1 font-normal">Blunders</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sideNames as side (side)}
-							<tr class="border-t border-line">
-								<td class="py-1 font-semibold capitalize">{side} ({game[side]})</td>
-								<td class="py-1 font-mono">{summary[side].avgCpl.toFixed(0)}</td>
-								<td class="py-1">{summary[side].inaccuracy}</td>
-								<td class="py-1">{summary[side].mistake}</td>
-								<td class="py-1">{summary[side].blunder}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-
-			{#if game.analysis_status === 'complete'}
-				<div class="mt-4 flex flex-wrap items-center gap-3">
-					<button
-						data-testid="practice-misses"
-						onclick={practice}
-						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-					>
-						Practice these misses
-					</button>
-					{#if practiceQueued !== null}
-						<span class="text-sm text-ok" data-testid="practice-result">
-							{practiceQueued} puzzle{practiceQueued === 1 ? '' : 's'} queued —
-							<a class="underline" href={resolve('/puzzles')}>drill now</a>
-						</span>
-					{/if}
-					{#if practiceError}
-						<span class="text-sm break-all text-err">{practiceError}</span>
-					{/if}
-				</div>
+			{#if game.summary}
+				<section
+					class="mt-3 rounded-xs border border-accent-line bg-accent-soft p-3 text-sm text-body"
+					data-testid="coach-summary"
+				>
+					<h2 class="mb-1 text-xs font-semibold tracking-wide text-accent uppercase">
+						Coach’s takeaways
+					</h2>
+					<!-- Kept on one line (prettier-ignore) — any template whitespace
+					     between segments would render as stray spaces inside the
+					     whitespace-pre-line prose. -->
+					<!-- prettier-ignore -->
+					<p class="whitespace-pre-line">{#each summarySegments as segment, i (i)}{@const ply = segment.ply}{#if ply === null}{segment.text}{:else}<button onclick={() => select(ply)} class="cursor-pointer font-semibold text-accent underline decoration-accent-line decoration-dotted underline-offset-2 hover:decoration-solid">{segment.text}</button>{/if}{/each}</p>
+				</section>
 			{/if}
 		</div>
 
-		<aside>
-			<section class="rounded-xs border border-line bg-card p-3">
-				<h2 class="mb-2 text-sm font-semibold text-ink">Moves ({game.moves.length} plies)</h2>
-				<ol class="max-h-[28rem] overflow-y-auto text-sm" data-testid="move-list">
+		<!-- Everything that pairs with the board lives in one viewport-height
+		     sidebar; the move list is the only thing that scrolls. -->
+		<aside
+			class="flex min-w-0 flex-col gap-3 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:self-start"
+		>
+			<div class="shrink-0">
+				<CplGraph moves={game.moves} {selectedPly} onselect={select} />
+			</div>
+
+			<section class="flex min-h-0 flex-col rounded-xs border border-line bg-card p-3 md:flex-1">
+				<h2 class="mb-2 shrink-0 text-sm font-semibold text-ink">
+					Moves ({game.moves.length} plies)
+				</h2>
+				<ol
+					bind:this={moveListEl}
+					class="relative max-h-96 min-h-0 overflow-y-auto text-sm md:max-h-none md:flex-1"
+					data-testid="move-list"
+				>
 					{#each movePairs as pair (pair.number)}
 						<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
 							<span class="text-faint">{pair.number}.</span>
@@ -318,6 +389,7 @@
 									{#if move}
 										<button
 											onclick={() => select(move.ply)}
+											data-ply={move.ply}
 											class="flex w-full items-center gap-1.5 rounded-xs px-1 text-left hover:bg-paper {selectedPly ===
 											move.ply
 												? 'bg-warn-bg font-semibold'
@@ -344,6 +416,31 @@
 					{/each}
 				</ol>
 			</section>
+
+			{#if summary}
+				<table class="w-full shrink-0 text-xs" data-testid="game-summary">
+					<thead>
+						<tr class="text-left text-muted">
+							<th class="py-1 font-normal"></th>
+							<th class="py-1 font-normal" title="Average centipawn loss">avg CPL</th>
+							<th class="py-1 font-normal" title="Inaccuracies">Inacc</th>
+							<th class="py-1 font-normal" title="Mistakes">Mist</th>
+							<th class="py-1 font-normal" title="Blunders">Blund</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each sideNames as side (side)}
+							<tr class="border-t border-line">
+								<td class="py-1 font-semibold capitalize">{side} ({game[side]})</td>
+								<td class="py-1 font-mono">{summary[side].avgCpl.toFixed(0)}</td>
+								<td class="py-1">{summary[side].inaccuracy}</td>
+								<td class="py-1">{summary[side].mistake}</td>
+								<td class="py-1">{summary[side].blunder}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
 		</aside>
 	</div>
 {/if}

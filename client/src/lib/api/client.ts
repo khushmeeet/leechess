@@ -42,6 +42,8 @@ export interface MoveAccepted {
 export interface GameDetail extends GameSummary {
 	pgn: string;
 	moves: MoveRecord[];
+	/** Cached LLM coach takeaways — null until the analysis job writes them. */
+	summary: string | null;
 }
 
 export class ApiError extends Error {
