@@ -4,6 +4,13 @@
 	import { BOARD_THEMES, PIECE_SETS } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
+	import { themePrefs, type ThemeMode } from '$lib/stores/themePrefs.svelte';
+
+	const THEME_MODES: { mode: ThemeMode; label: string }[] = [
+		{ mode: 'light', label: 'Light' },
+		{ mode: 'dark', label: 'Dark' },
+		{ mode: 'system', label: 'Auto' }
+	];
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
@@ -48,7 +55,28 @@
 			class="absolute top-full right-0 z-20 mt-2 w-72 rounded-xs border border-line bg-card p-4 shadow-lg"
 			data-testid="settings-menu"
 		>
-			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Board</h2>
+			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Theme</h2>
+			<div
+				class="flex rounded-xs border border-line bg-paper text-sm"
+				role="group"
+				aria-label="Theme"
+			>
+				{#each THEME_MODES as { mode, label } (mode)}
+					<button
+						aria-pressed={themePrefs.mode === mode}
+						onclick={() => themePrefs.setMode(mode)}
+						class="flex-1 px-2 py-1 first:rounded-l-xs last:rounded-r-xs {themePrefs.mode === mode
+							? 'bg-ink font-semibold text-paper'
+							: 'text-muted hover:bg-accent-soft'}"
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+
+			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Board
+			</h2>
 			<div class="grid grid-cols-4 gap-2">
 				{#each BOARD_THEMES as theme (theme.name)}
 					<button

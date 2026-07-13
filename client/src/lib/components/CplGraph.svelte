@@ -58,14 +58,14 @@
 			y1={PAD}
 			x2={x(ply)}
 			y2={H - PAD}
-			stroke="#e0d6bf"
+			stroke="var(--color-line)"
 			stroke-width="1"
 			stroke-dasharray="4 4"
 		/>
 	{/each}
 
 	{#if points}
-		<polyline {points} fill="none" stroke="#4a4238" stroke-width="1.5" />
+		<polyline {points} fill="none" stroke="var(--color-body)" stroke-width="1.5" />
 	{/if}
 
 	<!-- selected ply marker -->
@@ -76,11 +76,11 @@
 			y1={PAD}
 			x2={x(selectedPly)}
 			y2={H - PAD}
-			stroke="#b5822e"
+			stroke="var(--color-highlight)"
 			stroke-width="1.5"
 		/>
 		{#if cp !== null}
-			<circle cx={x(selectedPly)} cy={y(cp)} r="3.5" fill="#b5822e" />
+			<circle cx={x(selectedPly)} cy={y(cp)} r="3.5" fill="var(--color-highlight)" />
 		{/if}
 	{/if}
 

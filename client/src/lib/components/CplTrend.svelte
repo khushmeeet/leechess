@@ -11,7 +11,7 @@
 	// Hues validated for CVD separation + contrast on the card surface
 	// (dataviz six-checks); "Overall" is ink, not a category color.
 	const series = [
-		{ key: 'avg_cpl', label: 'Overall', color: '#2a241c', width: 2.5 },
+		{ key: 'avg_cpl', label: 'Overall', color: 'var(--color-ink)', width: 2.5 },
 		{ key: 'opening_cpl', label: 'Opening', color: '#0369a1', width: 2 },
 		{ key: 'middlegame_cpl', label: 'Middlegame', color: '#b45309', width: 2 },
 		{ key: 'endgame_cpl', label: 'Endgame', color: '#6d28d9', width: 2 }
@@ -131,7 +131,7 @@
 					y1={y(value)}
 					x2={W - PAD.right}
 					y2={y(value)}
-					stroke="#eee5d0"
+					stroke="var(--color-line)"
 					stroke-width="1"
 				/>
 				<text x={PAD.left - 6} y={y(value) + 3} text-anchor="end" class="fill-faint" font-size="9"
@@ -145,7 +145,7 @@
 					y1={PAD.top}
 					x2={x(hovered)}
 					y2={H - PAD.bottom}
-					stroke="#b5822e"
+					stroke="var(--color-highlight)"
 					stroke-width="1.5"
 				/>
 			{/if}
@@ -153,7 +153,14 @@
 			{#each activeSeries as s (s.key)}
 				<path d={path(s.key)} fill="none" stroke={s.color} stroke-width={s.width} />
 				{#each lonePoints(s.key) as { value, i } (i)}
-					<circle cx={x(i)} cy={y(value!)} r="3" fill={s.color} stroke="#fdfaf1" stroke-width="2" />
+					<circle
+						cx={x(i)}
+						cy={y(value!)}
+						r="3"
+						fill={s.color}
+						stroke="var(--color-card)"
+						stroke-width="2"
+					/>
 				{/each}
 			{/each}
 
@@ -163,8 +170,8 @@
 					cx={x(i)}
 					cy={y(point.avg_cpl)}
 					r={hovered === i ? 4.5 : 3}
-					fill="#2a241c"
-					stroke="#fdfaf1"
+					fill="var(--color-ink)"
+					stroke="var(--color-card)"
 					stroke-width="2"
 				/>
 			{/each}

@@ -50,4 +50,55 @@
 	--color-err: #a83a2c;
 	--color-err-bg: #f9e9e2;
 	--color-err-line: #dcb5a8;
+
+	/* Chart accent (CplTrend/CplGraph hover & selection marks) — not part of
+	 * the status palette above, kept as its own token so it can shift in
+	 * dark mode without dragging the "inaccuracy" hue along with it. */
+	--color-highlight: #b5822e;
+}
+
+:root {
+	color-scheme: light;
+}
+
+/* Dark mode: same identity, inked on a dark desk instead of aged paper.
+ * Overrides every --color-* custom property from @theme above; every
+ * component reads colors through Tailwind's bg-paper/text-ink/etc utilities
+ * (which compile to var(--color-*)), so this is the only place dark mode
+ * needs to be defined. Toggled by adding .dark to <html> — see
+ * $lib/stores/themePrefs.svelte.ts and the anti-flash script in app.html. */
+:root.dark {
+	--color-paper: #1b1815;
+	--color-card: #242019;
+	--color-ink: #ede4d3;
+	--color-body: #c7bba3;
+	--color-muted: #8f836c;
+	--color-faint: #5f5647;
+	--color-line: #3a3327;
+	--color-accent: #c1654f;
+	--color-accent-line: #6b4137;
+	--color-accent-soft: #2e211c;
+
+	--color-ok: #7fbf95;
+	--color-ok-bg: #1e2b21;
+	--color-ok-line: #3a4f3d;
+	--color-info: #86a8c9;
+	--color-info-bg: #1c2733;
+	--color-info-line: #34495e;
+	--color-warn: #d1a75c;
+	--color-warn-bg: #302710;
+	--color-warn-line: #5c4a22;
+	--color-mist: #dd935c;
+	--color-mist-bg: #331f10;
+	--color-mist-line: #5c3c1f;
+	--color-err: #e2836f;
+	--color-err-bg: #331813;
+	--color-err-line: #5c2f26;
+
+	--color-highlight: #d9a54f;
+
+	/* Native form controls (checkboxes, selects, scrollbars) pick a light or
+	 * dark rendering from the browser itself; without this they stay light
+	 * even once .dark repaints everything around them. */
+	color-scheme: dark;
 }
