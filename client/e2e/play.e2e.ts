@@ -76,6 +76,69 @@ test('abandoning a game discards it instead of saving it for review', async ({ p
 	await expect.poll(async () => (await request.get(`${API}/games/${gameId}`)).status()).toBe(404);
 });
 
+test('game survives a refresh and stays in sync with the server', async ({ page, request }) => {
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await move(page, 'e2', 'e4');
+	// anchor on the rendered move first: '(white to move)' alone can pass on
+	// stale text from before the move's render flush
+	await expect(page.getByTestId('move-list')).toContainText('e4');
+	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
+	const syncing = page.getByText(/syncing to server as game #\d+/);
+	await expect(syncing).toBeVisible();
+	const gameId = (await syncing.textContent())!.match(/#(\d+)/)![1];
+
+	await page.reload();
+	// restored: the move pair is back (board + list + badge), the strength is
+	// still locked, and it is the same server game — not a new record
+	await expect(page.getByTestId('move-list')).toContainText('e4');
+	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
+	await expect(page.getByTestId('move-badge')).toBeVisible();
+	await expect(page.locator('#strength')).toBeDisabled();
+	await expect(page.getByText(`syncing to server as game #${gameId}`)).toBeVisible();
+	await waitForEngineReady(page);
+
+	// the game continues where it left off; after it ends, the server record
+	// holds every move from before and after the refresh
+	await move(page, 'g1', 'f3');
+	await expect(page.getByTestId('move-list')).toContainText('Nf3');
+	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
+	await page.getByRole('button', { name: 'Resign' }).click();
+	await expect(page.getByText(/Saved as game #\d+/)).toBeVisible();
+
+	const response = await request.get(`${API}/games/${gameId}`);
+	expect(response.ok()).toBe(true);
+	const game = await response.json();
+	expect(game.result).toBe('0-1');
+	expect(game.moves).toHaveLength(4);
+	expect(game.moves.at(0).san).toBe('e4');
+	expect(game.moves.at(2).san).toBe('Nf3');
+});
+
+test('resigning or starting a new game ends persistence', async ({ page }) => {
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await move(page, 'e2', 'e4');
+	await expect(page.getByTestId('move-list')).toContainText('e4');
+	await page.getByRole('button', { name: 'Resign' }).click();
+	await expect(page.getByText('Game over: 0-1')).toBeVisible();
+
+	// a resigned game does not come back after a refresh
+	await page.reload();
+	await expect(page.getByText('No moves yet.')).toBeVisible();
+	await waitForEngineReady(page);
+
+	// neither does one abandoned via New game
+	await move(page, 'e2', 'e4');
+	await expect(page.getByTestId('move-list')).toContainText('e4');
+	await page.getByRole('button', { name: 'New game' }).click();
+	await expect(page.getByText('No moves yet.')).toBeVisible();
+	await page.reload();
+	await expect(page.getByText('No moves yet.')).toBeVisible();
+});
+
 test('engine replies and the game stays in sync', async ({ page }) => {
 	await page.goto('/');
 	await waitForEngineReady(page);

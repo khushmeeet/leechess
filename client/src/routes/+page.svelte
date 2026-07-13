@@ -16,16 +16,12 @@
 	const game = session.game;
 
 	onMount(() => {
+		// leaving mid-game keeps it: the game is persisted locally and restored
+		// on the next visit (PlaySession constructor), until resigned or
+		// replaced by a new game; suspend stops this session's late async work
+		// from clobbering the one the next visit creates
 		session.start().catch((error) => console.error('engine warmup failed:', error));
-		// leaving mid-game abandons it: the server record is discarded, never
-		// kept for review (pagehide covers tab close/refresh, the cleanup
-		// return covers in-app navigation)
-		const discard = () => session.discardUnfinished();
-		window.addEventListener('pagehide', discard);
-		return () => {
-			window.removeEventListener('pagehide', discard);
-			discard();
-		};
+		return () => session.suspend();
 	});
 
 	// candidate lines are only trusted for the position they were computed on —

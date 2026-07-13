@@ -1,7 +1,8 @@
-import { completeGame, discardGame, postMove, startGame } from '$lib/api/client';
+import { ApiError, completeGame, discardGame, getGame, postMove, startGame } from '$lib/api/client';
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
 import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
 import { GameStore, type PlayedMove } from './game.svelte';
+import { clearActiveGame, loadActiveGame, saveActiveGame } from './gamePersistence';
 import { stockfish, type EngineEval, type EngineLine } from './stockfish';
 import type { Key } from 'chessground/types';
 
@@ -35,7 +36,11 @@ function normalizeEval(result: EngineEval): number {
  * classification, and fire-and-forget sync to the server. Engine searches
  * and eval bookkeeping are serialized through `chain` (one WASM engine, and
  * each move's eval is the next move's baseline); server calls go through the
- * separate `sync` chain so a slow network never delays the engine. */
+ * separate `sync` chain so a slow network never delays the engine.
+ *
+ * The active game is persisted to localStorage after every state change, so
+ * a refresh or in-app navigation restores it (constructor). Resigning or
+ * starting a new game ends persistence. */
 export class PlaySession {
 	game = new GameStore();
 
@@ -78,13 +83,41 @@ export class PlaySession {
 	private chain: Promise<void> = Promise.resolve();
 	private sync: Promise<void> = Promise.resolve();
 	private generation = 0;
+	/** False after a resignation: the finished game must not be re-saved by
+	 * late eval/sync work. New game turns persistence back on. */
+	private persistable = true;
+	/** Set on unmount: kills queued and future jobs (generation only covers
+	 * jobs whose capture happened before the suspend). */
+	private suspended = false;
+
+	constructor() {
+		const saved = loadActiveGame();
+		if (!saved) return;
+		if (!this.game.loadMoves(saved.moves)) {
+			clearActiveGame(); // storage didn't replay to a legal game — start fresh
+			return;
+		}
+		this.engineSkill = saved.engineSkill;
+		this.evals = saved.evals;
+		this.badges = saved.badges;
+		this.lastFeedback = saved.lastFeedback;
+		this.currentEval = saved.currentEval;
+		// currentEval is the eval after the last evaluated ply — the right
+		// baseline until start() re-evaluates the position at full depth
+		this.baselineEval = saved.currentEval ?? 0;
+		this.serverGameId = saved.serverGameId;
+		this.completedGameId = saved.completedGameId;
+		// queue the server resync before any user input can queue a postMove,
+		// so replayed moves and new moves can never arrive out of order
+		this.resyncServer(saved.moves);
+	}
 
 	/** Queue a job behind all prior engine/eval work; stale jobs from a
 	 * previous game (before a reset) are dropped via the generation guard. */
 	private inChain(job: () => Promise<void>): void {
 		const generation = this.generation;
 		this.chain = this.chain
-			.then(() => (generation === this.generation ? job() : undefined))
+			.then(() => (generation === this.generation && !this.suspended ? job() : undefined))
 			.catch((error) => console.error('engine chain:', error));
 	}
 
@@ -92,7 +125,7 @@ export class PlaySession {
 		const generation = this.generation;
 		this.sync = this.sync
 			.then(() => {
-				if (generation !== this.generation || this.serverError) return;
+				if (generation !== this.generation || this.suspended || this.serverError) return;
 				return job();
 			})
 			.catch((error) => {
@@ -104,7 +137,69 @@ export class PlaySession {
 			});
 	}
 
-	/** Warm the engine and establish the starting-position baseline. */
+	private save(): void {
+		if (!this.persistable || !this.started) return;
+		saveActiveGame({
+			engineSkill: this.engineSkill,
+			moves: this.game.moves.map((move) => move.uci),
+			evals: [...this.evals],
+			badges: [...this.badges],
+			lastFeedback: this.lastFeedback,
+			currentEval: this.currentEval,
+			serverGameId: this.serverGameId,
+			completedGameId: this.completedGameId
+		});
+	}
+
+	/** After a restore, bring the server record back in step with the local
+	 * game: moves posted right before the refresh may never have landed, the
+	 * record may never have been created, or a finished game may never have
+	 * been completed. `moves` is the restored list — moves played afterwards
+	 * queue their own postMove jobs behind this one, so nothing double-posts. */
+	private resyncServer(moves: string[]): void {
+		if (this.completedGameId !== null) return;
+		const generation = this.generation;
+		this.inSync(async () => {
+			let synced = 0;
+			if (this.serverGameId !== null) {
+				try {
+					synced = (await getGame(this.serverGameId)).moves.length;
+				} catch (error) {
+					if (!(error instanceof ApiError && error.status === 404)) throw error;
+					this.serverGameId = null; // record is gone — recreate it below
+				}
+				if (generation !== this.generation) return;
+			}
+			if (this.serverGameId === null) {
+				const id = (await startGame('engine')).id;
+				if (generation !== this.generation) {
+					discardGame(id).catch(() => {});
+					return;
+				}
+				this.serverGameId = id;
+				synced = 0;
+			}
+			for (const uci of moves.slice(synced)) {
+				await postMove(this.serverGameId, uci);
+			}
+			if (generation !== this.generation) return;
+			this.save();
+			if (this.game.isGameOver && this.completedGameId === null) {
+				try {
+					await completeGame(this.serverGameId, this.game.result);
+				} catch (error) {
+					// 409: completed right before the refresh — same review id
+					if (!(error instanceof ApiError && error.status === 409)) throw error;
+				}
+				if (generation !== this.generation) return;
+				this.completedGameId = this.serverGameId;
+				this.save();
+			}
+		});
+	}
+
+	/** Warm the engine and establish the baseline eval — the starting position
+	 * for a fresh session, the current position for a restored one. */
 	async start(): Promise<void> {
 		// opening book loads in parallel — never blocks the engine or the board
 		loadOpenings().then((ok) => {
@@ -116,11 +211,39 @@ export class PlaySession {
 			}
 		});
 		await stockfish.warmup();
+		if (this.suspended) return; // page left during warmup — session is dead
+		if (this.started) {
+			await this.rebaselineRestored();
+			if (this.suspended) return;
+		}
+		if (this.started) {
+			// still the restored game (no "New game" raced in during the eval)
+			this.engineReady = true;
+			if (!this.game.isGameOver && this.game.turnColor !== this.playerColor) {
+				// the refresh landed after the user's move but before the reply
+				this.engineReply();
+			}
+			return;
+		}
 		this.initialEval = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH, IDEAS_MULTIPV);
 		this.baselineEval = normalizeEval(this.initialEval);
 		this.pendingBestMove = this.initialEval.bestMove;
 		this.seedFromInitial();
 		this.engineReady = true;
+	}
+
+	/** Restored session: evaluate the position where the game left off. The
+	 * fen guard drops the result if a move raced in during the search. */
+	private async rebaselineRestored(): Promise<void> {
+		if (this.game.isGameOver) return;
+		const fen = this.game.fen;
+		const userToMove = this.game.turnColor === this.playerColor;
+		const result = await stockfish.evaluate(fen, LIVE_EVAL_DEPTH, userToMove ? IDEAS_MULTIPV : 1);
+		if (this.game.fen !== fen) return;
+		this.baselineEval = normalizeEval(result);
+		this.pendingBestMove = result.bestMove;
+		this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
+		if (userToMove) this.ideas = { fen, lines: result.lines };
 	}
 
 	private seedFromInitial(): void {
@@ -143,6 +266,7 @@ export class PlaySession {
 
 	private afterMove(played: PlayedMove, byEngine: boolean): void {
 		this.refreshOpening();
+		this.save();
 
 		const generation = this.generation;
 		this.inSync(async () => {
@@ -155,6 +279,7 @@ export class PlaySession {
 					return;
 				}
 				this.serverGameId = id;
+				this.save();
 			}
 			await postMove(this.serverGameId, played.uci);
 		});
@@ -209,6 +334,7 @@ export class PlaySession {
 			this.badges[played.ply - 1] = classification;
 			this.lastFeedback = { ply: played.ply, san: played.san, classification };
 		}
+		this.save();
 	}
 
 	/** Track the deepest book line reached along the game so far. */
@@ -227,9 +353,13 @@ export class PlaySession {
 
 	private engineReply(): void {
 		this.engineThinking = true;
+		const generation = this.generation;
 		this.inChain(async () => {
 			try {
 				const reply = await stockfish.play(this.game.fen, this.engineSkill);
+				// the session may have been reset or suspended mid-search — the
+				// reply must not apply (and then sync) under the new generation
+				if (generation !== this.generation) return;
 				const played = this.game.applyUci(reply.bestMove);
 				if (played) this.afterMove(played, true);
 			} finally {
@@ -243,9 +373,11 @@ export class PlaySession {
 	private finish(): void {
 		const result = this.game.result;
 		this.inSync(async () => {
-			if (this.serverGameId === null) return;
+			// completedGameId set: a restore resync already completed the game
+			if (this.serverGameId === null || this.completedGameId !== null) return;
 			await completeGame(this.serverGameId, result);
 			this.completedGameId = this.serverGameId;
+			this.save();
 		});
 	}
 
@@ -253,6 +385,18 @@ export class PlaySession {
 		if (!this.started || this.game.isGameOver) return;
 		this.game.resign(this.playerColor);
 		this.finish();
+		// resignation ends persistence — a refresh now starts a fresh board
+		clearActiveGame();
+		this.persistable = false;
+	}
+
+	/** Called when the play screen unmounts. In-flight engine/network work may
+	 * outlive the page, but a suspended session must never touch storage or
+	 * the server again — the next mount's session owns them from here. */
+	suspend(): void {
+		this.suspended = true;
+		this.generation += 1;
+		this.persistable = false;
 	}
 
 	/** An unfinished game is never kept for review — delete its server
@@ -280,10 +424,24 @@ export class PlaySession {
 		this.opening = null;
 		this.insightEval = null;
 		this.ideas = null;
+		clearActiveGame();
+		this.persistable = true;
 		if (this.initialEval) {
 			this.baselineEval = normalizeEval(this.initialEval);
 			this.pendingBestMove = this.initialEval.bestMove;
 			this.seedFromInitial();
+		} else if (this.engineReady) {
+			// restored session: the start-position eval was never computed —
+			// queued ahead of any move evals, so the first badge's baseline is
+			// right even if the user moves immediately
+			this.inChain(async () => {
+				this.initialEval = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH, IDEAS_MULTIPV);
+				this.baselineEval = normalizeEval(this.initialEval);
+				this.pendingBestMove = this.initialEval.bestMove;
+				if (this.game.moves.length === 0) this.seedFromInitial();
+			});
 		}
+		// engine not ready: start() is still warming up and will now take the
+		// fresh-session path, seeding the start position itself
 	}
 }

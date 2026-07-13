@@ -77,10 +77,14 @@ export function postMove(gameId: number, uci: string): Promise<MoveAccepted> {
 	return request(`/games/${gameId}/moves`, { method: 'POST', body: JSON.stringify({ uci }) });
 }
 
+/** keepalive: completion often races page exit (resign, then close the tab) —
+ * a resigned game is no longer persisted, so an aborted request would leave
+ * an orphaned unfinished record with no resync to recover it. */
 export function completeGame(gameId: number, result: string): Promise<GameSummary> {
 	return request(`/games/${gameId}/complete`, {
 		method: 'POST',
-		body: JSON.stringify({ result })
+		body: JSON.stringify({ result }),
+		keepalive: true
 	});
 }
 

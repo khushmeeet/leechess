@@ -73,6 +73,20 @@ export class GameStore {
 		return this.tryMove(uci.slice(0, 2) as Key, uci.slice(2, 4) as Key, uci[4] ?? 'q');
 	}
 
+	/** Rebuild the game from a persisted UCI move list by replaying it —
+	 * SAN, FENs, and game-over state are re-derived, so the replay doubles as
+	 * validation. Returns false (and resets) if any move is illegal. */
+	loadMoves(ucis: string[]): boolean {
+		this.reset();
+		for (const uci of ucis) {
+			if (!this.applyUci(uci)) {
+				this.reset();
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** End the game by resignation of `color`. */
 	resign(color: 'white' | 'black'): void {
 		if (this.isGameOver) return;
