@@ -25,6 +25,9 @@ class Game(Base):
     moves: Mapped[list["Move"]] = relationship(
         back_populates="game", cascade="all, delete-orphan", order_by="Move.ply"
     )
+    summary: Mapped["CoachSummary | None"] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
 
 
 class Move(Base):
@@ -87,6 +90,24 @@ class Explanation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     move: Mapped[Move] = relationship(back_populates="explanation")
+
+
+class CoachSummary(Base):
+    """Cached LLM coach takeaways for one analyzed game — the game-level
+    companion to Explanation, same cost-control pattern: generated once by
+    the analysis job, never regenerated. One row per game."""
+
+    __tablename__ = "coach_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id"), index=True, unique=True
+    )
+    text: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    game: Mapped[Game] = relationship(back_populates="summary")
 
 
 class Puzzle(Base):

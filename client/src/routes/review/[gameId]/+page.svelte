@@ -193,6 +193,18 @@
 		</div>
 	{/if}
 
+	{#if game.summary}
+		<section
+			class="mb-4 max-w-xl rounded-xs border border-accent-line bg-accent-soft p-3 text-sm text-body"
+			data-testid="coach-summary"
+		>
+			<h2 class="mb-1 text-xs font-semibold tracking-wide text-accent uppercase">
+				Coach’s takeaways
+			</h2>
+			<p class="whitespace-pre-line">{game.summary}</p>
+		</section>
+	{/if}
+
 	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
 		<div class="max-w-xl">
 			<Board fen={boardFen} turnColor={boardTurn} viewOnly autoShapes={shapes} />

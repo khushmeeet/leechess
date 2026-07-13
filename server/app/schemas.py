@@ -92,6 +92,14 @@ class MoveAccepted(BaseModel):
 class GameDetail(GameOut):
     pgn: str
     moves: list[MoveOut]
+    # Cached LLM coach takeaways — None until the analysis job writes them.
+    summary: str | None
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def summary_text(cls, value: object) -> object:
+        """The ORM hands over the CoachSummary row; the API serves its text."""
+        return getattr(value, "text", value)
 
 
 class PuzzleOut(BaseModel):
