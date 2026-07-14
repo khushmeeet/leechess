@@ -61,11 +61,11 @@
 	);
 
 	const strengthPresets = [
-		{ skill: 1, label: 'Beginner' },
-		{ skill: 3, label: 'Casual' },
-		{ skill: 5, label: 'Club' },
-		{ skill: 10, label: 'Strong' },
-		{ skill: 20, label: 'Max' }
+		{ skill: 1, label: 'Beginner', elo: '1470' },
+		{ skill: 3, label: 'Casual', elo: '1740' },
+		{ skill: 5, label: 'Club', elo: '2200' },
+		{ skill: 10, label: 'Strong', elo: '2790' },
+		{ skill: 20, label: 'Max', elo: '3200+' }
 	];
 
 	type ResultOutcome = 'win' | 'loss' | 'draw';
@@ -214,7 +214,7 @@
 						class="rounded-xs border border-line bg-card px-2 py-1 disabled:opacity-50"
 					>
 						{#each strengthPresets as preset (preset.skill)}
-							<option value={preset.skill}>{preset.label} (skill {preset.skill})</option>
+							<option value={preset.skill}>{preset.label} (≈{preset.elo} Elo)</option>
 						{/each}
 					</select>
 				</div>
