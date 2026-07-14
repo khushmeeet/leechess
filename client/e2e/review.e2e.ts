@@ -100,3 +100,21 @@ test('review shows analyzing state while the job is pending', async ({ page, req
 	await expect(page.getByTestId('analysis-status')).toBeVisible();
 	await expect(page.getByTestId('move-list')).toContainText('e4');
 });
+
+test('board shows each color’s eliminated pieces on its side', async ({ page, request }) => {
+	const created = await request.post(`${API}/games`, { data: { mode: 'local' } });
+	const gameId = (await created.json()).id;
+	for (const san of ['e4', 'd5', 'exd5', 'Qxd5', 'Nc3']) {
+		const response = await request.post(`${API}/games/${gameId}/moves`, { data: { san } });
+		expect(response.ok()).toBe(true);
+	}
+
+	await page.goto(`/review/${gameId}`);
+	await page.getByTestId('move-list').getByRole('button', { name: 'Nc3' }).click();
+
+	const rows = page.locator('[data-testid^="eliminated-"]');
+	await expect(rows.first()).toHaveAttribute('data-testid', 'eliminated-black');
+	await expect(rows.last()).toHaveAttribute('data-testid', 'eliminated-white');
+	await expect(page.getByTestId('eliminated-black').locator('piece.pawn.black')).toHaveCount(1);
+	await expect(page.getByTestId('eliminated-white').locator('piece.pawn.white')).toHaveCount(1);
+});
