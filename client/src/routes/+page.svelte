@@ -4,6 +4,7 @@
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
 	import InsightBar from '$lib/components/InsightBar.svelte';
+	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
@@ -67,6 +68,58 @@
 		{ skill: 20, label: 'Max' }
 	];
 
+	type ResultOutcome = 'win' | 'loss' | 'draw';
+
+	const resultOutcome = $derived.by((): ResultOutcome | null => {
+		if (!game.isGameOver) return null;
+		if (game.result === '1/2-1/2') return 'draw';
+		const winner = game.result === '1-0' ? 'white' : game.result === '0-1' ? 'black' : null;
+		if (!winner) return 'draw';
+		return winner === session.playerColor ? 'win' : 'loss';
+	});
+
+	const resultContent = $derived.by(() => {
+		if (resultOutcome === 'win') {
+			return {
+				title: 'You won!',
+				message: 'A brilliant finish. The board is yours.'
+			};
+		}
+		if (resultOutcome === 'loss') {
+			return {
+				title: 'You lost',
+				message: 'A tough game. Review it, learn, and come back stronger.'
+			};
+		}
+		return {
+			title: 'A hard-fought draw',
+			message: 'Evenly matched. The review may reveal where the balance could have tipped.'
+		};
+	});
+
+	const confetti = Array.from({ length: 28 }, (_, index) => {
+		const angle = (index / 28) * Math.PI * 2;
+		const radius = 150 + (index % 5) * 24;
+		return {
+			burstX: Math.cos(angle) * radius,
+			burstY: Math.sin(angle) * radius * 0.72 - 55,
+			landX: Math.cos(angle) * (160 + (index % 4) * 30),
+			delay: (index % 4) * 40,
+			duration: 1450 + (index % 5) * 100,
+			midSpin: 130 + (index % 4) * 55,
+			spin: 430 + (index % 4) * 180,
+			width: 5 + (index % 3) * 2,
+			height: 9 + (index % 2) * 4,
+			color: [
+				'var(--color-highlight)',
+				'var(--color-accent)',
+				'var(--color-ok)',
+				'var(--color-card)',
+				'var(--color-muted)'
+			][index % 5]
+		};
+	});
+
 	const movableColor = $derived(game.isGameOver ? undefined : session.playerColor);
 	let moveListElement = $state<HTMLOListElement | null>(null);
 
@@ -102,7 +155,7 @@
 					<EvalBar cp={session.currentEval} />
 				</div>
 			{/if}
-			<div class="min-w-0 flex-1">
+			<div class="relative min-w-0 flex-1">
 				<Board
 					fen={game.fen}
 					turnColor={game.turnColor}
@@ -112,6 +165,41 @@
 					autoShapes={boardShapes}
 					onmove={(orig, dest) => session.handleBoardMove(orig, dest)}
 				/>
+
+				{#if resultOutcome}
+					<div
+						class="result-overlay {resultOutcome}"
+						data-testid="game-result-overlay"
+						data-outcome={resultOutcome}
+						role="status"
+						aria-live="assertive"
+						aria-atomic="true"
+					>
+						{#if resultOutcome === 'win'}
+							<div class="confetti" data-testid="game-result-confetti" aria-hidden="true">
+								{#each confetti as piece, index (index)}
+									<i
+										class:round={index % 4 === 0}
+										style={`--burst-x: ${piece.burstX.toFixed(1)}px; --burst-y: ${piece.burstY.toFixed(1)}px; --land-x: ${piece.landX.toFixed(1)}px; --delay: ${piece.delay}ms; --duration: ${piece.duration}ms; --mid-spin: ${piece.midSpin}deg; --spin: ${piece.spin}deg; --piece-width: ${piece.width}px; --piece-height: ${piece.height}px; --piece-color: ${piece.color}`}
+									></i>
+								{/each}
+							</div>
+						{/if}
+
+						<div class="result-banner rounded-xs border border-line bg-card p-3 text-sm">
+							<img src={logo} alt="leechess" class="result-logo" data-testid="game-result-logo" />
+							<div class="result-copy">
+								<p class="text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
+									Final score · {game.result === '1/2-1/2' ? '½–½' : game.result.replace('-', '–')}
+								</p>
+								<h2 class="mt-0.5 font-display text-2xl leading-tight text-ink">
+									{resultContent.title}
+								</h2>
+								<p class="mt-1 text-sm text-muted">{resultContent.message}</p>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -241,3 +329,116 @@
 		</aside>
 	</div>
 </div>
+
+<style>
+	.result-overlay {
+		position: absolute;
+		inset: 1.75rem 0;
+		z-index: 10;
+		display: grid;
+		place-items: center;
+		overflow: hidden;
+		padding: 1rem;
+		background: rgb(25 21 16 / 62%);
+		isolation: isolate;
+		pointer-events: none;
+		animation: overlay-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+	}
+
+	.result-banner {
+		position: relative;
+		z-index: 2;
+		display: flex;
+		width: min(88%, 22rem);
+		align-items: center;
+		gap: 0.75rem;
+		animation: banner-in 280ms 50ms cubic-bezier(0.2, 0, 0, 1) both;
+	}
+
+	.result-logo {
+		width: 2.5rem;
+		height: 2.5rem;
+		flex: none;
+	}
+
+	.result-copy {
+		min-width: 0;
+		text-wrap: pretty;
+	}
+
+	.confetti {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		overflow: hidden;
+	}
+
+	.confetti i {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		display: block;
+		width: var(--piece-width);
+		height: var(--piece-height);
+		border-radius: 1px;
+		background: var(--piece-color);
+		box-shadow: 0 1px 1px rgb(0 0 0 / 15%);
+		will-change: transform, opacity;
+		animation: confetti-burst var(--duration) var(--delay) cubic-bezier(0.16, 0.72, 0.3, 1) both;
+	}
+
+	.confetti i.round {
+		border-radius: 999px;
+	}
+
+	@keyframes overlay-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes banner-in {
+		from {
+			opacity: 0;
+			transform: translateY(0.4rem);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes confetti-burst {
+		0% {
+			opacity: 0;
+			transform: translate3d(-50%, -50%, 0) rotate(0) scale(0.35);
+		}
+		10% {
+			opacity: 1;
+		}
+		45% {
+			opacity: 1;
+			transform: translate3d(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y)), 0)
+				rotate(var(--mid-spin)) scale(1);
+		}
+		100% {
+			opacity: 0;
+			transform: translate3d(calc(-50% + var(--land-x)), 22rem, 0) rotate(var(--spin)) scale(0.85);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.result-overlay,
+		.result-banner {
+			animation: none;
+		}
+
+		.confetti i {
+			display: none;
+			animation: none;
+		}
+	}
+</style>

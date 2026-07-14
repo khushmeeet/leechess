@@ -47,6 +47,10 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	await expect(page.getByTestId('move-list')).toContainText('e4');
 	await page.getByRole('button', { name: 'Resign' }).click();
 	await expect(page.getByText('Game over: 0-1')).toBeVisible();
+	const resultOverlay = page.getByTestId('game-result-overlay');
+	await expect(resultOverlay).toHaveAttribute('data-outcome', 'loss');
+	await expect(resultOverlay).toContainText('You lost');
+	await expect(page.getByTestId('game-result-confetti')).toHaveCount(0);
 
 	// completion is automatic — no save button, no user action
 	const saved = page.getByText(/Saved as game #\d+, analysis queued/);
@@ -61,6 +65,39 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	expect(['analyzing', 'complete']).toContain(game.analysis_status);
 	expect(game.moves).toHaveLength(1);
 	expect(game.moves.at(0).san).toBe('e4');
+});
+
+test('winning shows a congratulatory overlay with confetti', async ({ page }) => {
+	// Restore a naturally completed Scholar's Mate. Replaying these UCI moves
+	// through GameStore derives the terminal result exactly as live play does;
+	// the completed id prevents this UI-only fixture from creating server data.
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'leechess.activeGame',
+			JSON.stringify({
+				version: 1,
+				engineSkill: 5,
+				moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6', 'h5f7'],
+				evals: [],
+				badges: [],
+				lastFeedback: null,
+				currentEval: null,
+				serverGameId: null,
+				completedGameId: 999
+			})
+		);
+	});
+
+	await page.goto('/');
+	const resultOverlay = page.getByTestId('game-result-overlay');
+	await expect(resultOverlay).toHaveAttribute('data-outcome', 'win');
+	await expect(resultOverlay).toContainText('You won!');
+	await expect(resultOverlay).toContainText('Final score · 1–0');
+	await expect(page.getByTestId('game-result-logo')).toBeVisible();
+	await expect(page.getByTestId('game-result-confetti')).toHaveCount(1);
+
+	await page.getByRole('button', { name: 'New game' }).click();
+	await expect(resultOverlay).toHaveCount(0);
 });
 
 test('abandoning a game discards it instead of saving it for review', async ({ page, request }) => {
