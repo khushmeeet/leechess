@@ -3,6 +3,7 @@ import type { Key } from 'chessground/types';
 import { SvelteMap } from 'svelte/reactivity';
 import { ApiError, getNextPuzzle, recordAttempt, type PuzzleRecord } from '$lib/api/client';
 import { computeDests } from './game.svelte';
+import { soundPrefs } from './soundPrefs.svelte';
 
 export type PuzzleStatus = 'loading' | 'empty' | 'solving' | 'solved' | 'error';
 
@@ -147,8 +148,9 @@ export class PuzzleSession {
 		this.hintLevel = 5;
 	}
 
-	private push(uci: string): void {
+	private push(uci: string, byOpponent = false): void {
 		const move = this.chess.move(uciParts(uci));
+		soundPrefs.move(move.san, byOpponent);
 		this.fen = this.chess.fen();
 		this.dests = computeDests(this.chess);
 		this.lastMove = [move.from as Key, move.to as Key];
@@ -164,7 +166,7 @@ export class PuzzleSession {
 		// opponent's scripted reply, after a beat so the exchange reads
 		this.replyTimer = setTimeout(() => {
 			if (this.status !== 'solving') return;
-			this.push(solution[this.solutionIndex]);
+			this.push(solution[this.solutionIndex], true);
 			if (this.solutionIndex >= solution.length) this.finishSolved();
 		}, REPLY_DELAY_MS);
 	}
@@ -182,6 +184,7 @@ export class PuzzleSession {
 	}
 
 	private failTry(orig: Key, dest: Key): void {
+		soundPrefs.play('illegal');
 		this.wrong = true;
 		this.lastMove = [orig, dest];
 		this.boardSyncKey += 1; // snap the wrongly-moved piece back

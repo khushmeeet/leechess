@@ -4,7 +4,9 @@
 	import { BOARD_THEMES, PIECE_SETS } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
+	import { soundPrefs } from '$lib/stores/soundPrefs.svelte';
 	import { themePrefs, type ThemeMode } from '$lib/stores/themePrefs.svelte';
+	import { usernamePrefs } from '$lib/stores/username.svelte';
 
 	const THEME_MODES: { mode: ThemeMode; label: string }[] = [
 		{ mode: 'light', label: 'Light' },
@@ -27,7 +29,7 @@
 
 <div class="relative" bind:this={root}>
 	<button
-		aria-label="Board settings"
+		aria-label="Settings"
 		aria-expanded={open}
 		data-testid="settings-button"
 		onclick={() => (open = !open)}
@@ -55,7 +57,20 @@
 			class="absolute top-full right-0 z-20 mt-2 w-72 rounded-xs border border-line bg-card p-4 shadow-lg"
 			data-testid="settings-menu"
 		>
-			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Theme</h2>
+			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Player</h2>
+			<input
+				type="text"
+				value={usernamePrefs.name ?? ''}
+				placeholder="Your name"
+				maxlength="40"
+				data-testid="username-setting-input"
+				onchange={(event) => usernamePrefs.set(event.currentTarget.value)}
+				class="w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+			/>
+
+			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Theme
+			</h2>
 			<div
 				class="flex rounded-xs border border-line bg-paper text-sm"
 				role="group"
@@ -163,6 +178,22 @@
 						type="checkbox"
 						checked={displayPrefs.showOpeningTheory}
 						onchange={(event) => displayPrefs.setOpeningTheory(event.currentTarget.checked)}
+						class="h-4 w-4"
+					/>
+				</label>
+			</div>
+
+			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Sound
+			</h2>
+			<div class="flex flex-col gap-1.5 text-sm">
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Game sounds</span>
+					<input
+						type="checkbox"
+						checked={soundPrefs.enabled}
+						onchange={(event) => soundPrefs.setEnabled(event.currentTarget.checked)}
+						data-testid="sound-toggle"
 						class="h-4 w-4"
 					/>
 				</label>

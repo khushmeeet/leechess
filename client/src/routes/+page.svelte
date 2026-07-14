@@ -8,6 +8,7 @@
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
+	import { usernamePrefs } from '$lib/stores/username.svelte';
 	import { resolve } from '$app/paths';
 	import type { DrawShape } from 'chessground/draw';
 	import type { Key } from 'chessground/types';
@@ -134,7 +135,7 @@
 					<span data-testid="engine-status" class="font-mono">
 						{session.engineReady ? 'ready' : 'warming up…'}
 					</span>
-					· you play White
+					· you play White{usernamePrefs.name ? ` as ${usernamePrefs.name}` : ''}
 				</p>
 			</section>
 

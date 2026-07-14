@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import SettingsMenu from '$lib/components/SettingsMenu.svelte';
+	import UsernamePrompt from '$lib/components/UsernamePrompt.svelte';
+	import { usernamePrefs } from '$lib/stores/username.svelte';
 
 	let { children } = $props();
 
@@ -35,12 +37,18 @@
 					{link.label}
 				</a>
 			{/each}
-			<div class="ml-auto">
+			<div class="ml-auto flex items-center gap-3">
+				{#if usernamePrefs.name}
+					<span class="text-sm text-muted" data-testid="nav-username">
+						Playing as <span class="font-semibold text-ink">{usernamePrefs.name}</span>
+					</span>
+				{/if}
 				<SettingsMenu />
 			</div>
 		</div>
 	</nav>
 	<main class="mx-auto max-w-5xl px-4 py-6">
+		<UsernamePrompt />
 		{@render children()}
 	</main>
 </div>

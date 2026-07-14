@@ -2,8 +2,10 @@ import { ApiError, completeGame, discardGame, getGame, postMove, startGame } fro
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
 import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
 import { GameStore, type PlayedMove } from './game.svelte';
+import { soundPrefs } from './soundPrefs.svelte';
 import { clearActiveGame, loadActiveGame, saveActiveGame } from './gamePersistence';
 import { stockfish, type EngineEval, type EngineLine } from './stockfish';
+import { usernamePrefs } from './username.svelte';
 import type { Key } from 'chessground/types';
 
 export interface MoveFeedback {
@@ -171,7 +173,7 @@ export class PlaySession {
 				if (generation !== this.generation) return;
 			}
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine')).id;
+				const id = (await startGame('engine', usernamePrefs.name ?? undefined)).id;
 				if (generation !== this.generation) {
 					discardGame(id).catch(() => {});
 					return;
@@ -230,6 +232,7 @@ export class PlaySession {
 		this.pendingBestMove = this.initialEval.bestMove;
 		this.seedFromInitial();
 		this.engineReady = true;
+		soundPrefs.play('game-start');
 	}
 
 	/** Restored session: evaluate the position where the game left off. The
@@ -262,16 +265,18 @@ export class PlaySession {
 		if (!this.userCanMove) return;
 		const played = this.game.tryMove(orig, dest);
 		if (played) this.afterMove(played, false);
+		else soundPrefs.play('illegal');
 	}
 
 	private afterMove(played: PlayedMove, byEngine: boolean): void {
+		soundPrefs.move(played.san, byEngine);
 		this.refreshOpening();
 		this.save();
 
 		const generation = this.generation;
 		this.inSync(async () => {
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine')).id;
+				const id = (await startGame('engine', usernamePrefs.name ?? undefined)).id;
 				if (generation !== this.generation) {
 					// session was reset while the game was being created —
 					// the fresh record belongs to an abandoned game; discard it
@@ -287,6 +292,7 @@ export class PlaySession {
 		this.inChain(() => this.evaluatePly(played, !byEngine));
 
 		if (this.game.isGameOver) {
+			soundPrefs.play('game-end');
 			this.finish();
 		} else if (this.game.turnColor !== this.playerColor) {
 			this.engineReply();
@@ -384,6 +390,7 @@ export class PlaySession {
 	resign(): void {
 		if (!this.started || this.game.isGameOver) return;
 		this.game.resign(this.playerColor);
+		soundPrefs.play('game-end');
 		this.finish();
 		// resignation ends persistence — a refresh now starts a fresh board
 		clearActiveGame();
@@ -426,6 +433,7 @@ export class PlaySession {
 		this.ideas = null;
 		clearActiveGame();
 		this.persistable = true;
+		soundPrefs.play('game-start');
 		if (this.initialEval) {
 			this.baselineEval = normalizeEval(this.initialEval);
 			this.pendingBestMove = this.initialEval.bestMove;

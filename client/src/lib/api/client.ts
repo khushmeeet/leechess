@@ -71,8 +71,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	return response.json();
 }
 
-export function startGame(mode: string): Promise<GameCreated> {
-	return request('/games', { method: 'POST', body: JSON.stringify({ mode }) });
+/** `white` is the human player's display name (usernamePrefs); omitted while
+ * unset, which leaves the server's "player" default in place. */
+export function startGame(mode: string, white?: string): Promise<GameCreated> {
+	return request('/games', {
+		method: 'POST',
+		body: JSON.stringify(white ? { mode, white } : { mode })
+	});
 }
 
 export function postMove(gameId: number, uci: string): Promise<MoveAccepted> {
