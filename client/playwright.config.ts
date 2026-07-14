@@ -29,6 +29,9 @@ export default defineConfig({
 				// the analysis job's Phase 5 LLM pass must never hit the real
 				// (paid) Claude API from the e2e suite
 				LEECHESS_EXPLANATIONS: 'off',
+				// likewise the review WikiBook panel must never hit the real
+				// Wikibooks API
+				LEECHESS_WIKIBOOK: 'off',
 				PATH: (process.env.PATH ?? '')
 					.split(':')
 					.filter((dir) => !dir.includes('node_modules'))

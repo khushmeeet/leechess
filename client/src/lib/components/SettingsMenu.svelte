@@ -157,6 +157,15 @@
 						class="h-4 w-4"
 					/>
 				</label>
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Opening theory (Review)</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.showOpeningTheory}
+						onchange={(event) => displayPrefs.setOpeningTheory(event.currentTarget.checked)}
+						class="h-4 w-4"
+					/>
+				</label>
 			</div>
 		</div>
 	{/if}

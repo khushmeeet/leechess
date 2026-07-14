@@ -108,6 +108,22 @@ export function listGames(): Promise<GameSummary[]> {
 	return request('/games');
 }
 
+export interface WikibookPage {
+	/** The page describes the position after this many plies. */
+	ply: number;
+	title: string;
+	/** Canonical WikiBooks URL — shown for CC BY-SA attribution. */
+	url: string;
+	/** Server-sanitized page body, safe to {@html}. */
+	html: string;
+}
+
+/** Wikibooks opening-theory pages for each move-sequence prefix, from move 1
+ * until the first position out of book. pages[i] covers ply i+1. */
+export function getWikibookLine(sans: string[]): Promise<{ pages: WikibookPage[] }> {
+	return request(`/wikibook/line?moves=${encodeURIComponent(sans.join(','))}`);
+}
+
 export interface PuzzleRecord {
 	id: number;
 	fen: string;

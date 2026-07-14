@@ -151,3 +151,18 @@ class PuzzleAttempt(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     puzzle: Mapped[Puzzle] = relationship(back_populates="attempts")
+
+
+class WikibookCache(Base):
+    """One fetched Wikibooks opening-theory page, keyed by our computed page
+    title. html is NULL when Wikibooks has no page for the line ("out of
+    book") — cached too, and rechecked after a week (see app/wikibook.py)."""
+
+    __tablename__ = "wikibook_cache"
+
+    path: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # app.wikibook.SANITIZER_VERSION at fetch time; older rows are refetched.
+    sanitizer_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

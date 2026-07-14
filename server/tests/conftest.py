@@ -18,6 +18,9 @@ def _no_real_llm(monkeypatch):
     tests run the full analysis job, which includes the Phase 5 explanation
     pass. test_explanations.py re-enables this and mocks the client."""
     monkeypatch.setenv("LEECHESS_EXPLANATIONS", "off")
+    # Likewise, never hit the real Wikibooks API — test_wikibook.py
+    # re-enables this and mocks the fetch.
+    monkeypatch.setenv("LEECHESS_WIKIBOOK", "off")
 
 
 @pytest.fixture()

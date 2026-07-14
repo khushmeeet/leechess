@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.analysis import stockfish_binary
 from app.db import Base, engine
-from app.routers import games, progress, puzzles
+from app.routers import games, progress, puzzles, wikibook
 
 app = FastAPI(title="leechess")
 
@@ -38,6 +38,7 @@ app.add_middleware(
 app.include_router(games.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
+app.include_router(wikibook.router)
 
 
 @app.get("/healthz")

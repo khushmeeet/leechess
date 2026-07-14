@@ -4,11 +4,20 @@
 	import type { DrawShape } from 'chessground/draw';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { getReview, practiceGame, type GameDetail, type MoveRecord } from '$lib/api/client';
+	import {
+		getReview,
+		getWikibookLine,
+		practiceGame,
+		type GameDetail,
+		type MoveRecord,
+		type WikibookPage
+	} from '$lib/api/client';
 	import type { Classification } from '$lib/classification';
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import CplGraph from '$lib/components/CplGraph.svelte';
+	import WikiBookPanel from '$lib/components/WikiBookPanel.svelte';
+	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 
 	let game = $state<GameDetail | null>(null);
@@ -48,6 +57,34 @@
 	});
 
 	const selectedMove = $derived(game?.moves[selectedPly - 1] ?? null);
+
+	// Wikibooks opening theory for the game's move sequence, one page per
+	// ply until the line leaves the book. Off by default (Settings toggle);
+	// fetched once per game when enabled (the server caches upstream pages);
+	// failure is soft — no panel, nothing else.
+	let theory = $state<WikibookPage[]>([]);
+	let theoryFor = -1; // game id already requested — polling must not refetch
+	$effect(() => {
+		if (!displayPrefs.showOpeningTheory) return; // reactive: fetches when toggled on
+		const current = game;
+		if (!current || current.moves.length === 0 || theoryFor === current.id) return;
+		theoryFor = current.id;
+		theory = []; // route param changes reuse this component — drop the old game's pages
+		getWikibookLine(current.moves.map((move) => move.san)).then(
+			(line) => {
+				if (theoryFor === current.id) theory = line.pages;
+			},
+			() => {} // soft failure: no panel, nothing else
+		);
+	});
+
+	// The board shows the position BEFORE the selected move (selectedPly - 1
+	// plies in), so the matching theory page is the one whose prose discusses
+	// the very decision under review. Undefined at ply 1 (starting position)
+	// and once the board position is out of book — the panel just disappears.
+	const theoryPage = $derived(
+		displayPrefs.showOpeningTheory ? (theory[selectedPly - 2] ?? null) : null
+	);
 
 	/** SAN → orig/dest squares, derived on the position before the move. */
 	function sanToKeys(fenBefore: string, san: string): [Key, Key] | null {
@@ -277,7 +314,24 @@
 		</div>
 	{/if}
 
-	<div class="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] md:gap-x-10">
+	<!-- While the board position is in the opening book a third column with
+	     the WikiBook panel appears on the left (xl+); past theory it
+	     disappears and the grid falls back to the usual two columns. The
+	     layout's max-w-5xl can't fit three columns and the full-size board,
+	     so the negative margin breaks the grid out to a wider centered
+	     span (≤80rem) for as long as the panel is up. -->
+	<div
+		class="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] md:gap-x-10 {theoryPage
+			? 'xl:mx-[calc((100%-min(80rem,100vw-2rem))/2)] xl:grid-cols-[minmax(240px,300px)_minmax(0,1fr)_minmax(280px,340px)]'
+			: ''}"
+	>
+		{#if theoryPage}
+			<aside
+				class="hidden min-w-0 xl:sticky xl:top-4 xl:flex xl:max-h-[calc(100dvh-2rem)] xl:flex-col xl:self-start"
+			>
+				<WikiBookPanel page={theoryPage} />
+			</aside>
+		{/if}
 		<div class="min-w-0">
 			<!-- Cap the board by viewport height so board + controls + why panel
 			     fit on screen without page scrolling (22rem ≈ the chrome above
@@ -360,6 +414,21 @@
 					<!-- prettier-ignore -->
 					<p class="whitespace-pre-line">{#each summarySegments as segment, i (i)}{@const ply = segment.ply}{#if ply === null}{segment.text}{:else}<button onclick={() => select(ply)} class="cursor-pointer font-semibold text-accent underline decoration-accent-line decoration-dotted underline-offset-2 hover:decoration-solid">{segment.text}</button>{/if}{/each}</p>
 				</section>
+			{/if}
+
+			<!-- Below xl there is no room for a third column — the same panel
+			     folds into a collapsible under the board instead. -->
+			{#if theoryPage}
+				<details class="mt-3 xl:hidden">
+					<summary
+						class="cursor-pointer rounded-xs border border-line bg-card px-3 py-2 text-xs font-semibold tracking-wide text-ink uppercase"
+					>
+						Opening theory
+					</summary>
+					<div class="mt-2">
+						<WikiBookPanel page={theoryPage} embedded />
+					</div>
+				</details>
 			{/if}
 		</div>
 

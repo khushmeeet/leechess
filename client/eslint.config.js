@@ -39,9 +39,10 @@ export default defineConfig(
 		rules: {}
 	},
 	{
-		// Literature is a citations page: its hrefs are external source URLs
-		// from data modules, which resolve() can't (and shouldn't) handle.
-		files: ['src/routes/literature/+page.svelte'],
+		// Pages whose hrefs are external source/attribution URLs (literature
+		// citations, the WikiBook panel's CC BY-SA link), which resolve()
+		// can't (and shouldn't) handle.
+		files: ['src/routes/literature/+page.svelte', 'src/lib/components/WikiBookPanel.svelte'],
 		rules: {
 			'svelte/no-navigation-without-resolve': ['error', { ignoreLinks: true }]
 		}

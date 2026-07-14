@@ -190,3 +190,19 @@ class ProgressOut(BaseModel):
     cpl_trend: list[GameCplPoint]  # oldest → newest
     streak_days: int
     puzzles_solved: int  # correct attempts within the window
+
+
+class WikibookPageOut(BaseModel):
+    """One Wikibooks opening-theory page along a game's move sequence."""
+
+    ply: int  # the page describes the position after this many plies
+    title: str  # resolved page title (redirects followed)
+    url: str  # canonical page URL — shown for CC BY-SA attribution
+    html: str  # sanitized page body, safe to inject into the panel
+
+
+class WikibookLineOut(BaseModel):
+    """GET /wikibook/line response: pages for each ply from move 1 until the
+    first line Wikibooks has no page for. pages[i] covers ply i+1."""
+
+    pages: list[WikibookPageOut]
