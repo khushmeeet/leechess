@@ -231,11 +231,23 @@
 				class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
 				data-testid="moves-panel"
 			>
-				<h2 class="mb-2 text-sm font-semibold text-ink">
+				<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
 					Moves
-					<span class="ml-1 font-normal text-faint">
-						({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
-					</span>
+					{#if session.engineError}
+						<span class="font-normal text-err">(engine stalled)</span>
+						<button
+							type="button"
+							class="ml-auto rounded-xs border border-line px-2 py-0.5 text-xs font-normal text-ink hover:bg-paper"
+							data-testid="engine-retry"
+							onclick={() => session.retryEngineMove()}
+						>
+							Retry
+						</button>
+					{:else}
+						<span class="font-normal text-faint">
+							({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
+						</span>
+					{/if}
 				</h2>
 				{#if movePairs.length === 0}
 					<p class="text-sm text-faint">No moves yet.</p>
