@@ -1,16 +1,20 @@
 """Post-game batch analysis: native Stockfish evals + move classification.
 
-Classification thresholds live here and are mirrored in the client
-(client/src/lib/classification.ts) so live badges and post-game review
-never disagree — keep the two in sync.
+Classification constants load from shared/classification.json — the single
+source the client bundles too (client/src/lib/classification.ts), so live
+badges and post-game review never disagree.
 """
 
+import json
 import logging
 import os
 import shutil
+import threading
+from pathlib import Path
 
 import chess
 import chess.engine
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.explanations import generate_explanations_for_game
@@ -21,22 +25,38 @@ from app.summaries import generate_summary_for_game
 
 logger = logging.getLogger(__name__)
 
+
+def _shared_classification() -> dict:
+    """shared/classification.json sits at the repo root locally and under
+    /app in the Docker image — walk upward so both layouts resolve."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "shared" / "classification.json"
+        if candidate.is_file():
+            return json.loads(candidate.read_text())
+    raise FileNotFoundError("shared/classification.json not found above " + __file__)
+
+
+_shared = _shared_classification()
+
 # Evals are stored in centipawns from white's perspective, clamped so mate
 # scores don't blow up delta math (mate-in-N ends up at the clamp).
-EVAL_CLAMP_CP = 1000
+EVAL_CLAMP_CP: int = _shared["evalClampCp"]
 
 # Centipawn loss (from the mover's perspective) → classification.
 # Upper bounds are exclusive: loss < 10 is "best", 10-24 "good", etc.
 CLASSIFICATION_THRESHOLDS: list[tuple[float, str]] = [
-    (10, "best"),
-    (25, "good"),
-    (50, "inaccuracy"),
-    (100, "mistake"),
+    (bound, label) for bound, label in _shared["thresholds"]
 ]
-BLUNDER = "blunder"
+BLUNDER: str = _shared["blunder"]
 
 # Patchable in tests so the background job writes to the test database.
 session_factory = SessionLocal
+
+# One Stockfish process per job at full depth saturates the small Fly VM, so
+# engine jobs queue behind this instead of running unbounded (BackgroundTasks
+# runs sync functions in a threadpool with no limit of its own).
+ANALYSIS_CONCURRENCY = int(os.environ.get("LEECHESS_ANALYSIS_CONCURRENCY", "1"))
+_engine_slots = threading.BoundedSemaphore(ANALYSIS_CONCURRENCY)
 
 
 def analysis_depth() -> int:
@@ -89,31 +109,56 @@ def _terminal_eval(board: chess.Board) -> float:
     return 0.0  # stalemate / insufficient material / draw rules
 
 
+def reset_stale_analyses() -> int:
+    """Startup sweep: a game still marked "analyzing" was orphaned by a
+    restart — BackgroundTasks die with the process (fly.toml auto-stops the
+    machine), so no job will ever finish it. Mark it failed rather than
+    leaving the review page spinning forever; returns how many were swept."""
+    db = session_factory()
+    try:
+        stale = list(db.scalars(select(Game).where(Game.analysis_status == "analyzing")))
+        for game in stale:
+            game.analysis_status = "failed"
+        db.commit()
+        if stale:
+            logger.warning(
+                "reset %d orphaned analyzing game(s) to failed: %s",
+                len(stale),
+                [game.id for game in stale],
+            )
+        return len(stale)
+    finally:
+        db.close()
+
+
 def run_game_analysis(game_id: int) -> None:
     """Background job: evaluate every position of a finished game once and
     derive per-move eval/best_move/classification. Runs with its own DB
-    session (the request session is gone by the time this executes)."""
-    db = session_factory()
-    try:
-        game = db.get(Game, game_id)
-        if game is None:
-            logger.error("analysis job: game %s not found", game_id)
-            return
-        game.analysis_status = "analyzing"
-        db.commit()
+    session (the request session is gone by the time this executes).
+    Serialized through the engine semaphore — the row stays "analyzing"
+    (set by the /complete route) while queued."""
+    with _engine_slots:
+        db = session_factory()
         try:
-            _analyze(game)
-            apply_rule_based_tags(game)
-            create_puzzles_for_game(game)
-            generate_explanations_for_game(game)  # fail-soft, never raises
-            generate_summary_for_game(game)  # fail-soft, never raises
-            game.analysis_status = "complete"
-        except Exception:
-            logger.exception("analysis job failed for game %s", game_id)
-            game.analysis_status = "failed"
-        db.commit()
-    finally:
-        db.close()
+            game = db.get(Game, game_id)
+            if game is None:
+                logger.error("analysis job: game %s not found", game_id)
+                return
+            game.analysis_status = "analyzing"
+            db.commit()
+            try:
+                _analyze(game)
+                apply_rule_based_tags(game)
+                create_puzzles_for_game(game)
+                generate_explanations_for_game(game)  # fail-soft, never raises
+                generate_summary_for_game(game)  # fail-soft, never raises
+                game.analysis_status = "complete"
+            except Exception:
+                logger.exception("analysis job failed for game %s", game_id)
+                game.analysis_status = "failed"
+            db.commit()
+        finally:
+            db.close()
 
 
 def _analyze(game: Game) -> None:

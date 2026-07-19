@@ -14,6 +14,7 @@ every paid LLM call (both automated suites set it).
 import logging
 
 from app.explanations import _san, explanations_enabled, needs_explanation
+from app.llm import MODEL, request_text
 from app.models import CoachSummary, Game, Move
 
 # The progress endpoint owns the phase boundaries — importing them beats a
@@ -21,11 +22,6 @@ from app.models import CoachSummary, Game, Move
 from app.routers.progress import MIDDLEGAME_MAX_PLY, OPENING_MAX_PLY
 
 logger = logging.getLogger(__name__)
-
-MODEL = "claude-opus-4-8"
-# Three short takeaways, but adaptive thinking spends from the same budget —
-# leave it room rather than truncating mid-thought.
-MAX_TOKENS = 8000
 
 SYSTEM_PROMPT = (
     "You are a chess coach writing for an improving club player rated around "
@@ -134,22 +130,9 @@ def build_summary_prompt(game: Game) -> str:
 
 
 def _request_summary(prompt: str) -> str:
-    """One Claude call — the seam the tests mock (never hit the real API
-    from the automated suite). Credentials resolve from the environment
-    (ANTHROPIC_API_KEY or an `ant auth login` profile)."""
-    import anthropic
-
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        thinking={"type": "adaptive"},
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return "\n\n".join(
-        block.text for block in response.content if block.type == "text"
-    ).strip()
+    """The seam the tests mock (never hit the real API from the automated
+    suite); the call itself lives in app.llm, shared with explanations.py."""
+    return request_text(SYSTEM_PROMPT, prompt)
 
 
 def generate_summary_for_game(game: Game) -> bool:

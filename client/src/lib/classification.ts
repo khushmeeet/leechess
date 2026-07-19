@@ -1,17 +1,14 @@
-/** Eval-delta → classification, mirrored from server/app/analysis.py so live
- * badges and post-game review never disagree — keep the two in sync. The
- * server's test_classification.py pins the canonical values. */
+/** Eval-delta → classification. The constants load from
+ * shared/classification.json — the same file server/app/analysis.py reads —
+ * so live badges and post-game review never disagree. The server's
+ * test_classification.py pins the canonical values. */
+import shared from '../../../shared/classification.json';
 
 export type Classification = 'best' | 'good' | 'inaccuracy' | 'mistake' | 'blunder';
 
-export const EVAL_CLAMP_CP = 1000;
+export const EVAL_CLAMP_CP: number = shared.evalClampCp;
 
-const THRESHOLDS: [number, Classification][] = [
-	[10, 'best'],
-	[25, 'good'],
-	[50, 'inaccuracy'],
-	[100, 'mistake']
-];
+const THRESHOLDS = shared.thresholds as [number, Classification][];
 
 export function clampEval(cp: number): number {
 	return Math.max(-EVAL_CLAMP_CP, Math.min(EVAL_CLAMP_CP, cp));
