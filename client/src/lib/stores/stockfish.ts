@@ -43,7 +43,20 @@ interface SearchOptions {
 
 const FULL_STRENGTH = 20;
 
-class StockfishClient {
+/** Extra time on top of a movetime search before we call it stuck. A healthy
+ * engine answers a `go movetime N` within N plus a little overhead; well past
+ * that means the worker is wedged, not slow. */
+const SEARCH_TIMEOUT_BUFFER_MS = 3000;
+/** Ceiling for a depth search (no movetime). A stuck engine never returns, so
+ * this only has to beat a legitimately slow search — depth-16 finishes in a
+ * few seconds even single-threaded, so 15s distinguishes stuck from slow
+ * without false-firing on slow hardware. */
+const DEPTH_SEARCH_CEILING_MS = 15000;
+/** WASM compile + NNUE load can take a while on a cold cache, but not forever.
+ * If `uciok` never arrives by here the worker failed to boot. */
+const INIT_TIMEOUT_MS = 20000;
+
+export class StockfishClient {
 	private worker: Worker | null = null;
 	private initPromise: Promise<void> | null = null;
 	private queue: Promise<unknown> = Promise.resolve();
@@ -53,7 +66,7 @@ class StockfishClient {
 	flavor: 'multi-threaded' | 'single-threaded' | null = null;
 
 	private init(): Promise<void> {
-		this.initPromise ??= new Promise((resolve, reject) => {
+		this.initPromise ??= new Promise<void>((resolve, reject) => {
 			const isolated = typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 			this.flavor = isolated ? 'multi-threaded' : 'single-threaded';
 			const script = isolated
@@ -61,9 +74,25 @@ class StockfishClient {
 				: '/stockfish/stockfish-18-lite-single.js';
 
 			const worker = new Worker(script);
-			worker.onerror = (e) => reject(new Error(`stockfish worker failed: ${e.message}`));
+			let settled = false;
+			const timer = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				worker.terminate();
+				reject(new Error(`stockfish init timed out after ${INIT_TIMEOUT_MS}ms`));
+			}, INIT_TIMEOUT_MS);
+			worker.onerror = (e) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				worker.terminate();
+				reject(new Error(`stockfish worker failed: ${e.message}`));
+			};
 			worker.onmessage = (e: MessageEvent<string>) => {
 				if (e.data === 'uciok') {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
 					if (isolated) {
 						const threads = Math.min(4, Math.max(1, navigator.hardwareConcurrency - 1));
 						worker.postMessage(`setoption name Threads value ${threads}`);
@@ -73,8 +102,26 @@ class StockfishClient {
 				}
 			};
 			worker.postMessage('uci');
+		}).catch((error) => {
+			// Drop the rejected promise so the next call can boot a fresh worker;
+			// otherwise `initPromise ??=` would keep handing back this failure and
+			// wedge every future recovery attempt.
+			this.initPromise = null;
+			throw error;
 		});
 		return this.initPromise;
+	}
+
+	/** Tear down a hung or broken engine so the next search re-inits a clean
+	 * one. Cached UCI options reset to the values a fresh Stockfish boots with
+	 * (skill 20, MultiPV 1), keeping our `currentSkill`/`currentMultiPv` cache
+	 * honest against the new process. */
+	private reset(): void {
+		this.worker?.terminate();
+		this.worker = null;
+		this.initPromise = null;
+		this.currentSkill = FULL_STRENGTH;
+		this.currentMultiPv = 1;
 	}
 
 	/** Compile the WASM and load the network up front so the first real
@@ -119,13 +166,47 @@ class StockfishClient {
 
 		const whiteToMove = fen.split(' ')[1] !== 'b';
 		const start = performance.now();
+		const timeoutMs = options.movetimeMs
+			? options.movetimeMs + SEARCH_TIMEOUT_BUFFER_MS
+			: DEPTH_SEARCH_CEILING_MS;
 
-		return new Promise<EngineEval>((resolve) => {
+		return new Promise<EngineEval>((resolve, reject) => {
 			let lastCp: number | undefined;
 			let lastMate: number | undefined;
 			let lastDepth = 0;
 			const lines: EngineLine[] = [];
+			let settled = false;
 
+			// Resolve/reject exactly once, then detach handlers so a late stray
+			// message can't fire a second settle.
+			const cleanup = () => {
+				clearTimeout(timer);
+				worker.onmessage = null;
+				worker.onerror = null;
+			};
+			const succeed = (result: EngineEval) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				resolve(result);
+			};
+			const fail = (error: Error) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				// A hung or crashed worker can't be trusted; tear it down so the
+				// next search boots a fresh engine instead of deadlocking behind
+				// this one on the serialized queue.
+				this.reset();
+				reject(error);
+			};
+
+			const timer = setTimeout(
+				() => fail(new Error(`stockfish search timed out after ${timeoutMs}ms`)),
+				timeoutMs
+			);
+
+			worker.onerror = (e) => fail(new Error(`stockfish worker error: ${e.message}`));
 			worker.onmessage = (e: MessageEvent<string>) => {
 				const line = e.data;
 				if (line.startsWith('info ') && line.includes(' score ')) {
@@ -151,7 +232,7 @@ class StockfishClient {
 						}
 					}
 				} else if (line.startsWith('bestmove ')) {
-					resolve({
+					succeed({
 						cp: lastCp,
 						mate: lastMate,
 						bestMove: line.split(' ')[1],

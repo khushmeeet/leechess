@@ -28,6 +28,9 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LIVE_EVAL_DEPTH = 16;
 /** Candidate lines for the insight bar's Ideas row. */
 const IDEAS_MULTIPV = 3;
+/** Attempts to get the engine's reply before giving up (the first failure
+ * tears down and re-inits the worker, so a retry runs on a fresh engine). */
+const ENGINE_REPLY_ATTEMPTS = 2;
 
 function normalizeEval(result: EngineEval): number {
 	if (result.mate !== undefined) return result.mate > 0 ? EVAL_CLAMP_CP : -EVAL_CLAMP_CP;
@@ -52,6 +55,9 @@ export class PlaySession {
 
 	engineReady = $state(false);
 	engineThinking = $state(false);
+	/** Set when the engine failed to produce its move after retries — the game
+	 * is paused on the engine's turn until `retryEngineMove()` is invoked. */
+	engineError = $state<string | null>(null);
 
 	/** Deepest opening-book match along the game so far. */
 	opening = $state<OpeningState | null>(null);
@@ -359,19 +365,46 @@ export class PlaySession {
 
 	private engineReply(): void {
 		this.engineThinking = true;
+		this.engineError = null;
 		const generation = this.generation;
 		this.inChain(async () => {
 			try {
-				const reply = await stockfish.play(this.game.fen, this.engineSkill);
+				// A hung search rejects and self-heals the engine (see stockfish.ts),
+				// so a retry runs on a fresh worker. Without this, a single lost
+				// `bestmove` would leave the game stuck on the engine's turn — the
+				// user can't move, so the board would freeze silently.
+				let reply: EngineEval | null = null;
+				for (let attempt = 0; attempt < ENGINE_REPLY_ATTEMPTS; attempt++) {
+					try {
+						reply = await stockfish.play(this.game.fen, this.engineSkill);
+						break;
+					} catch (error) {
+						if (generation !== this.generation) return; // reset/suspended mid-retry
+						if (attempt === ENGINE_REPLY_ATTEMPTS - 1) {
+							this.engineError =
+								error instanceof Error ? error.message : 'the engine stopped responding';
+							return;
+						}
+					}
+				}
 				// the session may have been reset or suspended mid-search — the
 				// reply must not apply (and then sync) under the new generation
-				if (generation !== this.generation) return;
+				if (!reply || generation !== this.generation) return;
 				const played = this.game.applyUci(reply.bestMove);
 				if (played) this.afterMove(played, true);
 			} finally {
 				this.engineThinking = false;
 			}
 		});
+	}
+
+	/** Manual recovery after `engineError`: retry the engine's move on a fresh
+	 * worker. No-op unless it's genuinely the engine's turn. */
+	retryEngineMove(): void {
+		if (!this.started || this.game.isGameOver) return;
+		if (this.game.turnColor === this.playerColor) return;
+		this.engineError = null;
+		this.engineReply();
 	}
 
 	/** Every finished game is completed server-side automatically — that is
@@ -428,6 +461,7 @@ export class PlaySession {
 		this.serverError = null;
 		this.completedGameId = null;
 		this.engineThinking = false;
+		this.engineError = null;
 		this.opening = null;
 		this.insightEval = null;
 		this.ideas = null;
