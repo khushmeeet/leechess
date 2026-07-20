@@ -260,7 +260,8 @@ component. All automatable exit criteria met; two manual checks gate calling it 
   the dump straight off the network when `LEECHESS_AUTO_SEED=on` (set in fly.toml;
   off by default so dev/test runs never surprise-download), and
   `POST /puzzles/seed` / `GET /puzzles/seed` trigger and report a run manually.
-  `scripts/import_lichess_puzzles.py` remains as the offline path
+  `scripts/import_lichess_puzzles.py` (the manual CSV-on-disk path) is removed —
+  seeding covers every case it served
 - Underpromotion solutions auto-queen on the puzzle board (same limitation as Play)
 - Remaining Phase 2 motif detectors (discovered attack, overloading, deflection, x-ray,
   zwischenzug, trapped piece, strategic set) still deferred — puzzles inherit whatever

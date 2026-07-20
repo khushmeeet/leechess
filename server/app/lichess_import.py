@@ -11,15 +11,13 @@ OpeningTags. Two format gotchas handled here:
   Themes are mapped where they overlap and dropped otherwise; a row with no
   mappable theme is skipped entirely — map or drop, never invent.
 
-`import_rows` consumes any iterable of CSV rows, so the same code serves the
-manual script (`scripts/import_lichess_puzzles.py`, local file) and startup
-auto-seeding (`app/seeding.py`, streamed straight off the network).
+`import_rows` consumes any iterable of CSV rows; `app/seeding.py` feeds it
+the dump streamed straight off the network (startup auto-seed and the
+POST /puzzles/seed endpoint).
 """
 
-import csv
 import logging
 from collections.abc import Callable, Iterable
-from pathlib import Path
 
 import chess
 from sqlalchemy import func, select
@@ -141,11 +139,3 @@ def import_rows(
                     break
     db.commit()
     return counts
-
-
-def import_csv(
-    path: Path | str, db: Session, max_per_motif: int = 500
-) -> dict[str, int]:
-    """`import_rows` over a decompressed dump on disk (the manual script)."""
-    with open(path, newline="") as file:
-        return import_rows(csv.DictReader(file), db, max_per_motif=max_per_motif)

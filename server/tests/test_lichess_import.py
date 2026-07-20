@@ -5,16 +5,13 @@ The sample covers: theme mapping, a row whose themes should all be dropped
 (skipped entirely), a row with several mappable themes (first one wins),
 the opponent-setup-move convention, and one unparseable row."""
 
+import csv
+
 import chess
 import pytest
 from sqlalchemy import select
 
-from app.lichess_import import (
-    THEME_TO_MOTIF,
-    import_csv,
-    import_rows,
-    puzzle_from_row,
-)
+from app.lichess_import import THEME_TO_MOTIF, import_rows, puzzle_from_row
 from app.models import Puzzle
 from tests.conftest import FIXTURES
 
@@ -23,8 +20,13 @@ pytestmark = pytest.mark.unit
 SAMPLE = FIXTURES / "lichess_puzzles_sample.csv"
 
 
+def import_sample(db, **kwargs):
+    with open(SAMPLE, newline="") as file:
+        return import_rows(csv.DictReader(file), db, **kwargs)
+
+
 def test_import_maps_themes_and_drops_the_rest(db_session):
-    counts = import_csv(SAMPLE, db_session)
+    counts = import_sample(db_session)
 
     # DROPPED (no mappable theme) and BADFEN (unparseable) are both skipped
     assert counts == {"fork": 2, "back_rank_mate": 1, "hanging_piece": 1}
@@ -36,7 +38,7 @@ def test_import_maps_themes_and_drops_the_rest(db_session):
 def test_fen_is_the_position_after_the_opponents_setup_move(db_session):
     """Lichess's FEN column is one move BEFORE the puzzle: Moves[0] is the
     opponent playing into it, the stored solution starts at Moves[1]."""
-    import_csv(SAMPLE, db_session)
+    import_sample(db_session)
     puzzle = db_session.scalars(
         select(Puzzle).where(Puzzle.motif == "back_rank_mate")
     ).one()
@@ -49,7 +51,7 @@ def test_fen_is_the_position_after_the_opponents_setup_move(db_session):
 
 
 def test_first_mappable_theme_wins_when_several_map(db_session):
-    import_csv(SAMPLE, db_session)
+    import_sample(db_session)
     multi = db_session.scalars(select(Puzzle).where(Puzzle.fen.contains("3q4"))).all()
     # MULTI row lists "hangingPiece fork ..." — hangingPiece maps first
     queen_hang = db_session.scalars(
@@ -60,7 +62,7 @@ def test_first_mappable_theme_wins_when_several_map(db_session):
 
 
 def test_max_per_motif_caps_the_pool(db_session):
-    counts = import_csv(SAMPLE, db_session, max_per_motif=1)
+    counts = import_sample(db_session, max_per_motif=1)
     assert counts["fork"] == 1
 
 
@@ -69,7 +71,7 @@ def test_cap_counts_puzzles_already_in_the_pool(db_session):
     db_session.add(Puzzle(fen="pre-existing", solution="a1a2", motif="fork"))
     db_session.commit()
 
-    counts = import_csv(SAMPLE, db_session, max_per_motif=1)
+    counts = import_sample(db_session, max_per_motif=1)
     # fork is already full; the sample's two fork rows are both skipped
     assert counts == {"back_rank_mate": 1, "hanging_piece": 1}
 
@@ -97,8 +99,8 @@ def test_import_stops_reading_once_every_motif_is_full(db_session):
 
 
 def test_reimport_is_idempotent(db_session):
-    import_csv(SAMPLE, db_session)
-    counts = import_csv(SAMPLE, db_session)
+    import_sample(db_session)
+    counts = import_sample(db_session)
     assert counts == {}
     assert len(db_session.scalars(select(Puzzle)).all()) == 4
 
