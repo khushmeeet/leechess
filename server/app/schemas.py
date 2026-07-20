@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+
+from app.cpl import move_loss
 
 RESULTS = {"1-0", "0-1", "1/2-1/2", "*"}
 
@@ -99,6 +108,21 @@ class MoveAccepted(BaseModel):
     game_over: bool
 
 
+class SideCpl(BaseModel):
+    """One side's review-table row: average centipawn loss plus counts of
+    the flagged classifications."""
+
+    avg_cpl: float  # 0.0 when the side has no moves
+    inaccuracy: int
+    mistake: int
+    blunder: int
+
+
+class GameCplSummary(BaseModel):
+    white: SideCpl
+    black: SideCpl
+
+
 class GameDetail(GameOut):
     pgn: str
     moves: list[MoveOut]
@@ -110,6 +134,34 @@ class GameDetail(GameOut):
     def summary_text(cls, value: object) -> object:
         """The ORM hands over the CoachSummary row; the API serves its text."""
         return getattr(value, "text", value)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def cpl_summary(self) -> GameCplSummary | None:
+        """Per-side stats for the review sidebar table; None until every move
+        is analyzed (the client hides the table mid-analysis)."""
+        if not self.moves:
+            return None
+        losses: dict[str, list[float]] = {"white": [], "black": []}
+        counts: dict[str, dict[str, int]] = {
+            side: {"inaccuracy": 0, "mistake": 0, "blunder": 0}
+            for side in ("white", "black")
+        }
+        for move in self.moves:
+            loss = move_loss(move)
+            if loss is None:
+                return None
+            side = "white" if move.ply % 2 == 1 else "black"
+            losses[side].append(loss)
+            if move.classification in counts[side]:
+                counts[side][move.classification] += 1
+
+        def side_cpl(side: str) -> SideCpl:
+            values = losses[side]
+            avg = sum(values) / len(values) if values else 0.0
+            return SideCpl(avg_cpl=avg, **counts[side])
+
+        return GameCplSummary(white=side_cpl("white"), black=side_cpl("black"))
 
 
 class PuzzleOut(BaseModel):
