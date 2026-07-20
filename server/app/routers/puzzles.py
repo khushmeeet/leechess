@@ -11,21 +11,13 @@ motif with no attempts counts as 0: a personal puzzle only exists because
 you missed that tactic in a game, so no data means nothing proven yet.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import seeding
 from app.db import get_db
-from app.lichess_import import generic_pool_counts
 from app.models import Puzzle, PuzzleAttempt, utcnow
-from app.schemas import (
-    AttemptIn,
-    AttemptRecorded,
-    PuzzleDetail,
-    PuzzleOut,
-    SeedStatusOut,
-)
+from app.schemas import AttemptIn, AttemptRecorded, PuzzleDetail, PuzzleOut
 from app.spaced_repetition import schedule_attempt
 
 router = APIRouter(prefix="/puzzles", tags=["puzzles"])
@@ -84,36 +76,6 @@ def next_puzzle(motif: str | None = None, db: Session = Depends(get_db)) -> Puzz
         )
 
     raise HTTPException(status_code=404, detail="No puzzles due")
-
-
-def _seed_status(db: Session) -> SeedStatusOut:
-    run = seeding.status()
-    return SeedStatusOut(
-        state=run.state,
-        scanned=run.scanned,
-        imported=run.imported,
-        error=run.error,
-        pool=generic_pool_counts(db),
-    )
-
-
-@router.get("/seed", response_model=SeedStatusOut)
-def seed_status(db: Session = Depends(get_db)) -> SeedStatusOut:
-    return _seed_status(db)
-
-
-@router.post("/seed", response_model=SeedStatusOut, status_code=202)
-def seed_pool(
-    background_tasks: BackgroundTasks, db: Session = Depends(get_db)
-) -> SeedStatusOut:
-    """Stream the Lichess dump into the generic pool in the background
-    (the manual alternative to LEECHESS_AUTO_SEED — also resumes a
-    partially seeded pool: existing puzzles are deduped and each motif is
-    only topped up to its cap). Poll GET /puzzles/seed for progress."""
-    if not seeding.begin():
-        raise HTTPException(status_code=409, detail="Seeding already running")
-    background_tasks.add_task(seeding.run_seed)
-    return _seed_status(db)
 
 
 @router.get("/{puzzle_id}", response_model=PuzzleDetail)

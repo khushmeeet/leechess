@@ -20,8 +20,9 @@ async def lifespan(app: FastAPI):
     # Analysis jobs run via BackgroundTasks and die with the process (the Fly
     # machine auto-stops) — sweep any rows they orphaned mid-"analyzing".
     reset_stale_analyses()
-    # First startup with an empty generic puzzle pool: stream the Lichess
-    # dump in (background thread; gated on LEECHESS_AUTO_SEED=on).
+    # Seed the generic puzzle pool from the Lichess dump (background
+    # thread; gated on LEECHESS_AUTO_SEED=on) until a run has completed —
+    # an interrupted run resumes on the next restart.
     maybe_autoseed()
     yield
 

@@ -83,8 +83,7 @@
 		</p>
 		<p class="mt-1">
 			Play a game — analysis queues your missed tactics automatically. The generic Lichess pool
-			seeds itself in the background (<span class="font-mono">POST /puzzles/seed</span> starts it
-			manually).
+			seeds itself in the background at server startup — check back in a few minutes.
 		</p>
 	</div>
 {:else if session.status === 'error'}

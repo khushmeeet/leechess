@@ -256,12 +256,12 @@ component. All automatable exit criteria met; two manual checks gate calling it 
   *content* client-side (motif detection or a server hint endpoint) — the component is
   ready, feed it `hint` data when that exists
 - ~~Generic pool not imported into the dev/prod DB yet~~ — the server now seeds
-  itself (2026-07-20, `app/seeding.py`): first startup with an empty pool streams
-  the dump straight off the network when `LEECHESS_AUTO_SEED=on` (set in fly.toml;
-  off by default so dev/test runs never surprise-download), and
-  `POST /puzzles/seed` / `GET /puzzles/seed` trigger and report a run manually.
-  `scripts/import_lichess_puzzles.py` (the manual CSV-on-disk path) is removed —
-  seeding covers every case it served
+  itself at startup (2026-07-20, `app/seeding.py`): when `LEECHESS_AUTO_SEED=on`
+  (set in fly.toml; off by default so dev/test runs never surprise-download) and
+  no completed run is recorded in `puzzle_seed_runs`, a background thread streams
+  the dump straight off the network. Interrupted runs resume on the next restart;
+  delete the `puzzle_seed_runs` rows to force a re-seed. No manual step, no admin
+  endpoint — `scripts/import_lichess_puzzles.py` is removed
 - Underpromotion solutions auto-queen on the puzzle board (same limitation as Play)
 - Remaining Phase 2 motif detectors (discovered attack, overloading, deflection, x-ray,
   zwischenzug, trapped piece, strategic set) still deferred — puzzles inherit whatever
@@ -274,8 +274,8 @@ component. All automatable exit criteria met; two manual checks gate calling it 
 2. Phase 3's pending step: confirm a real game's misses land in the queue, and solve
    puzzles across a few sessions to feel the Leitner scheduling work
 3. ~~Optionally run the Lichess import for the generic pool~~ — automatic since
-   2026-07-20: production self-seeds on first startup (`LEECHESS_AUTO_SEED=on` in
-   fly.toml), or hit `POST /puzzles/seed`
+   2026-07-20: production self-seeds at startup (`LEECHESS_AUTO_SEED=on` in
+   fly.toml)
 4. Phase 4 is built ✅ (2026-07-07, see above) — it becomes genuinely meaningful once
    steps 1–2 feed it a few weeks of real data
 5. Phase 5 is built ✅ (2026-07-07, see above) — its own pending step: one real

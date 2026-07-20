@@ -161,17 +161,6 @@ class PuzzleDetail(PuzzleOut):
     attempts: list[AttemptOut]
 
 
-class SeedStatusOut(BaseModel):
-    """GET/POST /puzzles/seed response: the in-memory state of the generic
-    pool's background seeding run plus what's actually in the pool."""
-
-    state: str  # idle | running | complete | failed
-    scanned: int  # dump rows read so far this run
-    imported: int  # puzzles added this run
-    error: str | None
-    pool: dict[str, int]  # generic puzzles per motif, from the database
-
-
 class PracticeQueued(BaseModel):
     """POST /games/{id}/practice response."""
 
