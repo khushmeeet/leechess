@@ -21,6 +21,9 @@ def _no_real_llm(monkeypatch):
     # Likewise, never hit the real Wikibooks API — test_wikibook.py
     # re-enables this and mocks the fetch.
     monkeypatch.setenv("LEECHESS_WIKIBOOK", "off")
+    # And never auto-download the Lichess puzzle dump at app startup —
+    # test_seeding.py exercises seeding against a local fixture file.
+    monkeypatch.setenv("LEECHESS_AUTO_SEED", "off")
 
 
 @pytest.fixture()
@@ -64,6 +67,8 @@ def client(db_engine, monkeypatch):
     # The analysis background job opens its own session — point it at the
     # same throwaway database (TestClient runs background tasks inline).
     monkeypatch.setattr("app.analysis.session_factory", TestSession)
+    # Same for the puzzle-pool seeding job.
+    monkeypatch.setattr("app.seeding.session_factory", TestSession)
     try:
         with TestClient(app) as test_client:
             yield test_client

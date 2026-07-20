@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.analysis import reset_stale_analyses, stockfish_binary
 from app.db import Base, engine
 from app.routers import games, progress, puzzles, wikibook
+from app.seeding import maybe_autoseed
 
 
 @asynccontextmanager
@@ -19,6 +20,10 @@ async def lifespan(app: FastAPI):
     # Analysis jobs run via BackgroundTasks and die with the process (the Fly
     # machine auto-stops) — sweep any rows they orphaned mid-"analyzing".
     reset_stale_analyses()
+    # Seed the generic puzzle pool from the Lichess dump (background
+    # thread; gated on LEECHESS_AUTO_SEED=on) until a run has completed —
+    # an interrupted run resumes on the next restart.
+    maybe_autoseed()
     yield
 
 

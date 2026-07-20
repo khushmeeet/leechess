@@ -116,6 +116,19 @@ class CoachSummary(Base):
     game: Mapped[Game] = relationship(back_populates="summary")
 
 
+class PuzzleSeedRun(Base):
+    """One completed generic-pool seeding run (app/seeding.py). Presence of
+    any row is what stops startup from re-streaming the Lichess dump on
+    every boot — a run that dies mid-way leaves no row, so the next restart
+    resumes it. Delete the row(s) to force a re-seed."""
+
+    __tablename__ = "puzzle_seed_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    imported: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Puzzle(Base):
     """One drillable position. Personal puzzles point back at the game move
     they came from via source_move_id; generic Lichess imports have NULL

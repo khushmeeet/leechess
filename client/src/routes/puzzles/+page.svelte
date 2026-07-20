@@ -82,8 +82,8 @@
 			No puzzles due{motifFilter ? ' for this motif' : ''}.
 		</p>
 		<p class="mt-1">
-			Play a game — analysis queues your missed tactics automatically. For a generic pool, run the
-			Lichess import (<span class="font-mono">server/scripts/import_lichess_puzzles.py</span>).
+			Play a game — analysis queues your missed tactics automatically. The generic Lichess pool
+			seeds itself in the background at server startup — check back in a few minutes.
 		</p>
 	</div>
 {:else if session.status === 'error'}
