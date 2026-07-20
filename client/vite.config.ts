@@ -24,6 +24,14 @@ function crossOriginIsolation(): Plugin {
 }
 
 export default defineConfig({
+	server: {
+		fs: {
+			// shared/classification.json lives one level above the client root
+			// (imported by src/lib/classification.ts) — the dev server won't
+			// serve modules outside the root without this.
+			allow: ['..']
+		}
+	},
 	plugins: [
 		crossOriginIsolation(),
 		tailwindcss(),

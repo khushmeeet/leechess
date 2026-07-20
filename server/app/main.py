@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import chess
@@ -8,11 +9,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.analysis import stockfish_binary
+from app.analysis import reset_stale_analyses, stockfish_binary
 from app.db import Base, engine
 from app.routers import games, progress, puzzles, wikibook
 
-app = FastAPI(title="leechess")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Analysis jobs run via BackgroundTasks and die with the process (the Fly
+    # machine auto-stops) — sweep any rows they orphaned mid-"analyzing".
+    reset_stale_analyses()
+    yield
+
+
+app = FastAPI(title="leechess", lifespan=lifespan)
 
 Base.metadata.create_all(bind=engine)
 

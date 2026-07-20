@@ -1,0 +1,11 @@
+{
+	"_comment": "Single source of truth for move-classification constants. Loaded by server/app/analysis.py and bundled into the client via client/src/lib/classification.ts — edit here, never in the consumers. Threshold upper bounds are exclusive centipawn loss from the mover's perspective: loss < 10 is best, 10-24 good, etc.; at or past the last bound is a blunder. The server's test_classification.py pins the canonical values.",
+	"evalClampCp": 1000,
+	"thresholds": [
+		[10, "best"],
+		[25, "good"],
+		[50, "inaccuracy"],
+		[100, "mistake"]
+	],
+	"blunder": "blunder"
+}

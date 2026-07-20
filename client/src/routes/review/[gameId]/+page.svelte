@@ -28,11 +28,44 @@
 		game !== null && (game.analysis_status === 'pending' || game.analysis_status === 'analyzing')
 	);
 
-	// Fetch, then poll every 1.5s while the analysis job is still running.
+	// Polling while the analysis job runs: 1.5s while a healthy job would
+	// still be working, then exponential backoff (×1.5, capped at 10s) with a
+	// ~5-minute attempt budget. The server sweeps orphaned "analyzing" rows to
+	// "failed" on restart, but if it never comes back this page must not
+	// hammer it with a permanent spinner — after the budget we show a stalled
+	// state instead ("Check again" resumes).
+	const POLL_INITIAL_MS = 1500;
+	const POLL_DENSE_ATTEMPTS = 10; // ~15s of quick polls before backing off
+	const POLL_BACKOFF = 1.5;
+	const POLL_MAX_MS = 10_000;
+	const POLL_MAX_ATTEMPTS = 40;
+
+	let pollStalled = $state(false);
+	let pollEpoch = $state(0); // bump to restart polling after a stall
+
+	function resumePolling() {
+		pollStalled = false;
+		pollEpoch += 1;
+	}
+
 	$effect(() => {
 		const gameId = page.params.gameId!;
+		void pollEpoch; // re-run (with a fresh attempt budget) on "Check again"
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let cancelled = false;
+		let attempts = 0;
+		let delay = POLL_INITIAL_MS;
+		let loadedOnce = false; // `game` may still hold the previous route's game
+
+		function scheduleNext() {
+			if (attempts >= POLL_MAX_ATTEMPTS) {
+				pollStalled = true;
+				return;
+			}
+			attempts += 1;
+			timer = setTimeout(load, delay);
+			if (attempts >= POLL_DENSE_ATTEMPTS) delay = Math.min(delay * POLL_BACKOFF, POLL_MAX_MS);
+		}
 
 		async function load() {
 			try {
@@ -40,12 +73,17 @@
 				if (cancelled) return;
 				game = fetched;
 				error = null;
+				pollStalled = false;
+				loadedOnce = true;
 				const status = fetched.analysis_status;
-				if (status === 'pending' || status === 'analyzing') {
-					timer = setTimeout(load, 1500);
-				}
+				if (status === 'pending' || status === 'analyzing') scheduleNext();
 			} catch (e) {
-				if (!cancelled) error = e instanceof Error ? e.message : String(e);
+				if (cancelled) return;
+				// While polling an already-loaded game a fetch failure is likely
+				// transient (auto-stopped machine waking up) — keep the page and
+				// retry on the same backoff. Only a failed initial load errors.
+				if (loadedOnce) scheduleNext();
+				else error = e instanceof Error ? e.message : String(e);
 			}
 		}
 
@@ -298,7 +336,20 @@
 		{/if}
 	</div>
 
-	{#if analyzing}
+	{#if analyzing && pollStalled}
+		<div
+			class="mb-4 flex flex-wrap items-center gap-2 rounded-xs border border-warn-line bg-warn-bg px-3 py-2 text-sm text-warn"
+			data-testid="analysis-stalled"
+		>
+			Analysis is taking longer than expected — the job may have been interrupted.
+			<button
+				onclick={resumePolling}
+				class="rounded-xs border border-warn-line px-2 py-0.5 text-xs font-semibold uppercase hover:bg-paper"
+			>
+				Check again
+			</button>
+		</div>
+	{:else if analyzing}
 		<div
 			class="mb-4 flex items-center gap-2 rounded-xs border border-info-line bg-info-bg px-3 py-2 text-sm text-info"
 			data-testid="analysis-status"
