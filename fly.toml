@@ -4,6 +4,12 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+[env]
+  # First boot with an empty generic puzzle pool streams the Lichess dump in
+  # automatically (app/seeding.py). Off by default elsewhere so dev servers
+  # and test runs never surprise-download ~250MB.
+  LEECHESS_AUTO_SEED = "on"
+
 [http_service]
   internal_port = 8000
   force_https = true

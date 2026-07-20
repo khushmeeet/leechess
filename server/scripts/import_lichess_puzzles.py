@@ -1,11 +1,16 @@
-"""One-time import of the Lichess puzzle dump into the generic pool.
+"""Manual import of the Lichess puzzle dump into the generic pool.
+
+Normally unnecessary: the server seeds itself on first startup when
+LEECHESS_AUTO_SEED=on, or on POST /puzzles/seed (see app/seeding.py).
+This script is the offline path — a dump already on disk, no network:
 
     cd server
     curl -LO https://database.lichess.org/lichess_db_puzzle.csv.zst
     zstd -d lichess_db_puzzle.csv.zst
     uv run python scripts/import_lichess_puzzles.py lichess_db_puzzle.csv
 
-Safe to re-run: already-imported positions are skipped (dedup by FEN).
+Safe to re-run: already-imported positions are skipped (dedup by FEN) and
+each motif is only topped up to the cap.
 """
 
 import argparse

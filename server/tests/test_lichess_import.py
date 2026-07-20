@@ -9,7 +9,12 @@ import chess
 import pytest
 from sqlalchemy import select
 
-from app.lichess_import import THEME_TO_MOTIF, import_csv, puzzle_from_row
+from app.lichess_import import (
+    THEME_TO_MOTIF,
+    import_csv,
+    import_rows,
+    puzzle_from_row,
+)
 from app.models import Puzzle
 from tests.conftest import FIXTURES
 
@@ -57,6 +62,38 @@ def test_first_mappable_theme_wins_when_several_map(db_session):
 def test_max_per_motif_caps_the_pool(db_session):
     counts = import_csv(SAMPLE, db_session, max_per_motif=1)
     assert counts["fork"] == 1
+
+
+def test_cap_counts_puzzles_already_in_the_pool(db_session):
+    """Re-runs top a motif up to the cap, not add another cap's worth."""
+    db_session.add(Puzzle(fen="pre-existing", solution="a1a2", motif="fork"))
+    db_session.commit()
+
+    counts = import_csv(SAMPLE, db_session, max_per_motif=1)
+    # fork is already full; the sample's two fork rows are both skipped
+    assert counts == {"back_rank_mate": 1, "hanging_piece": 1}
+
+
+def test_import_stops_reading_once_every_motif_is_full(db_session):
+    """Streamed callers (app/seeding.py) rely on this to abort the network
+    download early instead of scanning millions of leftover rows."""
+    for i, motif in enumerate(sorted(set(THEME_TO_MOTIF.values()))):
+        if motif != "fork":
+            db_session.add(Puzzle(fen=f"fen-{i}", solution="a1a2", motif=motif))
+    db_session.commit()
+
+    def rows():
+        yield {
+            "PuzzleId": "F",
+            "FEN": "r3k3/1p6/8/1N6/8/8/8/4K3 b - - 0 1",
+            "Moves": "b7b6 b5c7",
+            "Rating": "1200",
+            "Themes": "fork",
+        }
+        raise AssertionError("kept reading after every motif was capped")
+
+    counts = import_rows(rows(), db_session, max_per_motif=1)
+    assert counts == {"fork": 1}
 
 
 def test_reimport_is_idempotent(db_session):
