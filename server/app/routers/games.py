@@ -57,7 +57,13 @@ def create_game(payload: GameCreate, db: Session = Depends(get_db)) -> dict:
     if payload.pgn is not None:
         game = _import_pgn(payload)
     else:
-        game = Game(pgn="", white=payload.white, black=payload.black, mode=payload.mode)
+        game = Game(
+            pgn="",
+            white=payload.white,
+            black=payload.black,
+            mode=payload.mode,
+            user_color=payload.user_color,
+        )
     db.add(game)
     db.commit()
     fen = _current_board(game).fen()

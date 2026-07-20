@@ -118,12 +118,14 @@ export class PuzzleSession {
 		}
 	}
 
-	handleBoardMove(orig: Key, dest: Key): void {
+	handleBoardMove(orig: Key, dest: Key, promotion?: string): void {
 		if (this.status !== 'solving' || !this.puzzle || !this.isPlayersTurn) return;
 		const expected = this.puzzle.solution[this.solutionIndex];
 		if (!expected) return;
 
-		if (expected.slice(0, 4) === `${orig}${dest}`) {
+		// promotion is set by the board's picker, so an underpromotion in the
+		// solution only matches when the solver actually picked that piece
+		if (expected === `${orig}${dest}${promotion ?? ''}`) {
 			this.push(expected);
 			this.advance();
 			return;
@@ -131,7 +133,7 @@ export class PuzzleSession {
 		// Lichess convention: any move that mates also counts as solving it.
 		const probe = new Chess(this.fen);
 		try {
-			const move = probe.move({ from: orig, to: dest, promotion: 'q' });
+			const move = probe.move({ from: orig, to: dest, promotion: promotion ?? 'q' });
 			if (probe.isCheckmate()) {
 				this.push(move.from + move.to + (move.promotion ?? ''));
 				this.finishSolved();

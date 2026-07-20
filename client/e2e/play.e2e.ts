@@ -179,6 +179,63 @@ test('resigning or starting a new game ends persistence', async ({ page }) => {
 	await expect(page.getByText('No moves yet.')).toBeVisible();
 });
 
+test('playing as Black flips the board, the engine opens, and it survives a refresh', async ({
+	page
+}) => {
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.locator('#play-color').selectOption('black');
+	await expect(page.locator('.cg-wrap')).toHaveClass(/orientation-black/);
+	await expect(page.getByText('· you play Black')).toBeVisible();
+
+	// the engine (White) opens; once its move lands it is the user's turn
+	await expect(page.getByText('(black to move)')).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
+
+	// the black game persists: still flipped, same single opener, no re-open
+	await page.reload();
+	await expect(page.locator('.cg-wrap')).toHaveClass(/orientation-black/);
+	await expect(page.getByText('(black to move)')).toBeVisible({ timeout: 15_000 });
+	await waitForEngineReady(page);
+	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
+});
+
+test('promoting a pawn opens the piece picker instead of auto-queening', async ({ page }) => {
+	// Restore a position where 5.bxa8 promotes (white pawn on b7, rook on a8).
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'leechess.activeGame',
+			JSON.stringify({
+				version: 1,
+				engineSkill: 5,
+				playerColor: 'white',
+				moves: ['a2a4', 'h7h6', 'a4a5', 'h6h5', 'a5a6', 'h5h4', 'a6b7', 'h4h3'],
+				evals: [],
+				badges: [],
+				lastFeedback: null,
+				currentEval: null,
+				serverGameId: null,
+				completedGameId: null
+			})
+		);
+	});
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	// cancelling the picker snaps the pawn back without playing a move
+	await move(page, 'b7', 'a8');
+	await expect(page.getByTestId('promotion-picker')).toBeVisible();
+	await page.getByTestId('promotion-backdrop').click();
+	await expect(page.getByTestId('promotion-picker')).toHaveCount(0);
+	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(4);
+
+	// picking the knight underpromotes
+	await move(page, 'b7', 'a8');
+	await page.getByTestId('promote-knight').click();
+	await expect(page.getByTestId('move-list')).toContainText('bxa8=N');
+});
+
 test('engine replies and the game stays in sync', async ({ page }) => {
 	await page.goto('/');
 	await waitForEngineReady(page);

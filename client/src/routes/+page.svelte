@@ -152,7 +152,7 @@
 		<div class="relative flex max-w-xl self-start">
 			{#if displayPrefs.showEvalBar}
 				<div class="absolute top-7 right-full bottom-7 mr-2 w-14">
-					<EvalBar cp={session.currentEval} />
+					<EvalBar cp={session.currentEval} orientation={session.playerColor} />
 				</div>
 			{/if}
 			<div class="relative min-w-0 flex-1">
@@ -162,8 +162,9 @@
 					dests={game.dests}
 					lastMove={game.lastMove}
 					{movableColor}
+					orientation={session.playerColor}
 					autoShapes={boardShapes}
-					onmove={(orig, dest) => session.handleBoardMove(orig, dest)}
+					onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 				/>
 
 				{#if resultOutcome}
@@ -217,13 +218,29 @@
 							<option value={preset.skill}>{preset.label} (≈{preset.elo} Elo)</option>
 						{/each}
 					</select>
+					<label for="play-color" class="text-muted">You play</label>
+					<select
+						id="play-color"
+						value={session.preferredColor}
+						onchange={(event) =>
+							session.setPreferredColor(event.currentTarget.value as 'white' | 'black')}
+						class="rounded-xs border border-line bg-card px-2 py-1"
+					>
+						<option value="white">White</option>
+						<option value="black">Black</option>
+					</select>
 				</div>
 				<p class="mt-2 text-xs text-faint">
 					engine:
 					<span data-testid="engine-status" class="font-mono">
 						{session.engineReady ? 'ready' : 'warming up…'}
 					</span>
-					· you play White{usernamePrefs.name ? ` as ${usernamePrefs.name}` : ''}
+					· you play {session.playerColor === 'white' ? 'White' : 'Black'}{usernamePrefs.name
+						? ` as ${usernamePrefs.name}`
+						: ''}
+					{#if session.preferredColor !== session.playerColor}
+						· {session.preferredColor === 'white' ? 'White' : 'Black'} from the next game
+					{/if}
 				</p>
 			</section>
 

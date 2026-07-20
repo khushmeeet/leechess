@@ -71,7 +71,23 @@ def test_start_game_returns_id_and_starting_fen(client):
     assert body["id"] > 0
     assert body["fen"] == STARTING_FEN
     assert body["mode"] == "engine"
+    assert body["user_color"] == "white"  # default when the client omits it
     assert body["analysis_status"] == "pending"
+
+
+def test_start_game_stores_the_user_color(client):
+    response = client.post(
+        "/games",
+        json={"mode": "engine", "user_color": "black", "white": "stockfish"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["user_color"] == "black"
+    assert body["white"] == "stockfish"
+
+    assert (
+        client.post("/games", json={"user_color": "green"}).status_code == 422
+    )
 
 
 def test_submit_legal_move_uci_and_san(client):

@@ -42,10 +42,14 @@ def _numbered(move: Move) -> str:
 
 
 def _player_moves(game: Game) -> list[Move]:
-    """The student's moves — same rule as the progress CPL: vs the engine you
-    play White; local pass-and-play counts both sides."""
+    """The student's moves — same rule as the progress CPL: vs the engine
+    only the side you played (user_color) counts; local pass-and-play counts
+    both sides."""
     if game.mode == "engine":
-        return [move for move in game.moves if move.ply % 2 == 1]
+        # `or "white"` covers unflushed rows where the column default has
+        # not been applied yet
+        user_parity = 1 if (game.user_color or "white") == "white" else 0
+        return [move for move in game.moves if move.ply % 2 == user_parity]
     return list(game.moves)
 
 
@@ -90,7 +94,7 @@ def build_summary_prompt(game: Game) -> str:
     lines = [
         f"Result: {game.result}"
         + (
-            " — you played White against the engine."
+            f" — you played {(game.user_color or 'white').capitalize()} against the engine."
             if game.mode == "engine"
             else " — local game, both sides played by hand; every move counts as yours."
         )

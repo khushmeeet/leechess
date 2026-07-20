@@ -10,6 +10,8 @@ const VERSION = 1;
 export interface SavedGame {
 	version: number;
 	engineSkill: number;
+	/** Side the user plays; saves from before color choice default to white. */
+	playerColor: 'white' | 'black';
 	moves: string[];
 	evals: (number | null)[];
 	badges: (Classification | null)[];
@@ -40,6 +42,12 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 	const saved = data as Record<string, unknown>;
 	if (saved.version !== VERSION) return null;
 	if (typeof saved.engineSkill !== 'number') return null;
+	if (
+		saved.playerColor !== undefined &&
+		saved.playerColor !== 'white' &&
+		saved.playerColor !== 'black'
+	)
+		return null;
 	if (!Array.isArray(saved.moves) || saved.moves.length === 0) return null;
 	if (
 		!saved.moves.every(
@@ -66,6 +74,7 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 	return {
 		version: VERSION,
 		engineSkill: saved.engineSkill,
+		playerColor: saved.playerColor === 'black' ? 'black' : 'white',
 		moves,
 		// badge/eval arrays align to moves by ply index — never let them run past
 		evals: (saved.evals as (number | null)[]).slice(0, moves.length),

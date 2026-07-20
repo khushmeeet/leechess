@@ -45,8 +45,9 @@
 		 * a piece back after a legal-but-rejected move (wrong puzzle answer),
 		 * where the FEN stays the same but chessground moved the piece. */
 		syncKey?: number;
-		/** Called when the user completes a move on the board. */
-		onmove?: (orig: Key, dest: Key) => void;
+		/** Called when the user completes a move on the board. For promotions,
+		 * `promotion` is the piece letter (q/n/r/b) chosen in the picker. */
+		onmove?: (orig: Key, dest: Key, promotion?: string) => void;
 	}
 
 	let {
@@ -64,6 +65,52 @@
 
 	let el: HTMLElement;
 	let api: Api | undefined;
+
+	/** A pawn just landed on the last rank: the move is held back until the
+	 * user picks the promotion piece (or cancels, snapping the pawn back). */
+	let pendingPromotion = $state<{ orig: Key; dest: Key; color: PieceColor } | null>(null);
+
+	const PROMOTION_ROLES = [
+		{ role: 'queen', letter: 'q' },
+		{ role: 'knight', letter: 'n' },
+		{ role: 'rook', letter: 'r' },
+		{ role: 'bishop', letter: 'b' }
+	] as const;
+
+	function handleMove(orig: Key, dest: Key): void {
+		// chessground has already moved the piece when this fires, so the pawn
+		// itself is found on the destination square
+		const piece = api?.state.pieces.get(dest);
+		if (piece?.role === 'pawn' && (dest[1] === '8' || dest[1] === '1')) {
+			pendingPromotion = { orig, dest, color: piece.color };
+			return;
+		}
+		onmove?.(orig, dest);
+	}
+
+	function choosePromotion(letter: string): void {
+		const pending = pendingPromotion;
+		pendingPromotion = null;
+		if (pending) onmove?.(pending.orig, pending.dest, letter);
+	}
+
+	function cancelPromotion(): void {
+		pendingPromotion = null;
+		api?.set(config()); // fen prop never changed — this snaps the pawn back
+	}
+
+	// picker geometry: the column sits on the destination file, growing from
+	// the promotion square's edge of the board toward the middle
+	const promotionLeftPct = $derived.by(() => {
+		if (!pendingPromotion) return 0;
+		const file = pendingPromotion.dest.charCodeAt(0) - 97; // a → 0
+		return (orientation === 'white' ? file : 7 - file) * 12.5;
+	});
+	const promotionFromTop = $derived.by(() => {
+		if (!pendingPromotion) return true;
+		const rank = Number(pendingPromotion.dest[1]);
+		return (orientation === 'white' ? 9 - rank : rank) === 1;
+	});
 
 	const eliminated = $derived.by((): Record<PieceColor, PieceRole[]> => {
 		const remaining: Record<PieceColor, PieceCounts> = {
@@ -120,7 +167,7 @@
 		// then push state changes into it via api.set() (see $effect below).
 		api = Chessground(el, {
 			...config(),
-			events: { move: (orig, dest) => onmove?.(orig, dest) }
+			events: { move: (orig, dest) => handleMove(orig, dest) }
 		});
 		api.setAutoShapes(autoShapes);
 		return () => api?.destroy();
@@ -130,6 +177,13 @@
 		void syncKey;
 		api?.set(config());
 		api?.setAutoShapes(autoShapes);
+	});
+
+	$effect(() => {
+		// the position changed under an open picker — its held-back move no
+		// longer applies to the board
+		void fen;
+		pendingPromotion = null;
 	});
 </script>
 
@@ -157,11 +211,44 @@
 		.dark}; --board-image: {boardImageUrl(boardPrefs.theme)}"
 >
 	{@render eliminatedRow(topColor)}
-	<div class="aspect-square w-full">
+	<div class="relative aspect-square w-full">
 		<div bind:this={el} class="h-full w-full"></div>
+		{#if pendingPromotion}
+			<div
+				class="promo-backdrop"
+				data-testid="promotion-backdrop"
+				onclick={cancelPromotion}
+				aria-hidden="true"
+			></div>
+			<div
+				class="promo-column"
+				class:from-bottom={!promotionFromTop}
+				style="left: {promotionLeftPct}%"
+				data-testid="promotion-picker"
+				role="dialog"
+				aria-label="Choose promotion piece"
+			>
+				{#each PROMOTION_ROLES as { role, letter } (role)}
+					<button
+						type="button"
+						onclick={() => choosePromotion(letter)}
+						data-testid="promote-{role}"
+						aria-label="Promote to {role}"
+					>
+						<piece class="{role} {pendingPromotion.color}"></piece>
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 	{@render eliminatedRow(bottomColor)}
 </div>
+
+<svelte:window
+	onkeydown={(event) => {
+		if (pendingPromotion && event.key === 'Escape') cancelPromotion();
+	}}
+/>
 
 <style>
 	.eliminated-row {
@@ -208,5 +295,49 @@
 	:global(:root.dark) .eliminated-piece.black {
 		filter: drop-shadow(0.045rem 0 0 var(--sq-lt)) drop-shadow(-0.045rem 0 0 var(--sq-lt))
 			drop-shadow(0 0.045rem 0 var(--sq-lt)) drop-shadow(0 -0.045rem 0 var(--sq-lt));
+	}
+
+	.promo-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 10;
+		background: rgb(0 0 0 / 30%);
+	}
+
+	.promo-column {
+		position: absolute;
+		top: 0;
+		z-index: 11;
+		display: flex;
+		width: 12.5%;
+		flex-direction: column;
+		box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+	}
+
+	.promo-column.from-bottom {
+		top: auto;
+		bottom: 0;
+		flex-direction: column-reverse;
+	}
+
+	.promo-column button {
+		aspect-ratio: 1;
+		width: 100%;
+		border: 1px solid var(--color-line);
+		background: var(--color-card);
+		cursor: pointer;
+	}
+
+	.promo-column button:hover {
+		background: var(--color-accent-soft);
+	}
+
+	.promo-column piece {
+		display: block;
+		width: 100%;
+		height: 100%;
+		background-position: center;
+		background-repeat: no-repeat;
+		background-size: 88%;
 	}
 </style>
