@@ -45,11 +45,12 @@ def seed(db_session):
             mode: str = "local",
             status: str = "complete",
             created_at: datetime | None = None,
+            user_color: str = "white",
         ) -> Game:
             """One move per (eval_before, eval_after) pair, white first."""
             game = Game(
                 pgn="", mode=mode, analysis_status=status,
-                created_at=created_at or days_ago(0),
+                created_at=created_at or days_ago(0), user_color=user_color,
             )  # fmt: skip
             for ply, (before, after) in enumerate(evals, start=1):
                 game.moves.append(
@@ -182,6 +183,19 @@ def test_engine_games_count_only_whites_moves(client, seed):
 
     (point,) = get(client)["cpl_trend"]
     assert point["avg_cpl"] == pytest.approx(40.0)
+
+
+def test_engine_games_count_only_the_user_side(client, seed):
+    # Same shape but the user played Black: plies 2 and 4 are yours —
+    # black's loss is eval going up (50 and 110), white's must not count.
+    seed.game(
+        [(20, -10), (-10, 40), (40, -10), (-10, 100)],
+        mode="engine",
+        user_color="black",
+    )
+
+    (point,) = get(client)["cpl_trend"]
+    assert point["avg_cpl"] == pytest.approx(80.0)
 
 
 def test_cpl_phases_split_at_plies_20_and_60(client, seed):

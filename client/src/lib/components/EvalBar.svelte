@@ -2,9 +2,11 @@
 	interface Props {
 		/** Centipawns from white's perspective (clamped ±1000), null = unknown. */
 		cp: number | null;
+		/** Matches the board: white's share fills from the white side. */
+		orientation?: 'white' | 'black';
 	}
 
-	let { cp }: Props = $props();
+	let { cp, orientation = 'white' }: Props = $props();
 
 	// Same cp → winning-chances curve Lichess uses; keeps the bar responsive
 	// around 0 and saturating toward decisive evals.
@@ -18,7 +20,8 @@
 
 	// The readout tab tracks the fill boundary but is clamped a few percent
 	// from each end so it never clips past the bar at decisive evals.
-	const tabPct = $derived(Math.min(94, Math.max(6, 100 - whitePct)));
+	const boundaryPct = $derived(orientation === 'white' ? 100 - whitePct : whitePct);
+	const tabPct = $derived(Math.min(94, Math.max(6, boundaryPct)));
 </script>
 
 <div class="relative h-full w-14 shrink-0" title="eval: {label}" data-testid="eval-bar">
@@ -26,7 +29,9 @@
 		class="absolute inset-y-0 right-0 w-[10px] overflow-hidden rounded-xs bg-body shadow-[0_0_0_1px_var(--color-line)]"
 	>
 		<div
-			class="absolute inset-x-0 bottom-0 rounded-t-xs bg-card transition-[height] duration-300"
+			class="absolute inset-x-0 {orientation === 'white'
+				? 'bottom-0 rounded-t-xs'
+				: 'top-0 rounded-b-xs'} bg-card transition-[height] duration-300"
 			style="height: {whitePct}%"
 		></div>
 		<div class="absolute inset-x-[-3px] top-1/2 h-px -translate-y-1/2 bg-accent-line"></div>

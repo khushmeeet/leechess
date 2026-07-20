@@ -27,6 +27,27 @@ app = FastAPI(title="leechess", lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
 
 
+def _migrate_existing_tables() -> None:
+    """create_all never alters tables that already exist, and there is no
+    alembic here — columns added after a database was first created get a
+    hand-rolled ALTER, guarded so re-runs are no-ops."""
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(games)"))}
+        if "user_color" not in columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE games ADD COLUMN user_color VARCHAR "
+                    "NOT NULL DEFAULT 'white'"
+                )
+            )
+            conn.commit()
+
+
+_migrate_existing_tables()
+
+
 @app.middleware("http")
 async def cross_origin_isolation_headers(request: Request, call_next):
     """Required for SharedArrayBuffer, which multi-threaded stockfish.wasm

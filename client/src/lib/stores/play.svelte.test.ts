@@ -129,7 +129,7 @@ describe('server sync chain', () => {
 		const session = await startedSession();
 		await playWithReply(session, 'e2', 'e4');
 		await settle();
-		expect(api.startGame).toHaveBeenCalledExactlyOnceWith('engine', undefined);
+		expect(api.startGame).toHaveBeenCalledExactlyOnceWith('engine', undefined, 'white');
 		expect(api.postMove.mock.calls).toEqual([
 			[42, 'e2e4'],
 			[42, 'e7e5']
@@ -178,6 +178,92 @@ describe('generation guard and suspend', () => {
 
 		expect(session.game.moves.length).toBe(1); // reply dropped
 		expect(api.postMove.mock.calls.length).toBe(postsBefore);
+	});
+});
+
+describe('playing as Black', () => {
+	it('flipping to black before the first move makes the engine open', async () => {
+		engine.play.mockResolvedValue(evalResult(20, 'e2e4'));
+		const session = await startedSession();
+		session.setPreferredColor('black');
+		expect(session.playerColor).toBe('black');
+		await vi.waitFor(() => expect(session.game.moves.length).toBe(1));
+		expect(session.game.moves[0].san).toBe('e4');
+		expect(session.game.turnColor).toBe('black'); // user's move now
+		expect(session.badges[0]).toBeUndefined(); // engine openers are never badged
+	});
+
+	it('flipping back to white cancels an in-flight engine opener', async () => {
+		const opener = deferred<ReturnType<typeof evalResult>>();
+		engine.play.mockReturnValue(opener.promise);
+		const session = await startedSession();
+		session.setPreferredColor('black');
+		await vi.waitFor(() => expect(engine.play).toHaveBeenCalled());
+
+		session.setPreferredColor('white');
+		opener.resolve(evalResult(20, 'e2e4'));
+		await settle();
+
+		expect(session.game.moves.length).toBe(0); // opener dropped, White is the user
+		expect(session.playerColor).toBe('white');
+	});
+
+	it('a mid-game color change only applies from the next game', async () => {
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+		session.setPreferredColor('black');
+		expect(session.playerColor).toBe('white'); // current game unaffected
+
+		engine.play.mockResolvedValue(evalResult(20, 'd2d4'));
+		session.newGame();
+		expect(session.playerColor).toBe('black');
+		await vi.waitFor(() => expect(session.game.moves.length).toBe(1));
+		expect(session.game.moves[0].san).toBe('d4');
+	});
+
+	it('restoring a black game on the engine turn resumes with its reply', async () => {
+		persistence.loadActiveGame.mockReturnValue({
+			version: 1,
+			engineSkill: 5,
+			playerColor: 'black' as const,
+			moves: ['e2e4', 'e7e5'], // engine (White) to move
+			evals: [20, 15],
+			badges: [null, 'good'],
+			lastFeedback: null,
+			currentEval: 15,
+			serverGameId: 7,
+			completedGameId: null
+		});
+		api.getGame.mockResolvedValue({ moves: [{}, {}] });
+		engine.play.mockResolvedValue(evalResult(20, 'g1f3'));
+		const session = new PlaySession();
+		await session.start();
+		expect(session.playerColor).toBe('black');
+		await vi.waitFor(() => expect(session.game.moves.length).toBe(3));
+		expect(session.game.moves[2].san).toBe('Nf3');
+	});
+});
+
+describe('promotion', () => {
+	it('plays the picker-chosen piece instead of auto-queening', async () => {
+		// white pawn on b7 with the black rook on a8 — bxa8 must underpromote
+		persistence.loadActiveGame.mockReturnValue({
+			version: 1,
+			engineSkill: 5,
+			playerColor: 'white' as const,
+			moves: ['a2a4', 'h7h6', 'a4a5', 'h6h5', 'a5a6', 'h5h4', 'a6b7', 'h4h3'],
+			evals: [],
+			badges: [],
+			lastFeedback: null,
+			currentEval: null,
+			serverGameId: null,
+			completedGameId: null
+		});
+		const session = new PlaySession();
+		await session.start();
+		session.handleBoardMove('b7' as never, 'a8' as never, 'n');
+		expect(session.game.moves.at(-1)?.san).toBe('bxa8=N');
+		expect(session.game.moves.at(-1)?.uci).toBe('b7a8n');
 	});
 });
 
@@ -233,6 +319,7 @@ describe('restore resync', () => {
 	const saved = {
 		version: 1,
 		engineSkill: 5,
+		playerColor: 'white' as const,
 		moves: ['e2e4', 'e7e5'],
 		evals: [20, 15],
 		badges: ['good', null],

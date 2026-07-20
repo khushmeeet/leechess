@@ -19,6 +19,12 @@ class Game(Base):
     black: Mapped[str] = mapped_column(String, default="?")
     result: Mapped[str] = mapped_column(String, default="*")
     mode: Mapped[str] = mapped_column(String, default="local")
+    # Which side the human played in an engine game ("white"/"black") —
+    # progress stats and coach summaries attribute moves by it. Local
+    # pass-and-play games keep the default; every move counts as the user's.
+    user_color: Mapped[str] = mapped_column(
+        String, default="white", server_default="white"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     analysis_status: Mapped[str] = mapped_column(String, default="pending")
 

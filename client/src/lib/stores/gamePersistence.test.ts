@@ -9,6 +9,7 @@ import {
 
 const snapshot: Omit<SavedGame, 'version'> = {
 	engineSkill: 5,
+	playerColor: 'white',
 	moves: ['e2e4', 'e7e5', 'g1f3'],
 	evals: [30, 25, null],
 	badges: ['best', null, null],
@@ -50,6 +51,15 @@ describe('parseSavedGame', () => {
 	it('accepts promotion moves', () => {
 		const saved = parseSavedGame(JSON.stringify({ ...valid(), moves: ['e7e8q'] }));
 		expect(saved?.moves).toEqual(['e7e8q']);
+	});
+
+	it('defaults a missing player color to white and rejects invalid ones', () => {
+		const legacy = valid();
+		delete legacy.playerColor; // save from before color choice existed
+		expect(parseSavedGame(JSON.stringify(legacy))?.playerColor).toBe('white');
+		const black = parseSavedGame(JSON.stringify({ ...valid(), playerColor: 'black' }));
+		expect(black?.playerColor).toBe('black');
+		expect(parseSavedGame(JSON.stringify({ ...valid(), playerColor: 'green' }))).toBeNull();
 	});
 
 	it('rejects tampered eval/badge/feedback fields', () => {

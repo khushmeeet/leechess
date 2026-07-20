@@ -45,7 +45,7 @@ export class GameStore {
 		const fenBefore = this.chess.fen();
 		let move;
 		try {
-			// Promotion picker deferred: auto-queen is fine for now.
+			// promotion comes from the board's picker; 'q' covers UCI without a suffix
 			move = this.chess.move({ from: orig as Square, to: dest as Square, promotion });
 		} catch {
 			return null;

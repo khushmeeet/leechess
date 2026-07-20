@@ -71,12 +71,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	return response.json();
 }
 
-/** `white` is the human player's display name (usernamePrefs); omitted while
- * unset, which leaves the server's "player" default in place. */
-export function startGame(mode: string, white?: string): Promise<GameCreated> {
+/** `name` is the human player's display name (usernamePrefs); omitted while
+ * unset, which leaves the server's "player" default in place. `userColor` is
+ * the side the human plays — the engine takes the other seat, and the server
+ * attributes progress/summary stats by it. */
+export function startGame(
+	mode: string,
+	name?: string,
+	userColor: 'white' | 'black' = 'white'
+): Promise<GameCreated> {
+	const names =
+		mode === 'engine'
+			? userColor === 'white'
+				? { white: name ?? 'player', black: 'stockfish' }
+				: { white: 'stockfish', black: name ?? 'player' }
+			: name
+				? { white: name }
+				: {};
 	return request('/games', {
 		method: 'POST',
-		body: JSON.stringify(white ? { mode, white } : { mode })
+		body: JSON.stringify({ mode, user_color: userColor, ...names })
 	});
 }
 

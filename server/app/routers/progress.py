@@ -64,8 +64,8 @@ def game_cpl(game: Game) -> GameCplPoint | None:
         if move.eval_before is None or move.eval_after is None:
             return None  # analysis incomplete despite the status — skip
         is_white = move.ply % 2 == 1
-        if game.mode == "engine" and not is_white:
-            continue  # vs Stockfish you play White; its moves aren't yours
+        if game.mode == "engine" and is_white != ((game.user_color or "white") == "white"):
+            continue  # vs Stockfish only your side's moves are yours
         loss = max(
             0.0,
             move.eval_before - move.eval_after

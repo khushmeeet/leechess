@@ -12,6 +12,15 @@ class GameCreate(BaseModel):
     mode: str = "local"
     white: str = "player"
     black: str = "player"
+    # Side the human plays (engine games) — drives progress/summary stats.
+    user_color: str = "white"
+
+    @field_validator("user_color")
+    @classmethod
+    def validate_user_color(cls, value: str) -> str:
+        if value not in {"white", "black"}:
+            raise ValueError("user_color must be 'white' or 'black'")
+        return value
 
 
 class MoveIn(BaseModel):
@@ -69,6 +78,7 @@ class GameOut(BaseModel):
     black: str
     result: str
     mode: str
+    user_color: str
     created_at: datetime
     analysis_status: str
 
@@ -167,7 +177,7 @@ class MotifProgress(BaseModel):
 
 class GameCplPoint(BaseModel):
     """One analyzed game's average centipawn loss, from the player's side
-    (engine games count White only — you always play White vs Stockfish;
+    (engine games count only the side you played, per the game's user_color;
     local pass-and-play counts both sides). Phase splits use the same rough
     ply boundaries the Review CPL graph draws; None = no moves in that phase.
     """

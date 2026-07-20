@@ -102,7 +102,7 @@
 				orientation={session.orientation}
 				autoShapes={shapes}
 				syncKey={session.boardSyncKey}
-				onmove={(orig, dest) => session.handleBoardMove(orig, dest)}
+				onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 			/>
 		</div>
 

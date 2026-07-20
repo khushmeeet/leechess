@@ -51,7 +51,11 @@ export class PlaySession {
 
 	// per-game settings, locked once the first move is played
 	engineSkill = $state(5);
-	readonly playerColor = 'white' as const; // vs engine; color choice is post-v1
+	/** Side the user plays in the current game (vs engine). */
+	playerColor = $state<'white' | 'black'>('white');
+	/** The color picker's value: applied immediately while no game is under
+	 * way, otherwise it takes effect from the next game. */
+	preferredColor = $state<'white' | 'black'>('white');
 
 	engineReady = $state(false);
 	engineThinking = $state(false);
@@ -106,6 +110,8 @@ export class PlaySession {
 			return;
 		}
 		this.engineSkill = saved.engineSkill;
+		this.playerColor = saved.playerColor;
+		this.preferredColor = saved.playerColor;
 		this.evals = saved.evals;
 		this.badges = saved.badges;
 		this.lastFeedback = saved.lastFeedback;
@@ -149,6 +155,7 @@ export class PlaySession {
 		if (!this.persistable || !this.started) return;
 		saveActiveGame({
 			engineSkill: this.engineSkill,
+			playerColor: this.playerColor,
 			moves: this.game.moves.map((move) => move.uci),
 			evals: [...this.evals],
 			badges: [...this.badges],
@@ -179,7 +186,8 @@ export class PlaySession {
 				if (generation !== this.generation) return;
 			}
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine', usernamePrefs.name ?? undefined)).id;
+				const id = (await startGame('engine', usernamePrefs.name ?? undefined, this.playerColor))
+					.id;
 				if (generation !== this.generation) {
 					discardGame(id).catch(() => {});
 					return;
@@ -239,6 +247,14 @@ export class PlaySession {
 		this.seedFromInitial();
 		this.engineReady = true;
 		soundPrefs.play('game-start');
+		this.maybeEngineFirstMove();
+	}
+
+	/** When the user plays Black, the engine opens: kick off its first move as
+	 * soon as the engine is ready and the (empty) board is on its turn. */
+	private maybeEngineFirstMove(): void {
+		if (!this.engineReady || this.game.isGameOver) return;
+		if (this.game.turnColor !== this.playerColor) this.engineReply();
 	}
 
 	/** Restored session: evaluate the position where the game left off. The
@@ -259,7 +275,9 @@ export class PlaySession {
 		if (!this.initialEval) return;
 		const { cp, mate, depth, lines } = this.initialEval;
 		this.insightEval = { cp, mate, depth };
-		this.ideas = { fen: START_FEN, lines };
+		// the start position's candidate lines are White's ideas — as Black the
+		// user's first Ideas row comes with the eval after the engine's opener
+		this.ideas = this.playerColor === 'white' ? { fen: START_FEN, lines } : null;
 	}
 
 	get userCanMove(): boolean {
@@ -267,9 +285,20 @@ export class PlaySession {
 		return this.game.turnColor === this.playerColor;
 	}
 
-	handleBoardMove(orig: Key, dest: Key): void {
+	/** Set the color picker's value. Takes effect immediately unless a game is
+	 * under way (then it applies from the next game) — flipping cancels a
+	 * pending engine opener via the turn guard in `engineReply`. */
+	setPreferredColor(color: 'white' | 'black'): void {
+		this.preferredColor = color;
+		if (this.started || this.game.isGameOver) return;
+		this.playerColor = color;
+		this.seedFromInitial();
+		this.maybeEngineFirstMove();
+	}
+
+	handleBoardMove(orig: Key, dest: Key, promotion?: string): void {
 		if (!this.userCanMove) return;
-		const played = this.game.tryMove(orig, dest);
+		const played = this.game.tryMove(orig, dest, promotion);
 		if (played) this.afterMove(played, false);
 		else soundPrefs.play('illegal');
 	}
@@ -282,7 +311,8 @@ export class PlaySession {
 		const generation = this.generation;
 		this.inSync(async () => {
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine', usernamePrefs.name ?? undefined)).id;
+				const id = (await startGame('engine', usernamePrefs.name ?? undefined, this.playerColor))
+					.id;
 				if (generation !== this.generation) {
 					// session was reset while the game was being created —
 					// the fresh record belongs to an abandoned game; discard it
@@ -369,6 +399,9 @@ export class PlaySession {
 		const generation = this.generation;
 		this.inChain(async () => {
 			try {
+				// no longer the engine's turn: the user flipped colors before the
+				// opener, or a queued duplicate already produced this move
+				if (this.game.isGameOver || this.game.turnColor === this.playerColor) return;
 				// A hung search rejects and self-heals the engine (see stockfish.ts),
 				// so a retry runs on a fresh worker. Without this, a single lost
 				// `bestmove` would leave the game stuck on the engine's turn — the
@@ -388,8 +421,10 @@ export class PlaySession {
 					}
 				}
 				// the session may have been reset or suspended mid-search — the
-				// reply must not apply (and then sync) under the new generation
+				// reply must not apply (and then sync) under the new generation —
+				// or the user flipped colors mid-opener and now owns this turn
 				if (!reply || generation !== this.generation) return;
+				if (this.game.turnColor === this.playerColor) return;
 				const played = this.game.applyUci(reply.bestMove);
 				if (played) this.afterMove(played, true);
 			} finally {
@@ -399,9 +434,10 @@ export class PlaySession {
 	}
 
 	/** Manual recovery after `engineError`: retry the engine's move on a fresh
-	 * worker. No-op unless it's genuinely the engine's turn. */
+	 * worker. No-op unless it's genuinely the engine's turn (which includes a
+	 * failed opener in a game where the user plays Black, before any move). */
 	retryEngineMove(): void {
-		if (!this.started || this.game.isGameOver) return;
+		if (this.game.isGameOver) return;
 		if (this.game.turnColor === this.playerColor) return;
 		this.engineError = null;
 		this.engineReply();
@@ -452,6 +488,7 @@ export class PlaySession {
 	newGame(): void {
 		this.discardUnfinished();
 		this.generation += 1;
+		this.playerColor = this.preferredColor;
 		this.game.reset();
 		this.evals = [];
 		this.badges = [];
@@ -484,6 +521,8 @@ export class PlaySession {
 			});
 		}
 		// engine not ready: start() is still warming up and will now take the
-		// fresh-session path, seeding the start position itself
+		// fresh-session path, seeding the start position itself (and opening
+		// for the engine if the user plays Black)
+		this.maybeEngineFirstMove();
 	}
 }

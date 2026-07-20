@@ -148,6 +148,19 @@ def test_engine_mode_digests_white_moves_only():
     assert "Nxe5" not in prompt  # the engine's punish isn't your move
 
 
+def test_engine_mode_digests_black_moves_when_user_played_black():
+    game = tagged_hung_queen_game()
+    game.mode = "engine"
+    game.user_color = "black"
+
+    prompt = build_summary_prompt(game)
+
+    assert "you played Black against the engine" in prompt
+    assert "Your 3 moves:" in prompt
+    assert "3... Nxe5" in prompt
+    assert "Qxe5+ — blunder" not in prompt  # the engine's blunder isn't yours
+
+
 # --- the API call itself: request shape + response parsing ---
 
 
