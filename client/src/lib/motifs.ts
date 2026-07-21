@@ -19,6 +19,7 @@ export function motifReason(motif: string, san: string): string {
 		discovered_attack: `${san} uncovers an attack from the piece behind`,
 		removing_the_defender: `${san} removes the piece holding the defense together`,
 		deflection: `${san} deflects the defender away from its job`,
+		overloading: `${san} punishes a defender doing two jobs — one target must fall`,
 		x_ray_attack: `${san} attacks through the piece in the way`,
 		zwischenzug: `${san} is an in-between move — the threat comes first`,
 		trapped_piece: `${san} traps a piece with nowhere safe to go`
