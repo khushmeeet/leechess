@@ -8,6 +8,8 @@ export interface GameSummary {
 	black: string;
 	result: string;
 	mode: string;
+	/** Side the human played (engine games); drives the win/loss/draw outcome. */
+	user_color: 'white' | 'black';
 	created_at: string;
 	analysis_status: string;
 }
