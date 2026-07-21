@@ -89,17 +89,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** `name` is the human player's display name (usernamePrefs); omitted while
  * unset, which leaves the server's "player" default in place. `userColor` is
  * the side the human plays — the engine takes the other seat, and the server
- * attributes progress/summary stats by it. */
+ * attributes progress/summary stats by it. `engineName` labels that engine
+ * seat (e.g. "Stockfish (Club)") so a review row reads "<player> vs <engine>". */
 export function startGame(
 	mode: string,
 	name?: string,
-	userColor: 'white' | 'black' = 'white'
+	userColor: 'white' | 'black' = 'white',
+	engineName = 'Stockfish'
 ): Promise<GameCreated> {
 	const names =
 		mode === 'engine'
 			? userColor === 'white'
-				? { white: name ?? 'player', black: 'stockfish' }
-				: { white: 'stockfish', black: name ?? 'player' }
+				? { white: name ?? 'player', black: engineName }
+				: { white: engineName, black: name ?? 'player' }
 			: name
 				? { white: name }
 				: {};
