@@ -192,37 +192,6 @@
 		return pairs;
 	});
 
-	/** Mistake/blunder/inaccuracy counts and average centipawn loss per side. */
-	const summary = $derived.by(() => {
-		if (!game) return null;
-		const sides = {
-			white: { count: 0, totalLoss: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
-			black: { count: 0, totalLoss: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
-		};
-		for (const move of game.moves) {
-			if (move.eval_before === null || move.eval_after === null) return null;
-			const isWhite = move.ply % 2 === 1;
-			const side = sides[isWhite ? 'white' : 'black'];
-			side.count += 1;
-			side.totalLoss += Math.max(
-				0,
-				isWhite ? move.eval_before - move.eval_after : move.eval_after - move.eval_before
-			);
-			const c = move.classification;
-			if (c === 'inaccuracy' || c === 'mistake' || c === 'blunder') side[c] += 1;
-		}
-		return {
-			white: {
-				...sides.white,
-				avgCpl: sides.white.count ? sides.white.totalLoss / sides.white.count : 0
-			},
-			black: {
-				...sides.black,
-				avgCpl: sides.black.count ? sides.black.totalLoss / sides.black.count : 0
-			}
-		};
-	});
-
 	function select(ply: number) {
 		if (!game) return;
 		selectedPly = Math.min(Math.max(1, ply), game.moves.length);
@@ -537,7 +506,8 @@
 				</ol>
 			</section>
 
-			{#if summary}
+			{#if game.cpl_summary}
+				{@const summary = game.cpl_summary}
 				<table class="w-full shrink-0 text-xs" data-testid="game-summary">
 					<thead>
 						<tr class="text-left text-muted">
@@ -552,7 +522,7 @@
 						{#each sideNames as side (side)}
 							<tr class="border-t border-line">
 								<td class="py-1 font-semibold capitalize">{side} ({game[side]})</td>
-								<td class="py-1 font-mono">{summary[side].avgCpl.toFixed(0)}</td>
+								<td class="py-1 font-mono">{summary[side].avg_cpl.toFixed(0)}</td>
 								<td class="py-1">{summary[side].inaccuracy}</td>
 								<td class="py-1">{summary[side].mistake}</td>
 								<td class="py-1">{summary[side].blunder}</td>

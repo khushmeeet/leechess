@@ -39,11 +39,26 @@ export interface MoveAccepted {
 	game_over: boolean;
 }
 
+/** One side's review-table row: avg centipawn loss plus flagged-move counts. */
+export interface SideCpl {
+	avg_cpl: number;
+	inaccuracy: number;
+	mistake: number;
+	blunder: number;
+}
+
+export interface GameCplSummary {
+	white: SideCpl;
+	black: SideCpl;
+}
+
 export interface GameDetail extends GameSummary {
 	pgn: string;
 	moves: MoveRecord[];
 	/** Cached LLM coach takeaways — null until the analysis job writes them. */
 	summary: string | null;
+	/** Server-computed per-side stats — null until every move is analyzed. */
+	cpl_summary: GameCplSummary | null;
 }
 
 export class ApiError extends Error {
@@ -201,8 +216,9 @@ export interface MotifProgress {
 }
 
 /** One analyzed game's avg centipawn loss from the player's side (engine
- * games count White only). Phase values are null when the game never
- * reached that phase. */
+ * games count only the side you played, per user_color; local games count
+ * both sides). Phase values are null when the game never reached that
+ * phase. */
 export interface GameCplPoint {
 	game_id: number;
 	created_at: string;

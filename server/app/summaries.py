@@ -13,13 +13,10 @@ every paid LLM call (both automated suites set it).
 
 import logging
 
+from app.cpl import aggregate_cpl, player_moves as _player_moves
 from app.explanations import _san, explanations_enabled, needs_explanation
 from app.llm import MODEL, request_text
 from app.models import CoachSummary, Game, Move
-
-# The progress endpoint owns the phase boundaries — importing them beats a
-# third copy of those plies (the client CPL graph mirrors them already).
-from app.routers.progress import MIDDLEGAME_MAX_PLY, OPENING_MAX_PLY
 
 logger = logging.getLogger(__name__)
 
@@ -41,50 +38,23 @@ def _numbered(move: Move) -> str:
     return f"{(move.ply + 1) // 2}{'.' if move.ply % 2 else '...'} {move.san}"
 
 
-def _player_moves(game: Game) -> list[Move]:
-    """The student's moves — same rule as the progress CPL: vs the engine
-    only the side you played (user_color) counts; local pass-and-play counts
-    both sides."""
-    if game.mode == "engine":
-        # `or "white"` covers unflushed rows where the column default has
-        # not been applied yet
-        user_parity = 1 if (game.user_color or "white") == "white" else 0
-        return [move for move in game.moves if move.ply % 2 == user_parity]
-    return list(game.moves)
-
-
 def _pawns_lost_line(player_moves: list[Move]) -> str | None:
-    """Average pawns lost per move, overall and per phase — the same loss and
-    phase math as the progress CPL trend, in the explanation prompts' plain
-    "pawns" units. None when any eval is missing."""
-    losses: list[float] = []
-    phases: dict[str, list[float]] = {"opening": [], "middlegame": [], "endgame": []}
-    for move in player_moves:
-        if move.eval_before is None or move.eval_after is None:
-            return None
-        is_white = move.ply % 2 == 1
-        loss = max(
-            0.0,
-            move.eval_before - move.eval_after
-            if is_white
-            else move.eval_after - move.eval_before,
-        )
-        losses.append(loss)
-        if move.ply <= OPENING_MAX_PLY:
-            phases["opening"].append(loss)
-        elif move.ply <= MIDDLEGAME_MAX_PLY:
-            phases["middlegame"].append(loss)
-        else:
-            phases["endgame"].append(loss)
-    if not losses:
+    """Average pawns lost per move, overall and per phase — the progress CPL
+    trend's numbers, in the explanation prompts' plain "pawns" units. None
+    when any eval is missing."""
+    agg = aggregate_cpl(player_moves)
+    if agg is None:
         return None
     segments = ", ".join(
-        f"{name} {sum(values) / len(values) / 100:.1f}"
-        for name, values in phases.items()
-        if values
+        f"{name} {cpl / 100:.1f}"
+        for name, cpl in [
+            ("opening", agg.opening_cpl),
+            ("middlegame", agg.middlegame_cpl),
+            ("endgame", agg.endgame_cpl),
+        ]
+        if cpl is not None
     )
-    overall = sum(losses) / len(losses) / 100
-    return f"Average pawns lost per move: {overall:.1f} overall ({segments})."
+    return f"Average pawns lost per move: {agg.avg_cpl / 100:.1f} overall ({segments})."
 
 
 def build_summary_prompt(game: Game) -> str:

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cpl import aggregate_cpl, player_moves
 from app.db import get_db
 from app.models import Game, Puzzle, PuzzleAttempt, utcnow
 from app.schemas import GameCplPoint, MotifProgress, ProgressOut
@@ -22,10 +23,6 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 # surfaces it — one failed attempt isn't a trend worth drilling yet.
 MIN_CALLOUT_ATTEMPTS = 3
 WEAKEST_LIMIT = 3
-
-# Same rough phase boundaries the Review CPL graph draws (plies).
-OPENING_MAX_PLY = 20
-MIDDLEGAME_MAX_PLY = 60
 
 
 def motif_progress(db: Session, since: datetime | None) -> list[MotifProgress]:
@@ -58,41 +55,17 @@ def motif_progress(db: Session, since: datetime | None) -> list[MotifProgress]:
 def game_cpl(game: Game) -> GameCplPoint | None:
     """Average centipawn loss from the player's side, phase-segmented.
     None when the game has no fully-analyzed moves to aggregate."""
-    losses: list[float] = []
-    phases: dict[str, list[float]] = {"opening": [], "middlegame": [], "endgame": []}
-    for move in game.moves:
-        if move.eval_before is None or move.eval_after is None:
-            return None  # analysis incomplete despite the status — skip
-        is_white = move.ply % 2 == 1
-        if game.mode == "engine" and is_white != ((game.user_color or "white") == "white"):
-            continue  # vs Stockfish only your side's moves are yours
-        loss = max(
-            0.0,
-            move.eval_before - move.eval_after
-            if is_white
-            else move.eval_after - move.eval_before,
-        )
-        losses.append(loss)
-        if move.ply <= OPENING_MAX_PLY:
-            phases["opening"].append(loss)
-        elif move.ply <= MIDDLEGAME_MAX_PLY:
-            phases["middlegame"].append(loss)
-        else:
-            phases["endgame"].append(loss)
-    if not losses:
+    agg = aggregate_cpl(player_moves(game))
+    if agg is None:
         return None
-
-    def avg(values: list[float]) -> float | None:
-        return sum(values) / len(values) if values else None
-
     return GameCplPoint(
         game_id=game.id,
         created_at=game.created_at,
         mode=game.mode,
-        avg_cpl=sum(losses) / len(losses),
-        opening_cpl=avg(phases["opening"]),
-        middlegame_cpl=avg(phases["middlegame"]),
-        endgame_cpl=avg(phases["endgame"]),
+        avg_cpl=agg.avg_cpl,
+        opening_cpl=agg.opening_cpl,
+        middlegame_cpl=agg.middlegame_cpl,
+        endgame_cpl=agg.endgame_cpl,
     )
 
 
