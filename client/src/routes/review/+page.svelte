@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { listGames } from '$lib/api/client';
+	import { gameOutcome, OUTCOME_LABELS, type GameOutcome } from '$lib/result';
 	import { resolve } from '$app/paths';
 
 	const gamesPromise = listGames();
@@ -9,6 +10,12 @@
 		analyzing: 'text-info',
 		failed: 'text-err',
 		pending: 'text-faint'
+	};
+
+	const outcomeStyles: Record<GameOutcome, string> = {
+		win: 'text-ok',
+		loss: 'text-err',
+		draw: 'text-muted'
 	};
 </script>
 
@@ -35,6 +42,7 @@
 			</thead>
 			<tbody>
 				{#each games as game (game.id)}
+					{@const outcome = gameOutcome(game.result, game.user_color)}
 					<tr class="border-t border-line hover:bg-card">
 						<td class="py-1.5">
 							<a
@@ -45,7 +53,9 @@
 							</a>
 						</td>
 						<td class="py-1.5">{game.white} vs {game.black}</td>
-						<td class="py-1.5 font-mono">{game.result}</td>
+						<td class="py-1.5 font-semibold {outcome ? outcomeStyles[outcome] : ''}">
+							{outcome ? OUTCOME_LABELS[outcome] : game.result}
+						</td>
 						<td class="py-1.5">{game.mode}</td>
 						<td class="py-1.5">{new Date(game.created_at + 'Z').toLocaleString()}</td>
 						<td class="py-1.5 {statusStyles[game.analysis_status] ?? ''}">

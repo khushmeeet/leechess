@@ -8,6 +8,7 @@
 	import { coachAdvice } from '$lib/coach';
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
+	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
 	import { usernamePrefs } from '$lib/stores/username.svelte';
@@ -61,15 +62,9 @@
 			: []
 	);
 
-	type ResultOutcome = 'win' | 'loss' | 'draw';
-
-	const resultOutcome = $derived.by((): ResultOutcome | null => {
-		if (!game.isGameOver) return null;
-		if (game.result === '1/2-1/2') return 'draw';
-		const winner = game.result === '1-0' ? 'white' : game.result === '0-1' ? 'black' : null;
-		if (!winner) return 'draw';
-		return winner === session.playerColor ? 'win' : 'loss';
-	});
+	const resultOutcome = $derived<GameOutcome | null>(
+		game.isGameOver ? (gameOutcome(game.result, session.playerColor) ?? 'draw') : null
+	);
 
 	const resultContent = $derived.by(() => {
 		if (resultOutcome === 'win') {

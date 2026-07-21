@@ -18,6 +18,7 @@
 	import CplGraph from '$lib/components/CplGraph.svelte';
 	import WikiBookPanel from '$lib/components/WikiBookPanel.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
+	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 
 	let game = $state<GameDetail | null>(null);
@@ -27,6 +28,10 @@
 	const analyzing = $derived(
 		game !== null && (game.analysis_status === 'pending' || game.analysis_status === 'analyzing')
 	);
+
+	// Result from the player's side ("Win"/"Loss"/"Draw") rather than the raw
+	// "1-0" score; null (raw score shown) while a game is undecided.
+	const outcome = $derived(game ? gameOutcome(game.result, game.user_color) : null);
 
 	// Polling while the analysis job runs: 1.5s while a healthy job would
 	// still be working, then exponential backoff (×1.5, capped at 10s) with a
@@ -281,7 +286,7 @@
 	<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
 		<h1 class="font-display text-2xl">Game #{game.id}</h1>
 		<p class="text-sm text-muted">
-			{game.white} vs {game.black} · {game.result} · {game.mode}
+			{game.white} vs {game.black} · {outcome ? OUTCOME_LABELS[outcome] : game.result} · {game.mode}
 		</p>
 		{#if game.analysis_status === 'complete'}
 			<div class="flex flex-wrap items-center gap-3 sm:ml-auto">
