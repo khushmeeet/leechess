@@ -1,5 +1,6 @@
 import { ApiError, completeGame, discardGame, getGame, postMove, startGame } from '$lib/api/client';
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
+import { engineName } from '$lib/engine';
 import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
 import { GameStore, type PlayedMove } from './game.svelte';
 import { soundPrefs } from './soundPrefs.svelte';
@@ -186,8 +187,14 @@ export class PlaySession {
 				if (generation !== this.generation) return;
 			}
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine', usernamePrefs.name ?? undefined, this.playerColor))
-					.id;
+				const id = (
+					await startGame(
+						'engine',
+						usernamePrefs.name ?? undefined,
+						this.playerColor,
+						engineName(this.engineSkill)
+					)
+				).id;
 				if (generation !== this.generation) {
 					discardGame(id).catch(() => {});
 					return;
@@ -311,8 +318,14 @@ export class PlaySession {
 		const generation = this.generation;
 		this.inSync(async () => {
 			if (this.serverGameId === null) {
-				const id = (await startGame('engine', usernamePrefs.name ?? undefined, this.playerColor))
-					.id;
+				const id = (
+					await startGame(
+						'engine',
+						usernamePrefs.name ?? undefined,
+						this.playerColor,
+						engineName(this.engineSkill)
+					)
+				).id;
 				if (generation !== this.generation) {
 					// session was reset while the game was being created —
 					// the fresh record belongs to an abandoned game; discard it

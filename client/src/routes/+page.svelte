@@ -6,6 +6,7 @@
 	import InsightBar from '$lib/components/InsightBar.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
+	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
@@ -59,14 +60,6 @@
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
 			: []
 	);
-
-	const strengthPresets = [
-		{ skill: 1, label: 'Beginner', elo: '1470' },
-		{ skill: 3, label: 'Casual', elo: '1740' },
-		{ skill: 5, label: 'Club', elo: '2200' },
-		{ skill: 10, label: 'Strong', elo: '2790' },
-		{ skill: 20, label: 'Max', elo: '3200+' }
-	];
 
 	type ResultOutcome = 'win' | 'loss' | 'draw';
 

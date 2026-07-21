@@ -129,7 +129,12 @@ describe('server sync chain', () => {
 		const session = await startedSession();
 		await playWithReply(session, 'e2', 'e4');
 		await settle();
-		expect(api.startGame).toHaveBeenCalledExactlyOnceWith('engine', undefined, 'white');
+		expect(api.startGame).toHaveBeenCalledExactlyOnceWith(
+			'engine',
+			undefined,
+			'white',
+			'Stockfish (Club)'
+		);
 		expect(api.postMove.mock.calls).toEqual([
 			[42, 'e2e4'],
 			[42, 'e7e5']
