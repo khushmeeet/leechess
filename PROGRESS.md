@@ -14,6 +14,41 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Play live hint ladder (2026-07-22)
+
+**Goal:** complete the Play screen's original Off / Nudge / Full hint toggle (product spec
+§4.1). The shared `HintLadder` had been ready since Phase 3 but Play was nudge-only — it
+had no way to name the tactic in a *live* position (no server round-trip in the play loop).
+
+- **`client/src/lib/liveMotifs.ts`** — client-side motif detection, a focused TypeScript
+  port of `server/app/motifs.py`'s single-move detectors (hanging piece, fork, pin, skewer,
+  back-rank mate, discovered check, double check) over chess.js. `liveHintFromLine(fen,
+  pvUci)` turns the engine's best line into ladder `HintContent`, but only when the first
+  move executes a recognized tactic — quiet positions get just the nudge. The multi-move
+  motifs (deflection, overloading, zwischenzug, …) need a search to prove and stay
+  server-only; under-detection is the deliberate failure mode, same as the server.
+  Unit-tested (`liveMotifs.test.ts`, 17 cases: positive + near-miss per motif).
+- **`HintLadder.svelte`** — gained an optional Level 0 `nudge` (the always-shown "Checks,
+  captures, threats?" pre-move prompt, dismissable per ply via `nudgeKey`) and a `maxLevel`
+  cap. Puzzles/Review pass neither, so their behaviour is byte-for-byte unchanged (defaults
+  `nudge=null`, `maxLevel=5`).
+- **Play `+page.svelte`** — feeds the ladder from `session.ideas` (the same candidate lines
+  the Ideas row uses, only trusted when `ideas.fen === game.fen`). Reveal level resets on
+  every position change; Levels 3–4 circle/arrow the move on the board (Puzzles convention).
+  A per-game **Off / Nudge / Full** segmented control sits in the settings card; the choice
+  persists via `displayPrefs.hintMode` (default `full`) and carries into the next game.
+- **Modes**: Off = a real game, no help. Nudge = the pre-move prompt plus one reveal to
+  "there's a tactic here" (Level 0-1). Full = that plus the whole ladder (Level 0-5) when a
+  tactic is on the board.
+- **Testing**: 3 new Play e2e cases in `play.e2e.ts` (nudge shows + dismisses; Off hides all
+  / Full walks Levels 1→5 on a restored hanging-queen position; Nudge caps at Level 1).
+  Client unit suite 115 passed, `svelte-check` clean. (The e2e suite needs the FastAPI
+  backend, which requires Python ≥3.14 — unavailable in the web sandbox — so the ladder was
+  instead driven directly in a headless browser against the built SPA to confirm the live
+  path: nudge → motif chip "hanging piece" → move `Nxh4` → full line.)
+
+---
+
 ## Phase 5 — LLM explanations (code complete 2026-07-07)
 
 **Goal:** the Review "why" panel — a plain-language paragraph on why the best move
@@ -252,9 +287,10 @@ component. All automatable exit criteria met; two manual checks gate calling it 
 
 ### Not done yet / deferred
 
-- Play screen still nudge-only: the spec's "Full ladder" in-game hint toggle needs hint
-  *content* client-side (motif detection or a server hint endpoint) — the component is
-  ready, feed it `hint` data when that exists
+- ~~Play screen still nudge-only: the spec's "Full ladder" in-game hint toggle needs hint
+  *content* client-side~~ — done (2026-07-22, `client/src/lib/liveMotifs.ts`): client-side
+  motif detection over the engine's best line feeds the shared ladder in Play. See the
+  Play live-hint-ladder addendum near the top of this doc
 - ~~Generic pool not imported into the dev/prod DB yet~~ — the server now seeds
   itself at startup (2026-07-20, `app/seeding.py`): when `LEECHESS_AUTO_SEED=on`
   (set in fly.toml; off by default so dev/test runs never surprise-download) and
