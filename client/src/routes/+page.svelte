@@ -3,13 +3,15 @@
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
+	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
 	import InsightBar from '$lib/components/InsightBar.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
+	import { liveHintFromLine } from '$lib/liveMotifs';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
-	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
+	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
 	import { usernamePrefs } from '$lib/stores/username.svelte';
 	import { resolve } from '$app/paths';
@@ -55,12 +57,54 @@
 		});
 	});
 
-	let hoverUci = $state<string | null>(null);
-	const boardShapes = $derived<DrawShape[]>(
-		hoverUci
-			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
-			: []
+	// Live hint ladder: the engine's best line for the position the user faces
+	// (freshLines[0]) becomes graduated hints, but only when its first move
+	// executes a recognized tactic — quiet positions show just the nudge.
+	const liveHint = $derived.by((): HintContent | null => {
+		if (displayPrefs.hintMode === 'off' || game.isGameOver) return null;
+		const best = freshLines?.[0];
+		return best ? liveHintFromLine(game.fen, best.pvUci) : null;
+	});
+
+	// Off: nothing. Nudge-only: the pre-move prompt plus a single "there's a
+	// tactic" reveal (Level 0-1). Full: the whole ladder (Level 0-5).
+	const hintMaxLevel = $derived(displayPrefs.hintMode === 'nudge' ? 1 : 5);
+	const nudgeText = $derived(
+		displayPrefs.hintMode !== 'off' && session.userCanMove ? 'Checks, captures, threats?' : null
 	);
+
+	// Reveal state is per position — a new move (fen change) clears it so hints
+	// never carry over from the previous position.
+	let hintLevel = $state(0);
+	let lastHintFen = game.fen;
+	$effect(() => {
+		if (game.fen !== lastHintFen) {
+			lastHintFen = game.fen;
+			hintLevel = 0;
+		}
+	});
+
+	let hoverUci = $state<string | null>(null);
+	// Level 3 circles the piece and its target; Level 4+ (move shown in text)
+	// upgrades to an arrow — same convention as the Puzzles board.
+	const hintShapes = $derived.by((): DrawShape[] => {
+		if (!liveHint || hintLevel < 3) return [];
+		const best = freshLines?.[0]?.pvUci[0];
+		if (!best) return [];
+		const from = best.slice(0, 2) as Key;
+		const to = best.slice(2, 4) as Key;
+		if (hintLevel >= 4) return [{ orig: from, dest: to, brush: 'green' }];
+		return [
+			{ orig: from, brush: 'green' },
+			{ orig: to, brush: 'blue' }
+		];
+	});
+	const boardShapes = $derived<DrawShape[]>([
+		...(hoverUci
+			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
+			: []),
+		...hintShapes
+	]);
 
 	const resultOutcome = $derived<GameOutcome | null>(
 		game.isGameOver ? (gameOutcome(game.result, session.playerColor) ?? 'draw') : null
@@ -217,6 +261,28 @@
 						<option value="white">White</option>
 						<option value="black">Black</option>
 					</select>
+					<span class="text-muted">Hints</span>
+					<div
+						class="flex rounded-xs border border-line bg-paper"
+						role="group"
+						aria-label="Hints"
+						data-testid="hint-mode"
+					>
+						{#each [{ mode: 'off', label: 'Off' }, { mode: 'nudge', label: 'Nudge' }, { mode: 'full', label: 'Full' }] as { mode, label } (mode)}
+							<button
+								type="button"
+								aria-pressed={displayPrefs.hintMode === mode}
+								data-testid="hint-mode-{mode}"
+								onclick={() => displayPrefs.setHintMode(mode as HintMode)}
+								class="flex-1 px-2 py-1 first:rounded-l-xs last:rounded-r-xs {displayPrefs.hintMode ===
+								mode
+									? 'bg-ink font-semibold text-paper'
+									: 'text-muted hover:bg-accent-soft'}"
+							>
+								{label}
+							</button>
+						{/each}
+					</div>
 				</div>
 				<p class="mt-2 text-xs text-faint">
 					engine:
@@ -231,6 +297,14 @@
 					{/if}
 				</p>
 			</section>
+
+			<HintLadder
+				hint={liveHint}
+				nudge={nudgeText}
+				nudgeKey={game.moves.length}
+				maxLevel={hintMaxLevel}
+				bind:level={hintLevel}
+			/>
 
 			<section
 				class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
