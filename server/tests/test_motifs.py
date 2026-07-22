@@ -144,6 +144,86 @@ DETECTOR_CASES = [
         set(),
         id="discovered-not-castling-rook-check",
     ),
+    # discovered attack — positive: the knight steps off the e-file and the
+    # rook behind it hits the queen (a non-king target, so not a disc. check)
+    pytest.param(
+        "4q1k1/8/8/8/4N3/8/8/4R1K1 w - - 0 1",
+        "e4c5",
+        {"discovered_attack"},
+        id="discovered-attack-knight-unmasks-rook-onto-queen",
+    ),
+    # discovered attack — near miss: only a pawn sits behind on the opened
+    # line, not worth a tactic
+    pytest.param(
+        "6k1/4p3/8/8/4N3/8/8/4R1K1 w - - 0 1",
+        "e4c5",
+        set(),
+        id="discovered-attack-not-when-only-a-pawn-is-revealed",
+    ),
+    # deflection — positive: Ne5 hits the queen (attacked by something cheaper,
+    # so it must run), and the queen was the knight on d5's only defender
+    pytest.param(
+        "6k1/3q4/8/3n4/2P1P3/5N2/8/6K1 w - - 0 1",
+        "f3e5",
+        {"deflection"},
+        id="deflection-attacked-queen-is-the-knights-sole-defender",
+    ),
+    # deflection — near miss: the c6 pawn also defends d5, so pulling the queen
+    # off doesn't win it
+    pytest.param(
+        "6k1/3q4/2p5/3n4/2P1P3/5N2/8/6K1 w - - 0 1",
+        "f3e5",
+        set(),
+        id="deflection-not-when-the-guarded-piece-has-a-second-defender",
+    ),
+    # overloading — positive: g5 adds a second target; the d7 knight is now the
+    # only defender of both the b6 bishop and the f6 knight
+    pytest.param(
+        "6k1/3n4/1b3n2/P7/6P1/8/8/7K w - - 0 1",
+        "g4g5",
+        {"overloading"},
+        id="overloading-defender-guards-two-attacked-minors",
+    ),
+    # overloading — near miss: without the a5 pawn only f6 is attacked, so the
+    # defender has just one duty
+    pytest.param(
+        "6k1/3n4/1b3n2/8/6P1/8/8/7K w - - 0 1",
+        "g4g5",
+        set(),
+        id="overloading-not-when-only-one-piece-is-attacked",
+    ),
+    # trapped piece — positive: f3 seals g4, the bishop's last flight; it's hit
+    # by the g2 pawn and every square it can reach is still lost
+    pytest.param(
+        "4k3/8/8/5p2/8/7b/5PP1/5K2 w - - 0 1",
+        "f2f3",
+        {"trapped_piece"},
+        id="trapped-bishop-no-safe-square-after-flight-is-sealed",
+    ),
+    # trapped piece — near miss: with the f5 pawn gone the long diagonal is
+    # open and the bishop slips out to f5
+    pytest.param(
+        "4k3/8/8/8/8/7b/5PP1/5K2 w - - 0 1",
+        "f2f3",
+        set(),
+        id="trapped-not-when-the-bishop-has-an-open-diagonal",
+    ),
+    # zwischenzug — positive: instead of saving the rook that hangs to the g5
+    # pawn, White throws in a safe knight check first
+    pytest.param(
+        "6k1/8/8/6p1/6NR/8/8/6K1 w - - 0 1",
+        "g4h6",
+        {"zwischenzug"},
+        id="zwischenzug-check-first-and-leave-the-rook-hanging",
+    ),
+    # zwischenzug — near miss: the same check, but nothing of ours is hanging,
+    # so it's just a check
+    pytest.param(
+        "6k1/8/8/8/6NR/8/8/6K1 w - - 0 1",
+        "g4h6",
+        set(),
+        id="zwischenzug-not-a-plain-check-with-nothing-hanging",
+    ),
 ]
 
 

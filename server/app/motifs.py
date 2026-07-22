@@ -12,10 +12,16 @@ A move's stored tags come from two best-line passes:
   the tactic the mistake allowed
 
 Detectors implemented so far (fixed taxonomy, product spec §4.4): fork, pin,
-skewer, back-rank mate, hanging piece, discovered check, double check. The
-remaining tactical motifs (discovered attack, overloading, deflection, x-ray,
-zwischenzug, trapped piece) and the strategic motifs are follow-ups within
-this phase — add them one at a time with positive AND near-miss test cases.
+skewer, back-rank mate, hanging piece, discovered check, double check,
+discovered attack, deflection, overloading, trapped piece, zwischenzug. The
+remaining tactical motif (x-ray) and the strategic motifs are follow-ups
+within this phase — add them one at a time with positive AND near-miss test
+cases.
+
+The multi-move motifs (deflection, overloading, zwischenzug) can't be proven
+from a single move without a search, so each detector below settles for a
+conservative single-move signature that catches the clear cases and rejects
+the near-misses: under-tagging is preferred to a tagger that cries wolf.
 """
 
 import itertools
@@ -31,6 +37,11 @@ BACK_RANK_MATE = "back_rank_mate"
 HANGING_PIECE = "hanging_piece"
 DISCOVERED_CHECK = "discovered_check"
 DOUBLE_CHECK = "double_check"
+DISCOVERED_ATTACK = "discovered_attack"
+DEFLECTION = "deflection"
+OVERLOADING = "overloading"
+TRAPPED_PIECE = "trapped_piece"
+ZWISCHENZUG = "zwischenzug"
 
 # Classifications whose moves get tagged with what they missed/allowed.
 FLAGGED_CLASSIFICATIONS = {"mistake", "blunder"}
@@ -194,6 +205,165 @@ def _check_motifs(
     return motifs
 
 
+def _sole_defender(
+    board: chess.Board, square: chess.Square, defender_sq: chess.Square
+) -> bool:
+    """`defender_sq` is the one and only piece guarding `square`."""
+    piece = board.piece_at(square)
+    return set(board.attackers(piece.color, square)) == {defender_sq}
+
+
+def _winnable_target(
+    board: chess.Board, target_sq: chess.Square, by_color: chess.Color
+) -> bool:
+    """A `by_color` slider on the same line could win the enemy piece on
+    `target_sq`: it's worth taking (>=3) and either undefended or worth more
+    than the cheapest attacker. The king is left to the check detectors."""
+    target = board.piece_at(target_sq)
+    if target.piece_type == chess.KING or _value(target) < 3:
+        return False
+    attackers = board.attackers(by_color, target_sq)
+    if not _is_defended(board, target_sq):
+        return True
+    return any(_value(board.piece_at(a)) < _value(target) for a in attackers)
+
+
+def _discovered_attack(
+    before: chess.Board, after: chess.Board, move: chess.Move
+) -> bool:
+    """Vacating the from-square unmasks a friendly slider onto a valuable
+    enemy piece it couldn't reach before. The king case is discovered check,
+    detected separately, so it's excluded here."""
+    friendly = before.turn
+    from_sq = move.from_square
+    for target_sq in chess.SquareSet(after.occupied_co[not friendly]):
+        if after.piece_at(target_sq).piece_type == chess.KING:
+            continue
+        for attacker_sq in after.attackers(friendly, target_sq):
+            if attacker_sq == move.to_square:
+                continue  # a direct hit by the moved piece isn't discovered
+            if after.piece_at(attacker_sq).piece_type not in _SLIDER_DIRECTIONS:
+                continue
+            if attacker_sq in before.attackers(friendly, target_sq):
+                continue  # this slider already bore on the target
+            if from_sq not in chess.SquareSet(chess.between(attacker_sq, target_sq)):
+                continue  # the moved piece wasn't the blocker on this line
+            if _winnable_target(after, target_sq, friendly):
+                return True
+    return False
+
+
+def _deflection(after: chess.Board, move: chess.Move) -> bool:
+    """The moved piece attacks an enemy defender that can't stay put (a
+    capture it can't answer, or an undefended hit), and that defender is the
+    sole guard of a valuable piece — so wherever it runs, the piece it was
+    holding falls."""
+    friendly = not after.turn
+    enemy = after.turn
+    for defender_sq in after.attacks(move.to_square):
+        defender = after.piece_at(defender_sq)
+        if defender is None or defender.color == friendly:
+            continue
+        if defender.piece_type == chess.KING or _is_safe(after, defender_sq):
+            continue  # not our piece to deflect, or not actually forced away
+        for guarded_sq in chess.SquareSet(after.occupied_co[enemy]):
+            guarded = after.piece_at(guarded_sq)
+            if guarded_sq == defender_sq or guarded.piece_type == chess.KING:
+                continue
+            if _value(guarded) < 3 or not after.attackers(friendly, guarded_sq):
+                continue
+            if _sole_defender(after, guarded_sq, defender_sq):
+                return True
+    return False
+
+
+def _overloading(after: chess.Board) -> bool:
+    """One enemy piece is the only defender of two different pieces we attack.
+    It can guard just one: we take the one we can capture at no loss, it
+    recaptures, and the other — now unguarded — falls for free."""
+    friendly = not after.turn
+    enemy = after.turn
+    for defender_sq in chess.SquareSet(after.occupied_co[enemy]):
+        guarded = [
+            sq
+            for sq in chess.SquareSet(after.occupied_co[enemy])
+            if sq != defender_sq
+            and after.piece_at(sq).piece_type != chess.KING
+            and _value(after.piece_at(sq)) >= 3
+            and after.attackers(friendly, sq)
+            and _sole_defender(after, sq, defender_sq)
+        ]
+        if len(guarded) < 2:
+            continue
+        # A concrete win needs a target we can capture at no loss (attacker
+        # worth no more than it) plus a *different* attacker still bearing on
+        # a second target for after the defender is diverted.
+        for first in guarded:
+            initiators = {
+                a
+                for a in after.attackers(friendly, first)
+                if _value(after.piece_at(a)) <= _value(after.piece_at(first))
+            }
+            if not initiators:
+                continue
+            for second in guarded:
+                if second == first:
+                    continue
+                if set(after.attackers(friendly, second)) - initiators:
+                    return True
+    return False
+
+
+def _trapped_piece(after: chess.Board) -> bool:
+    """An enemy piece attacked by something cheaper (so it must move) that has
+    no square to run to where it's any safer. A check is excluded — then the
+    forced move is the king's, not the attacked piece's."""
+    if after.is_check():
+        return False
+    enemy = after.turn
+    for square in chess.SquareSet(after.occupied_co[enemy]):
+        piece = after.piece_at(square)
+        if piece.piece_type in (chess.PAWN, chess.KING):
+            continue
+        attackers = after.attackers(not enemy, square)
+        if not any(_value(after.piece_at(a)) < _value(piece) for a in attackers):
+            continue  # not attacked by anything cheaper — no forced flight
+        if not _has_safe_flight(after, square):
+            return True
+    return False
+
+
+def _has_safe_flight(after: chess.Board, square: chess.Square) -> bool:
+    for move in after.legal_moves:
+        if move.from_square != square:
+            continue
+        landed = after.copy(stack=False)
+        landed.push(move)
+        if _is_safe(landed, move.to_square):
+            return True
+    return False
+
+
+def _zwischenzug(before: chess.Board, after: chess.Board, move: chess.Move) -> bool:
+    """An in-between check: rather than rescue a piece that's already hanging,
+    the mover throws in a check (one that can't just be captured) and leaves
+    the piece hanging for now — the threat comes first."""
+    if not after.is_check() or not _is_safe(after, move.to_square):
+        return False
+    friendly = before.turn
+    for square in chess.SquareSet(before.occupied_co[friendly]):
+        piece = before.piece_at(square)
+        if square == move.from_square or piece.piece_type == chess.KING:
+            continue
+        if _value(piece) < 3:
+            continue
+        if not before.attackers(not friendly, square) or _is_safe(before, square):
+            continue  # not a piece that was already hanging
+        if after.piece_at(square) is not None and not _is_safe(after, square):
+            return True  # left hanging while we check instead
+    return False
+
+
 def detect_motifs(board: chess.Board, move: chess.Move) -> set[str]:
     """Motifs a legal move executes from the given position. Pure function —
     the wiring in tags_for_move decides which (position, move) pairs matter."""
@@ -208,6 +378,17 @@ def detect_motifs(board: chess.Board, move: chess.Move) -> set[str]:
     if _is_fork(after, move.to_square):
         motifs.add(FORK)
     motifs |= _line_motifs(after, move.to_square)
+    if _discovered_attack(board, after, move):
+        motifs.add(DISCOVERED_ATTACK)
+    if not after.is_check():
+        if _deflection(after, move):
+            motifs.add(DEFLECTION)
+        if _overloading(after):
+            motifs.add(OVERLOADING)
+    if _trapped_piece(after):
+        motifs.add(TRAPPED_PIECE)
+    if _zwischenzug(board, after, move):
+        motifs.add(ZWISCHENZUG)
     return motifs
 
 
