@@ -73,6 +73,13 @@
 		displayPrefs.hintMode !== 'off' && session.userCanMove ? 'Checks, captures, threats?' : null
 	);
 
+	// The engine-answer rows belong to Full alone. Off is a real game (spec
+	// user story 5 — no help at all, so the training can be tested), and Nudge
+	// is the prompt without the answer: showing "Stockfish prefers Nxf4" beside
+	// a ladder that won't name the move would defeat both modes. Their own
+	// Settings toggles still apply on top, within Full.
+	const fullHints = $derived(displayPrefs.hintMode === 'full');
+
 	// Reveal state is per position — a new move (fen change) clears it so hints
 	// never carry over from the previous position.
 	let hintLevel = $state(0);
@@ -178,6 +185,17 @@
 		});
 	});
 </script>
+
+{#snippet hintRows()}
+	<HintLadder
+		hint={liveHint}
+		nudge={nudgeText}
+		nudgeKey={game.moves.length}
+		maxLevel={hintMaxLevel}
+		bind:level={hintLevel}
+		standalone={false}
+	/>
+{/snippet}
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
@@ -298,12 +316,21 @@
 				</p>
 			</section>
 
-			<HintLadder
-				hint={liveHint}
-				nudge={nudgeText}
-				nudgeKey={game.moves.length}
-				maxLevel={hintMaxLevel}
-				bind:level={hintLevel}
+			<InsightBar
+				opening={session.opening}
+				openingState={session.openingsFailed
+					? 'failed'
+					: session.openingsLoaded
+						? 'ready'
+						: 'loading'}
+				ply={game.moves.length}
+				hints={hintRows}
+				showCoach={displayPrefs.showCoach && fullHints}
+				coach={coachText}
+				showIdeas={displayPrefs.showIdeas && fullHints}
+				ideas={candidateIdeas}
+				gameOver={game.isGameOver}
+				onideahover={(uci) => (hoverUci = uci)}
 			/>
 
 			<section
@@ -363,22 +390,6 @@
 					<p class="mt-2 text-sm font-semibold">Game over: {game.result}</p>
 				{/if}
 			</section>
-
-			<InsightBar
-				opening={session.opening}
-				openingState={session.openingsFailed
-					? 'failed'
-					: session.openingsLoaded
-						? 'ready'
-						: 'loading'}
-				ply={game.moves.length}
-				showCoach={displayPrefs.showCoach}
-				coach={coachText}
-				showIdeas={displayPrefs.showIdeas}
-				ideas={candidateIdeas}
-				gameOver={game.isGameOver}
-				onideahover={(uci) => (hoverUci = uci)}
-			/>
 
 			<section class="flex flex-col gap-2">
 				{#if !game.isGameOver && session.started}

@@ -1,12 +1,21 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { Idea } from '$lib/ideas';
 	import type { OpeningState } from '$lib/stores/play.svelte';
 
+	// Play's single in-game coaching panel: where you are (opening), what to
+	// think about (the hint ladder's nudge + rungs), and what the engine
+	// suggests (coach + ideas). These used to be two stacked cards, which let
+	// the Ideas chips name the best move while the ladder was still asking the
+	// player to look for it — one panel makes that contradiction visible, and
+	// Play's hint mode now decides which rows exist at all.
 	interface Props {
 		opening: OpeningState | null;
 		openingState: 'loading' | 'ready' | 'failed';
 		/** Plies played so far. */
 		ply: number;
+		/** Nudge + hint ladder, rendered under the opening line. */
+		hints?: Snippet;
 		/** Coach row renders when true; a null sentence shows a pending dash. */
 		showCoach: boolean;
 		coach: string | null;
@@ -21,6 +30,7 @@
 		opening,
 		openingState,
 		ply,
+		hints,
 		showCoach,
 		coach,
 		showIdeas,
@@ -85,6 +95,8 @@
 		</div>
 	</div>
 
+	{@render hints?.()}
+
 	{#if showCoach}
 		<div
 			class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-baseline gap-2"
@@ -120,7 +132,7 @@
 							onblur={() => onideahover?.(null)}
 						>
 							<span
-								class="whitespace-nowrap border-r border-line bg-card px-1.5 py-0.5 font-mono font-semibold text-ink"
+								class="border-r border-line bg-card px-1.5 py-0.5 font-mono font-semibold whitespace-nowrap text-ink"
 							>
 								{idea.san}
 							</span>

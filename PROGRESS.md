@@ -34,23 +34,40 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   plus taxonomy-parity and reason-template guards). Detection costs ~0.4ms on a dense
   middlegame position, so it adds nothing measurable to the live loop.
 - **`HintLadder.svelte`** — gained an optional Level 0 `nudge` (the always-shown "Checks,
-  captures, threats?" pre-move prompt, dismissable per ply via `nudgeKey`) and a `maxLevel`
-  cap. Puzzles/Review pass neither, so their behaviour is byte-for-byte unchanged (defaults
-  `nudge=null`, `maxLevel=5`).
+  captures, threats?" pre-move prompt, dismissable per ply via `nudgeKey`), a `maxLevel`
+  cap, and `standalone`. Puzzles/Review pass none of them, so their behaviour is unchanged
+  (defaults `nudge=null`, `maxLevel=5`, `standalone=true` → its own bordered card with the
+  "Hints level n/5" heading). `standalone={false}` drops the chrome and renders the rungs as
+  a labelled `HINTS` row instead, for a host panel to lay out — see the merge below.
+- **One coaching panel** — Play originally stacked two cards: Hints, then the insight bar
+  (opening + coach + ideas). That let the Ideas chips show `Nxf4 · Wins material` and the
+  coach say "Stockfish prefers Nxf4" while the ladder two panels up sat at level 2/5 asking
+  the player to look for a hanging piece — the panels gave away what each other was
+  withholding. They're now a single `InsightBar`, which takes the ladder as a `hints`
+  snippet and renders `OPENING → nudge → HINTS → COACH → IDEAS` as one aligned stack.
 - **Play `+page.svelte`** — feeds the ladder from `session.ideas` (the same candidate lines
   the Ideas row uses, only trusted when `ideas.fen === game.fen`). Reveal level resets on
   every position change; Levels 3–4 circle/arrow the move on the board (Puzzles convention).
   A per-game **Off / Nudge / Full** segmented control sits in the settings card; the choice
   persists via `displayPrefs.hintMode` (default `full`) and carries into the next game.
-- **Modes**: Off = a real game, no help. Nudge = the pre-move prompt plus one reveal to
-  "there's a tactic here" (Level 0-1). Full = that plus the whole ladder (Level 0-5) when a
-  tactic is on the board.
+- **Modes** decide which rows exist, so nothing has to be suppressed mid-position:
+
+  | Mode | Panel shows |
+  |---|---|
+  | Off | opening only — a real game (spec user story 5). Coach and Ideas go too: leaving Ideas up while "hints" are off still handed over the best move, so Off wasn't really off |
+  | Nudge | opening + nudge + ladder capped at "there's a tactic in this position" (Level 0-1). No Coach, no Ideas — naming the move here would defeat the cap |
+  | Full | all of it: opening + nudge + ladder Levels 0-5 incl. the motif chip + Coach + Ideas |
+
+  The nav Settings toggles for Coach/Ideas still apply on top, within Full.
 - **Testing**: 3 new Play e2e cases in `play.e2e.ts` (nudge shows + dismisses; Off hides all
-  / Full walks Levels 1→5 on a restored hanging-queen position; Nudge caps at Level 1).
+  / Full walks Levels 1→5 on a restored hanging-queen position; Nudge caps at Level 1), plus
+  one in `insight-bar.e2e.ts` pinning the merged panel and the per-mode row gating.
   Client unit suite 128 passed, `svelte-check` clean. (The e2e suite needs the FastAPI
-  backend, which requires Python ≥3.14 — unavailable in the web sandbox — so the ladder was
-  instead driven directly in a headless browser against the built SPA to confirm the live
-  path: nudge → motif chip "hanging piece" → move `Nxh4` → full line.)
+  backend, which requires Python ≥3.14 — unavailable in the web sandbox — so the screens
+  were driven directly in a headless browser against the built SPA: Play's panel in all
+  three modes, and the Puzzles ladder against a stubbed `/puzzles/next` to confirm the
+  shared component's standalone path still renders its own card, all five rungs and no
+  nudge.)
 
 ---
 

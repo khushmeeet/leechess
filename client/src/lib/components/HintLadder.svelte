@@ -37,6 +37,9 @@
 		nudgeKey?: number;
 		/** Cap on how far the reveal ladder goes (1 = nudge-only). */
 		maxLevel?: number;
+		/** Own card with its own heading (Puzzles), vs. rows meant to sit inside
+		 * a host panel (Play's insight bar). */
+		standalone?: boolean;
 	}
 
 	let {
@@ -44,7 +47,8 @@
 		level = $bindable(0),
 		nudge = null,
 		nudgeKey = 0,
-		maxLevel = 5
+		maxLevel = 5,
+		standalone = true
 	}: Props = $props();
 
 	// Dismissal is keyed on the ply: a new nudgeKey means a new move, so the
@@ -62,74 +66,102 @@
 	};
 </script>
 
+{#snippet nudgeBanner()}
+	<div
+		class="flex items-center justify-between gap-2 rounded-xs border border-accent-line bg-accent-soft px-2.5 py-1.5"
+		data-testid="hint-nudge"
+	>
+		<span class="text-body">{nudge}</span>
+		<button
+			type="button"
+			aria-label="Dismiss nudge"
+			data-testid="hint-nudge-dismiss"
+			onclick={() => (dismissedKey = nudgeKey)}
+			class="shrink-0 rounded-xs px-1 text-faint hover:text-ink"
+		>
+			×
+		</button>
+	</div>
+{/snippet}
+
+{#snippet rungs(content: HintContent)}
+	<ol class="flex flex-col gap-1.5">
+		{#if level >= 1}
+			<li data-testid="hint-level-1" class="text-body">{content.category}</li>
+		{/if}
+		{#if level >= 2}
+			<li data-testid="hint-level-2" class="text-body">
+				Look for a
+				<span
+					class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
+				>
+					{content.motif}
+				</span>
+			</li>
+		{/if}
+		{#if level >= 3}
+			<li data-testid="hint-level-3" class="text-body">
+				The key squares are highlighted on the board.
+			</li>
+		{/if}
+		{#if level >= 4}
+			<li data-testid="hint-level-4" class="text-body">
+				<span class="font-mono font-semibold">{content.moveSan}</span> — {content.reason}
+			</li>
+		{/if}
+		{#if level >= 5}
+			<li data-testid="hint-level-5" class="text-body">
+				Full line: <span class="font-mono">{content.line.join(' ')}</span>
+			</li>
+		{/if}
+	</ol>
+
+	{#if level < cap}
+		<button
+			data-testid="hint-reveal"
+			onclick={() => (level += 1)}
+			class="mt-2 w-full rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+		>
+			{nextLabels[level]}
+		</button>
+	{/if}
+{/snippet}
+
 {#if hint || nudgeVisible}
-	<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
-		<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
-			Hints
+	{#if standalone}
+		<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
+			<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
+				Hints
+				{#if hint}
+					<span class="text-xs font-normal text-faint">level {level}/{cap}</span>
+				{/if}
+			</h2>
+			{#if nudgeVisible}
+				<div class="mb-2">{@render nudgeBanner()}</div>
+			{/if}
 			{#if hint}
-				<span class="text-xs font-normal text-faint">level {level}/{cap}</span>
+				{@render rungs(hint)}
 			{/if}
-		</h2>
-
-		{#if nudgeVisible}
-			<div
-				class="mb-2 flex items-center justify-between gap-2 rounded-xs border border-accent-line bg-accent-soft px-2.5 py-1.5"
-				data-testid="hint-nudge"
-			>
-				<span class="text-body">{nudge}</span>
-				<button
-					type="button"
-					aria-label="Dismiss nudge"
-					data-testid="hint-nudge-dismiss"
-					onclick={() => (dismissedKey = nudgeKey)}
-					class="shrink-0 rounded-xs px-1 text-faint hover:text-ink"
-				>
-					×
-				</button>
-			</div>
-		{/if}
-
-		{#if hint}
-			<ol class="flex flex-col gap-1.5">
-				{#if level >= 1}
-					<li data-testid="hint-level-1" class="text-body">{hint.category}</li>
-				{/if}
-				{#if level >= 2}
-					<li data-testid="hint-level-2" class="text-body">
-						Look for a
-						<span
-							class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
-						>
-							{hint.motif}
-						</span>
-					</li>
-				{/if}
-				{#if level >= 3}
-					<li data-testid="hint-level-3" class="text-body">
-						The key squares are highlighted on the board.
-					</li>
-				{/if}
-				{#if level >= 4}
-					<li data-testid="hint-level-4" class="text-body">
-						<span class="font-mono font-semibold">{hint.moveSan}</span> — {hint.reason}
-					</li>
-				{/if}
-				{#if level >= 5}
-					<li data-testid="hint-level-5" class="text-body">
-						Full line: <span class="font-mono">{hint.line.join(' ')}</span>
-					</li>
-				{/if}
-			</ol>
-
-			{#if level < cap}
-				<button
-					data-testid="hint-reveal"
-					onclick={() => (level += 1)}
-					class="mt-2 w-full rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-				>
-					{nextLabels[level]}
-				</button>
+		</section>
+	{:else}
+		<!-- Hosted mode: the nudge stays a full-width banner (it's the pre-move
+		ritual, not a detail), the ladder becomes a labelled row matching the
+		host panel's Coach/Ideas rows. -->
+		<div class="flex flex-col gap-2" data-testid="hint-ladder">
+			{#if nudgeVisible}
+				{@render nudgeBanner()}
 			{/if}
-		{/if}
-	</section>
+			{#if hint}
+				<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2">
+					<span
+						class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase"
+						title="hint level {level}/{cap}"
+					>
+						Hints
+					</span>
+					<div class="min-w-0">{@render rungs(hint)}</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
 {/if}
