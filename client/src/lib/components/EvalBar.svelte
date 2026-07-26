@@ -41,10 +41,10 @@
 		style="top: {tabPct}%"
 	>
 		<span
-			class="whitespace-nowrap rounded-l-xs bg-accent py-0.5 pr-1 pl-1.5 font-mono text-[10px] leading-none font-semibold text-paper shadow-sm"
+			class="rounded-l-xs bg-accent py-0.5 pr-1 pl-1.5 font-mono text-[10px] leading-none font-semibold whitespace-nowrap text-paper shadow-sm"
 		>
 			{label}
 		</span>
-		<span class="h-0 w-0 border-y-4 border-y-transparent border-l-4 border-l-accent"></span>
+		<span class="h-0 w-0 border-y-4 border-l-4 border-y-transparent border-l-accent"></span>
 	</div>
 </div>

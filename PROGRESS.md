@@ -33,41 +33,50 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   Unit-tested (`liveMotifs.test.ts`, 30 cases: a positive **and** a near-miss per motif,
   plus taxonomy-parity and reason-template guards). Detection costs ~0.4ms on a dense
   middlegame position, so it adds nothing measurable to the live loop.
-- **`HintLadder.svelte`** — gained an optional Level 0 `nudge` (the always-shown "Checks,
-  captures, threats?" pre-move prompt, dismissable per ply via `nudgeKey`), a `maxLevel`
-  cap, and `standalone`. Puzzles/Review pass none of them, so their behaviour is unchanged
-  (defaults `nudge=null`, `maxLevel=5`, `standalone=true` → its own bordered card with the
-  "Hints level n/5" heading). `standalone={false}` drops the chrome and renders the rungs as
-  a labelled `HINTS` row instead, for a host panel to lay out — see the merge below.
+- **`explainMotif(fen, uci, motif)`** — a short sentence for *why* the move is that motif,
+  naming the pieces actually involved ("the queen on h4 is left undefended", "the knight on
+  d7 is the only piece guarding both the rook on b8 and the rook on f8") rather than
+  defining the pattern in the abstract. Each branch re-runs the detector that fired and
+  reads its evidence, so the wording can't describe a shape the detector didn't find; the
+  detectors return their evidence squares instead of bare booleans for exactly this. It
+  refuses to explain a motif that isn't present, so a mismatched call returns null rather
+  than a half-built sentence.
+- **No ladder in Play** — the graduated Level 1→5 reveal is Puzzles-only; `HintLadder` is
+  back to exactly its pre-existing form (no `nudge`/`maxLevel`/`standalone` props). Play
+  states the pattern outright instead, because clicking through five rungs beside a Coach
+  line that already says "Stockfish prefers Nxh4" was never a real choice.
+- **No pre-move nudge** — the static "Checks, captures, threats?" banner is gone. It said
+  the same thing every move, and the Tactic row now carries the same signal with real
+  information behind it. This drops spec §4.1's pre-move nudge and its 200ms criterion by
+  the owner's call; Nudge mode keeps the name and the intent (prompt, never answer).
 - **One coaching panel** — Play originally stacked two cards: Hints, then the insight bar
   (opening + coach + ideas). That let the Ideas chips show `Nxf4 · Wins material` and the
   coach say "Stockfish prefers Nxf4" while the ladder two panels up sat at level 2/5 asking
   the player to look for a hanging piece — the panels gave away what each other was
-  withholding. They're now a single `InsightBar`, which takes the ladder as a `hints`
-  snippet and renders `OPENING → nudge → HINTS → COACH → IDEAS` as one aligned stack.
-- **Play `+page.svelte`** — feeds the ladder from `session.ideas` (the same candidate lines
-  the Ideas row uses, only trusted when `ideas.fen === game.fen`). Reveal level resets on
-  every position change; Levels 3–4 circle/arrow the move on the board (Puzzles convention).
-  A per-game **Off / Nudge / Full** segmented control sits in the settings card; the choice
-  persists via `displayPrefs.hintMode` (default `full`) and carries into the next game.
+  withholding. They're now a single `InsightBar` taking the tactic as a snippet and
+  rendering `OPENING → TACTIC → COACH → IDEAS` as one aligned stack.
+- **Play `+page.svelte`** — reads the tactic off `session.ideas` (the same candidate lines
+  the Ideas row uses, only trusted when `ideas.fen === game.fen`). A per-game
+  **Off / Nudge / Full** segmented control sits in the settings card; the choice persists
+  via `displayPrefs.hintMode` (default `full`) and carries into the next game.
 - **Modes** decide which rows exist, so nothing has to be suppressed mid-position:
 
   | Mode | Panel shows |
   |---|---|
   | Off | opening only — a real game (spec user story 5). Coach and Ideas go too: leaving Ideas up while "hints" are off still handed over the best move, so Off wasn't really off |
-  | Nudge | opening + nudge + ladder capped at "there's a tactic in this position" (Level 0-1). No Coach, no Ideas — naming the move here would defeat the cap |
-  | Full | all of it: opening + nudge + ladder Levels 0-5 incl. the motif chip + Coach + Ideas |
+  | Nudge | opening + `TACTIC — There's a tactic in this position.` The pattern and the move both stay unnamed; no Coach, no Ideas |
+  | Full | opening + `TACTIC — [HANGING PIECE] the queen on h4 is left undefended` + Coach + Ideas |
 
   The nav Settings toggles for Coach/Ideas still apply on top, within Full.
-- **Testing**: 3 new Play e2e cases in `play.e2e.ts` (nudge shows + dismisses; Off hides all
-  / Full walks Levels 1→5 on a restored hanging-queen position; Nudge caps at Level 1), plus
-  one in `insight-bar.e2e.ts` pinning the merged panel and the per-mode row gating.
-  Client unit suite 128 passed, `svelte-check` clean. (The e2e suite needs the FastAPI
-  backend, which requires Python ≥3.14 — unavailable in the web sandbox — so the screens
-  were driven directly in a headless browser against the built SPA: Play's panel in all
-  three modes, and the Puzzles ladder against a stubbed `/puzzles/next` to confirm the
-  shared component's standalone path still renders its own card, all five rungs and no
-  nudge.)
+- **Testing**: 3 Play e2e cases in `play.e2e.ts` (Off shows nothing; Nudge flags without
+  naming; Full names the motif and the why), plus one in `insight-bar.e2e.ts` pinning the
+  merged panel and the per-mode gating. `explainMotif` has a unit case per motif asserting
+  the exact sentence, so a wording or evidence regression fails loudly. Client unit suite
+  139 passed, `svelte-check` clean. (The e2e suite needs the FastAPI backend, which requires
+  Python ≥3.14 — unavailable in the web sandbox — so the screens were driven directly in a
+  headless browser against the built SPA: Play's panel in all three modes, and the Puzzles
+  ladder against a stubbed `/puzzles/next` to confirm the shared component still renders its
+  own card and all five rungs.)
 
 ---
 

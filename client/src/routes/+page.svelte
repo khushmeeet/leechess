@@ -3,13 +3,12 @@
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
-	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
 	import InsightBar from '$lib/components/InsightBar.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
-	import { liveHintFromLine } from '$lib/liveMotifs';
+	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
@@ -57,61 +56,27 @@
 		});
 	});
 
-	// Live hint ladder: the engine's best line for the position the user faces
-	// (freshLines[0]) becomes graduated hints, but only when its first move
-	// executes a recognized tactic — quiet positions show just the nudge.
-	const liveHint = $derived.by((): HintContent | null => {
+	// The tactic in the position the user faces, read off the engine's best line
+	// (freshLines[0]) — null unless that move executes a recognized motif, so
+	// quiet positions say nothing at all.
+	const liveTactic = $derived.by((): LiveTactic | null => {
 		if (displayPrefs.hintMode === 'off' || game.isGameOver) return null;
-		const best = freshLines?.[0];
-		return best ? liveHintFromLine(game.fen, best.pvUci) : null;
+		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci[0]);
 	});
-
-	// Off: nothing. Nudge-only: the pre-move prompt plus a single "there's a
-	// tactic" reveal (Level 0-1). Full: the whole ladder (Level 0-5).
-	const hintMaxLevel = $derived(displayPrefs.hintMode === 'nudge' ? 1 : 5);
-	const nudgeText = $derived(
-		displayPrefs.hintMode !== 'off' && session.userCanMove ? 'Checks, captures, threats?' : null
-	);
 
 	// The engine-answer rows belong to Full alone. Off is a real game (spec
 	// user story 5 — no help at all, so the training can be tested), and Nudge
-	// is the prompt without the answer: showing "Stockfish prefers Nxf4" beside
-	// a ladder that won't name the move would defeat both modes. Their own
-	// Settings toggles still apply on top, within Full.
+	// only flags that a tactic exists: naming the move there, via "Stockfish
+	// prefers Nxf4" or an idea chip, would defeat the point of the mode. Their
+	// own Settings toggles still apply on top, within Full.
 	const fullHints = $derived(displayPrefs.hintMode === 'full');
 
-	// Reveal state is per position — a new move (fen change) clears it so hints
-	// never carry over from the previous position.
-	let hintLevel = $state(0);
-	let lastHintFen = game.fen;
-	$effect(() => {
-		if (game.fen !== lastHintFen) {
-			lastHintFen = game.fen;
-			hintLevel = 0;
-		}
-	});
-
 	let hoverUci = $state<string | null>(null);
-	// Level 3 circles the piece and its target; Level 4+ (move shown in text)
-	// upgrades to an arrow — same convention as the Puzzles board.
-	const hintShapes = $derived.by((): DrawShape[] => {
-		if (!liveHint || hintLevel < 3) return [];
-		const best = freshLines?.[0]?.pvUci[0];
-		if (!best) return [];
-		const from = best.slice(0, 2) as Key;
-		const to = best.slice(2, 4) as Key;
-		if (hintLevel >= 4) return [{ orig: from, dest: to, brush: 'green' }];
-		return [
-			{ orig: from, brush: 'green' },
-			{ orig: to, brush: 'blue' }
-		];
-	});
-	const boardShapes = $derived<DrawShape[]>([
-		...(hoverUci
+	const boardShapes = $derived<DrawShape[]>(
+		hoverUci
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
-			: []),
-		...hintShapes
-	]);
+			: []
+	);
 
 	const resultOutcome = $derived<GameOutcome | null>(
 		game.isGameOver ? (gameOutcome(game.result, session.playerColor) ?? 'draw') : null
@@ -186,15 +151,29 @@
 	});
 </script>
 
-{#snippet hintRows()}
-	<HintLadder
-		hint={liveHint}
-		nudge={nudgeText}
-		nudgeKey={game.moves.length}
-		maxLevel={hintMaxLevel}
-		bind:level={hintLevel}
-		standalone={false}
-	/>
+{#snippet tacticRow()}
+	{#if liveTactic}
+		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="tactic-row">
+			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
+				Tactic
+			</span>
+			{#if fullHints}
+				<p class="min-w-0 text-body">
+					<span
+						class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
+						data-testid="tactic-motif"
+					>
+						{liveTactic.motif}
+					</span>
+					{#if liveTactic.why}<span data-testid="tactic-why">{liveTactic.why}</span>{/if}
+				</p>
+			{:else}
+				<!-- Nudge: flag that something is there without naming the pattern
+				or the move — that is the whole difference between the modes. -->
+				<p class="min-w-0 text-body">There’s a tactic in this position.</p>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 <div class="flex flex-col gap-4">
@@ -324,7 +303,7 @@
 						? 'ready'
 						: 'loading'}
 				ply={game.moves.length}
-				hints={hintRows}
+				tactic={tacticRow}
 				showCoach={displayPrefs.showCoach && fullHints}
 				coach={coachText}
 				showIdeas={displayPrefs.showIdeas && fullHints}

@@ -12,15 +12,23 @@
  * from a single move without a search, so each settles for the same
  * conservative single-move signature the server uses — under-tagging is
  * preferred to a tagger that cries wolf. A live position with no detected motif
- * simply shows no tactic ladder, just the generic pre-move nudge.
+ * simply shows nothing.
  *
  * Only x-ray and the strategic motifs are missing here, because the server
  * doesn't detect them either. Keep the two in step: when a detector lands
  * there, port it here (and vice versa).
  */
 import { Chess, type Color, type Square } from 'chess.js';
-import { humanizeMotif, motifReason } from '$lib/motifs';
-import type { HintContent } from '$lib/components/HintLadder.svelte';
+import { humanizeMotif } from '$lib/motifs';
+
+/** What Play shows for a tactical position: the pattern's name, plus a short
+ * position-specific reason it is that pattern. */
+export interface LiveTactic {
+	/** Humanized motif name, e.g. "hanging piece". */
+	motif: string;
+	/** "the queen on h4 is left undefended" — null if it can't be derived. */
+	why: string | null;
+}
 
 export const FORK = 'fork';
 export const PIN = 'pin';
@@ -73,9 +81,6 @@ const SLIDER_DIRECTIONS: Record<string, readonly (readonly [number, number])[]> 
 	r: ORTHOGONAL,
 	q: [...DIAGONAL, ...ORTHOGONAL]
 };
-
-/** How many plies of the engine line to surface as the "full line". */
-const MAX_LINE_PLIES = 8;
 
 function opposite(color: Color): Color {
 	return color === 'w' ? 'b' : 'w';
@@ -199,12 +204,16 @@ function firstTwoOnRay(
 	return found;
 }
 
-/** Pins and skewers created by the slider that just landed on `toSquare`. */
-function lineMotifs(after: Chess, toSquare: Square): Set<string> {
+/** Pins and skewers created by the slider that just landed on `toSquare`, each
+ * with the two enemy pieces lined up behind one another that make it one. */
+function linePairs(
+	after: Chess,
+	toSquare: Square
+): { motif: string; front: Square; back: Square }[] {
 	const piece = after.get(toSquare)!;
 	const directions = SLIDER_DIRECTIONS[piece.type] ?? [];
-	const motifs = new Set<string>();
-	if (directions.length && !isSafe(after, toSquare)) return motifs;
+	const pairs: { motif: string; front: Square; back: Square }[] = [];
+	if (directions.length && !isSafe(after, toSquare)) return pairs;
 	for (const direction of directions) {
 		const pieces = firstTwoOnRay(after, toSquare, direction);
 		if (pieces.length < 2) continue;
@@ -215,16 +224,20 @@ function lineMotifs(after: Chess, toSquare: Square): Set<string> {
 			front.type !== 'k' &&
 			(back.type === 'k' || VALUE[back.type] > VALUE[front.type])
 		) {
-			motifs.add(PIN);
+			pairs.push({ motif: PIN, front: front.square, back: back.square });
 		} else if (
 			(front.type === 'k' || VALUE[front.type] > VALUE[back.type]) &&
 			back.type !== 'k' &&
 			VALUE[back.type] >= 3
 		) {
-			motifs.add(SKEWER);
+			pairs.push({ motif: SKEWER, front: front.square, back: back.square });
 		}
 	}
-	return motifs;
+	return pairs;
+}
+
+function lineMotifs(after: Chess, toSquare: Square): Set<string> {
+	return new Set(linePairs(after, toSquare).map((pair) => pair.motif));
 }
 
 function findKing(chess: Chess, color: Color): Square | null {
@@ -236,18 +249,19 @@ function findKing(chess: Chess, color: Color): Square | null {
 	return null;
 }
 
-function isBackRankMate(after: Chess): boolean {
-	if (!after.isCheckmate()) return false;
+/** The mated king's square, when the move is a back-rank mate. */
+function backRankMate(after: Chess): Square | null {
+	if (!after.isCheckmate()) return null;
 	const mated = after.turn();
 	const kingSquare = findKing(after, mated);
-	if (!kingSquare) return false;
+	if (!kingSquare) return null;
 	const backRank = mated === 'b' ? 7 : 0;
-	if (rankOf(kingSquare) !== backRank) return false;
-	const checkers = after.attackers(kingSquare, opposite(mated));
-	return checkers.some((sq) => {
+	if (rankOf(kingSquare) !== backRank) return null;
+	const onBackRank = after.attackers(kingSquare, opposite(mated)).some((sq) => {
 		const type = after.get(sq)!.type;
 		return (type === 'r' || type === 'q') && rankOf(sq) === backRank;
 	});
+	return onBackRank ? kingSquare : null;
 }
 
 /** The move captures a piece (≥ minor) that was free to take. */
@@ -303,7 +317,12 @@ function winnableTarget(chess: Chess, target: Square, byColor: Color): boolean {
 /** Vacating the from-square unmasks a friendly slider onto a valuable enemy
  * piece it couldn't reach before. The king case is discovered check, detected
  * separately, so it's excluded here. */
-function discoveredAttack(before: Chess, after: Chess, from: Square, to: Square): boolean {
+function discoveredAttack(
+	before: Chess,
+	after: Chess,
+	from: Square,
+	to: Square
+): { attacker: Square; target: Square } | null {
 	const friendly = before.turn();
 	for (const target of enemyPieces(after, friendly)) {
 		if (after.get(target)!.type === 'k') continue;
@@ -312,49 +331,47 @@ function discoveredAttack(before: Chess, after: Chess, from: Square, to: Square)
 			if (!SLIDER_DIRECTIONS[after.get(attacker)!.type]) continue;
 			if (before.attackers(target, friendly).includes(attacker)) continue; // already bore on it
 			if (!between(attacker, target).includes(from)) continue; // wasn't the blocker
-			if (winnableTarget(after, target, friendly)) return true;
+			if (winnableTarget(after, target, friendly)) return { attacker, target };
 		}
 	}
-	return false;
+	return null;
 }
 
 /** The moved piece attacks an enemy defender that can't stay put (a capture it
  * can't answer, or an undefended hit), and that defender is the sole guard of a
  * valuable piece — so wherever it runs, the piece it was holding falls. */
-function deflection(after: Chess, to: Square): boolean {
+function deflection(after: Chess, to: Square): { defender: Square; guarded: Square } | null {
 	const enemy = after.turn();
 	const friendly = opposite(enemy);
-	for (const defenderSquare of enemyPieces(after, friendly)) {
-		if (!attacks(after, to, defenderSquare)) continue;
-		const defender = after.get(defenderSquare)!;
+	for (const defender of enemyPieces(after, friendly)) {
+		if (!attacks(after, to, defender)) continue;
 		// not our piece to deflect, or not actually forced away
-		if (defender.type === 'k' || isSafe(after, defenderSquare)) continue;
-		for (const guardedSquare of piecesOf(after, enemy)) {
-			const guarded = after.get(guardedSquare)!;
-			if (guardedSquare === defenderSquare || guarded.type === 'k') continue;
-			if (VALUE[guarded.type] < 3) continue;
-			if (after.attackers(guardedSquare, friendly).length === 0) continue;
-			if (soleDefender(after, guardedSquare, defenderSquare)) return true;
+		if (after.get(defender)!.type === 'k' || isSafe(after, defender)) continue;
+		for (const guarded of piecesOf(after, enemy)) {
+			if (guarded === defender || after.get(guarded)!.type === 'k') continue;
+			if (VALUE[after.get(guarded)!.type] < 3) continue;
+			if (after.attackers(guarded, friendly).length === 0) continue;
+			if (soleDefender(after, guarded, defender)) return { defender, guarded };
 		}
 	}
-	return false;
+	return null;
 }
 
 /** One enemy piece is the only defender of two different pieces we attack. It
  * can guard just one: we take the one we can capture at no loss, it recaptures,
  * and the other — now unguarded — falls for free. */
-function overloading(after: Chess): boolean {
+function overloading(after: Chess): { defender: Square; first: Square; second: Square } | null {
 	const enemy = after.turn();
 	const friendly = opposite(enemy);
 	const enemySquares = piecesOf(after, enemy);
-	for (const defenderSquare of enemySquares) {
+	for (const defender of enemySquares) {
 		const guarded = enemySquares.filter(
 			(square) =>
-				square !== defenderSquare &&
+				square !== defender &&
 				after.get(square)!.type !== 'k' &&
 				VALUE[after.get(square)!.type] >= 3 &&
 				after.attackers(square, friendly).length > 0 &&
-				soleDefender(after, square, defenderSquare)
+				soleDefender(after, square, defender)
 		);
 		if (guarded.length < 2) continue;
 		// A concrete win needs a target we can capture at no loss (attacker worth
@@ -368,11 +385,11 @@ function overloading(after: Chess): boolean {
 			for (const second of guarded) {
 				if (second === first) continue;
 				const others = after.attackers(second, friendly).filter((a) => !initiators.includes(a));
-				if (others.length > 0) return true;
+				if (others.length > 0) return { defender, first, second };
 			}
 		}
 	}
-	return false;
+	return null;
 }
 
 /** Any legal move of the piece on `square` that lands it somewhere safe. */
@@ -386,8 +403,8 @@ function hasSafeFlight(after: Chess, square: Square): boolean {
 /** An enemy piece attacked by something cheaper (so it must move) that has no
  * square to run to where it's any safer. A check is excluded — then the forced
  * move is the king's, not the attacked piece's. */
-function trappedPiece(after: Chess): boolean {
-	if (after.isCheck()) return false;
+function trappedPiece(after: Chess): Square | null {
+	if (after.isCheck()) return null;
 	const enemy = after.turn();
 	for (const square of piecesOf(after, enemy)) {
 		const piece = after.get(square)!;
@@ -395,16 +412,16 @@ function trappedPiece(after: Chess): boolean {
 		const attackers = after.attackers(square, opposite(enemy));
 		// not attacked by anything cheaper — no forced flight
 		if (!attackers.some((a) => valueAt(after, a) < VALUE[piece.type])) continue;
-		if (!hasSafeFlight(after, square)) return true;
+		if (!hasSafeFlight(after, square)) return square;
 	}
-	return false;
+	return null;
 }
 
 /** An in-between check: rather than rescue a piece that's already hanging, the
  * mover throws in a check (one that can't just be captured) and leaves the
  * piece hanging for now — the threat comes first. */
-function zwischenzug(before: Chess, after: Chess, from: Square, to: Square): boolean {
-	if (!after.isCheck() || !isSafe(after, to)) return false;
+function zwischenzug(before: Chess, after: Chess, from: Square, to: Square): Square | null {
+	if (!after.isCheck() || !isSafe(after, to)) return null;
 	const friendly = before.turn();
 	for (const square of piecesOf(before, friendly)) {
 		const piece = before.get(square)!;
@@ -414,9 +431,9 @@ function zwischenzug(before: Chess, after: Chess, from: Square, to: Square): boo
 		if (before.attackers(square, opposite(friendly)).length === 0) continue;
 		if (isSafe(before, square)) continue;
 		const still = after.get(square);
-		if (still && !isSafe(after, square)) return true; // left hanging while we check instead
+		if (still && !isSafe(after, square)) return square; // left hanging while we check
 	}
-	return false;
+	return null;
 }
 
 /** Every single-move motif the `uci` move executes from `fen`, or an empty set
@@ -436,7 +453,7 @@ export function detectMotifs(fen: string, uci: string): Set<string> {
 	const motifs = new Set<string>();
 	if (winsHangingPiece(before, from, to)) motifs.add(HANGING_PIECE);
 	for (const motif of checkMotifs(before, after, from, to, flags)) motifs.add(motif);
-	if (isBackRankMate(after)) motifs.add(BACK_RANK_MATE);
+	if (backRankMate(after)) motifs.add(BACK_RANK_MATE);
 	if (isFork(after, to)) motifs.add(FORK);
 	for (const motif of lineMotifs(after, to)) motifs.add(motif);
 	if (discoveredAttack(before, after, from, to)) motifs.add(DISCOVERED_ATTACK);
@@ -458,31 +475,129 @@ export function detectLiveMotif(fen: string, uci: string): string | null {
 	return MOTIF_PRIORITY.find((motif) => motifs.has(motif)) ?? null;
 }
 
-/** Turn the engine's best line into hint-ladder content — only when its first
- * move executes a recognized tactic. `pvUci` is the principal variation for
- * the user-to-move position `fen`. */
-export function liveHintFromLine(fen: string, pvUci: string[]): HintContent | null {
-	const best = pvUci[0];
-	if (!best) return null;
-	const motif = detectLiveMotif(fen, best);
-	if (!motif) return null;
+const PIECE_NAME: Record<string, string> = {
+	p: 'pawn',
+	n: 'knight',
+	b: 'bishop',
+	r: 'rook',
+	q: 'queen',
+	k: 'king'
+};
 
-	const chess = new Chess(fen);
-	const line: string[] = [];
-	for (const uci of pvUci.slice(0, MAX_LINE_PLIES)) {
-		try {
-			line.push(chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }).san);
-		} catch {
-			break;
-		}
+/** "the queen on h4" */
+function describe(chess: Chess, square: Square): string {
+	return `the ${PIECE_NAME[chess.get(square)!.type]} on ${square}`;
+}
+
+function joinList(items: string[]): string {
+	if (items.length < 2) return items[0] ?? '';
+	return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** A short, position-specific sentence for *why* `uci` counts as `motif` —
+ * naming the actual pieces and squares rather than defining the pattern in the
+ * abstract ("the queen on h4 is left undefended", not "a hanging piece is one
+ * that isn't defended").
+ *
+ * Each branch re-runs the same detector that fired, so the wording can never
+ * describe a pattern the detector didn't actually find. Returns null when the
+ * move is illegal, or when it doesn't execute `motif` at all — asking for an
+ * explanation of an absent motif must not manufacture one. */
+export function explainMotif(fen: string, uci: string, motif: string): string | null {
+	if (!detectMotifs(fen, uci).has(motif)) return null;
+
+	const before = new Chess(fen);
+	const from = uci.slice(0, 2) as Square;
+	const to = uci.slice(2, 4) as Square;
+	const after = new Chess(fen);
+	let flags: string;
+	try {
+		flags = after.move({ from, to, promotion: uci[4] }).flags;
+	} catch {
+		return null;
 	}
-	if (line.length === 0) return null;
+	const checked = after.turn();
+	const kingSquare = findKing(after, checked);
+	const checkers = kingSquare ? after.attackers(kingSquare, opposite(checked)) : [];
 
-	return {
-		category: 'There’s a tactic in this position.',
-		motif: humanizeMotif(motif),
-		moveSan: line[0],
-		reason: motifReason(motif, line[0]),
-		line
-	};
+	switch (motif) {
+		case HANGING_PIECE:
+			return isDefended(before, to)
+				? `${describe(before, to)} is worth more than ${describe(before, from)} that takes it`
+				: `${describe(before, to)} is left undefended`;
+
+		case FORK: {
+			const targets = forkTargets(after, to);
+			return `${describe(after, to)} hits ${joinList(targets.map((sq) => describe(after, sq)))} at once`;
+		}
+
+		case PIN:
+		case SKEWER: {
+			const pair = linePairs(after, to).find((candidate) => candidate.motif === motif);
+			if (!pair) return null;
+			return motif === PIN
+				? `${describe(after, pair.front)} can't move — ${describe(after, pair.back)} sits behind it`
+				: `${describe(after, pair.front)} must move, and ${describe(after, pair.back)} falls behind it`;
+		}
+
+		case BACK_RANK_MATE: {
+			const mated = backRankMate(after);
+			return mated ? `${describe(after, mated)} has no escape from its own back rank` : null;
+		}
+
+		case DOUBLE_CHECK:
+			return `${joinList(checkers.map((sq) => describe(after, sq)))} both give check — only the king can move`;
+
+		case DISCOVERED_CHECK: {
+			const movedTo = new Set<Square>([to]);
+			if (flags.includes('k') || flags.includes('q')) {
+				movedTo.add(squareAt(fileOf(to) < 4 ? 3 : 5, rankOf(to)));
+			}
+			const revealed = checkers.find((sq) => !movedTo.has(sq));
+			return revealed
+				? `moving off ${from} uncovers check from ${describe(after, revealed)}`
+				: null;
+		}
+
+		case DISCOVERED_ATTACK: {
+			const found = discoveredAttack(before, after, from, to);
+			if (!found) return null;
+			return `moving off ${from} uncovers ${describe(after, found.attacker)} onto ${describe(after, found.target)}`;
+		}
+
+		case DEFLECTION: {
+			const found = deflection(after, to);
+			if (!found) return null;
+			return `${describe(after, found.defender)} has to move, and it is the only piece guarding ${describe(after, found.guarded)}`;
+		}
+
+		case OVERLOADING: {
+			const found = overloading(after);
+			if (!found) return null;
+			return `${describe(after, found.defender)} is the only piece guarding both ${describe(after, found.first)} and ${describe(after, found.second)}`;
+		}
+
+		case TRAPPED_PIECE: {
+			const trapped = trappedPiece(after);
+			return trapped ? `${describe(after, trapped)} has no safe square to run to` : null;
+		}
+
+		case ZWISCHENZUG: {
+			const hanging = zwischenzug(before, after, from, to);
+			if (!hanging) return null;
+			return `the check comes first — ${describe(after, hanging)} can be rescued next move`;
+		}
+
+		default:
+			return null;
+	}
+}
+
+/** The motif for the engine's best move in `fen`, with a short explanation of
+ * why it is one. Null when the best move carries no recognized tactic. */
+export function liveTactic(fen: string, bestUci: string | undefined): LiveTactic | null {
+	if (!bestUci) return null;
+	const motif = detectLiveMotif(fen, bestUci);
+	if (!motif) return null;
+	return { motif: humanizeMotif(motif), why: explainMotif(fen, bestUci, motif) };
 }
