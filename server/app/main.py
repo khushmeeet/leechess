@@ -11,7 +11,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.analysis import reset_stale_analyses, stockfish_binary
 from app.db import Base, engine
-from app.routers import games, progress, puzzles, wikibook
+from app.endgame_drills import seed_catalog
+from app.routers import endgames, games, progress, puzzles, wikibook
 from app.seeding import maybe_autoseed
 
 
@@ -24,6 +25,9 @@ async def lifespan(app: FastAPI):
     # thread; gated on LEECHESS_AUTO_SEED=on) until a run has completed —
     # an interrupted run resumes on the next restart.
     maybe_autoseed()
+    # The endgame-drill catalog is a fixed dozen rows — insert the ones this
+    # database doesn't have yet, leaving the Leitner state of the rest alone.
+    seed_catalog()
     yield
 
 
@@ -74,6 +78,7 @@ app.add_middleware(
 app.include_router(games.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
+app.include_router(endgames.router)
 app.include_router(wikibook.router)
 
 

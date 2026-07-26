@@ -13,6 +13,7 @@
 		{ href: resolve('/'), label: 'Play' },
 		{ href: resolve('/review'), label: 'Review' },
 		{ href: resolve('/puzzles'), label: 'Puzzles' },
+		{ href: resolve('/endgames'), label: 'Endgames' },
 		{ href: resolve('/progress'), label: 'Progress' },
 		{ href: resolve('/literature'), label: 'Literature' }
 	];

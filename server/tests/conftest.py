@@ -69,6 +69,8 @@ def client(db_engine, monkeypatch):
     monkeypatch.setattr("app.analysis.session_factory", TestSession)
     # Same for the puzzle-pool seeding job.
     monkeypatch.setattr("app.seeding.session_factory", TestSession)
+    # And for the endgame-drill catalog seed, which runs inline at startup.
+    monkeypatch.setattr("app.endgame_drills.session_factory", TestSession)
     try:
         with TestClient(app) as test_client:
             yield test_client

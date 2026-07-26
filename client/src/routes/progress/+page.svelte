@@ -159,6 +159,11 @@
 				trend={progress.cpl_trend}
 				onselect={(gameId) => goto(resolve('/review/[gameId]', { gameId: String(gameId) }))}
 			/>
+			<p class="mt-2 text-sm text-muted">
+				The endgame line is the one you can train directly — the
+				<a class="text-accent underline" href={resolve('/endgames')}>Endgames</a>
+				screen drills the techniques it measures against full-strength Stockfish.
+			</p>
 		</section>
 	</div>
 {/if}
