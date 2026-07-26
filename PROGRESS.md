@@ -20,14 +20,19 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 §4.1). The shared `HintLadder` had been ready since Phase 3 but Play was nudge-only — it
 had no way to name the tactic in a *live* position (no server round-trip in the play loop).
 
-- **`client/src/lib/liveMotifs.ts`** — client-side motif detection, a focused TypeScript
-  port of `server/app/motifs.py`'s single-move detectors (hanging piece, fork, pin, skewer,
-  back-rank mate, discovered check, double check) over chess.js. `liveHintFromLine(fen,
-  pvUci)` turns the engine's best line into ladder `HintContent`, but only when the first
-  move executes a recognized tactic — quiet positions get just the nudge. The multi-move
-  motifs (deflection, overloading, zwischenzug, …) need a search to prove and stay
-  server-only; under-detection is the deliberate failure mode, same as the server.
-  Unit-tested (`liveMotifs.test.ts`, 17 cases: positive + near-miss per motif).
+- **`client/src/lib/liveMotifs.ts`** — client-side motif detection, a TypeScript port of
+  `server/app/motifs.py` over chess.js, at **full parity with the server's 12 detectors**:
+  fork, pin, skewer, back-rank mate, hanging piece, discovered check, double check,
+  discovered attack, deflection, overloading, trapped piece, zwischenzug. The multi-move
+  motifs (deflection, overloading, zwischenzug) use the same conservative single-move
+  signatures the server settles for — under-tagging beats a tagger that cries wolf.
+  `liveHintFromLine(fen, pvUci)` turns the engine's best line into ladder `HintContent`,
+  but only when the first move executes a recognized tactic — quiet positions get just the
+  nudge. Only x-ray and the strategic motifs are absent, because the server lacks them too;
+  `MOTIF_PRIORITY` is pinned against the server's list by a test so the two can't drift.
+  Unit-tested (`liveMotifs.test.ts`, 30 cases: a positive **and** a near-miss per motif,
+  plus taxonomy-parity and reason-template guards). Detection costs ~0.4ms on a dense
+  middlegame position, so it adds nothing measurable to the live loop.
 - **`HintLadder.svelte`** — gained an optional Level 0 `nudge` (the always-shown "Checks,
   captures, threats?" pre-move prompt, dismissable per ply via `nudgeKey`) and a `maxLevel`
   cap. Puzzles/Review pass neither, so their behaviour is byte-for-byte unchanged (defaults
@@ -42,7 +47,7 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   tactic is on the board.
 - **Testing**: 3 new Play e2e cases in `play.e2e.ts` (nudge shows + dismisses; Off hides all
   / Full walks Levels 1→5 on a restored hanging-queen position; Nudge caps at Level 1).
-  Client unit suite 115 passed, `svelte-check` clean. (The e2e suite needs the FastAPI
+  Client unit suite 128 passed, `svelte-check` clean. (The e2e suite needs the FastAPI
   backend, which requires Python ≥3.14 — unavailable in the web sandbox — so the ladder was
   instead driven directly in a headless browser against the built SPA to confirm the live
   path: nudge → motif chip "hanging piece" → move `Nxh4` → full line.)
