@@ -97,11 +97,11 @@ test('tactic, coach and ideas share one panel, gated by the hint mode', async ({
 	await expect(bar.getByTestId('coach-line')).toBeVisible();
 	await expect(bar.getByTestId('ideas-row')).toBeVisible();
 
-	// Nudge: the tactic is flagged but not named, and the engine's answers go —
-	// "Stockfish prefers Nxh4" would hand over what the row is withholding
+	// Nudge: the ladder replaces the stated tactic, and the engine's answers go —
+	// "Stockfish prefers Nxh4" would skip every rung at once
 	await page.getByTestId('hint-mode-nudge').click();
-	await expect(bar.getByTestId('tactic-row')).toBeVisible();
-	await expect(page.getByTestId('tactic-motif')).toBeHidden();
+	await expect(bar.getByTestId('hint-ladder')).toBeVisible();
+	await expect(page.getByTestId('tactic-row')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
 
@@ -109,6 +109,7 @@ test('tactic, coach and ideas share one panel, gated by the hint mode', async ({
 	// rather than a hint about this position
 	await page.getByTestId('hint-mode-off').click();
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
+	await expect(page.getByTestId('hint-ladder')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
 	await expect(page.getByTestId('opening-name')).toBeVisible();

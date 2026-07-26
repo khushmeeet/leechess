@@ -3,6 +3,7 @@
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
+	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
 	import InsightBar from '$lib/components/InsightBar.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
@@ -61,22 +62,59 @@
 	// quiet positions say nothing at all.
 	const liveTactic = $derived.by((): LiveTactic | null => {
 		if (displayPrefs.hintMode === 'off' || game.isGameOver) return null;
-		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci[0]);
+		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci);
 	});
 
 	// The engine-answer rows belong to Full alone. Off is a real game (spec
 	// user story 5 — no help at all, so the training can be tested), and Nudge
-	// only flags that a tactic exists: naming the move there, via "Stockfish
-	// prefers Nxf4" or an idea chip, would defeat the point of the mode. Their
-	// own Settings toggles still apply on top, within Full.
+	// makes you climb the ladder for the answer: "Stockfish prefers Nxf4" or an
+	// idea chip sitting alongside would skip every rung at once. Their own
+	// Settings toggles still apply on top, within Full.
 	const fullHints = $derived(displayPrefs.hintMode === 'full');
 
+	// Nudge feeds the shared ladder, so the answer is earned a rung at a time;
+	// Full states the pattern outright instead.
+	const ladderHint = $derived.by((): HintContent | null => {
+		if (fullHints || !liveTactic) return null;
+		return {
+			category: 'There’s a tactic in this position.',
+			motif: liveTactic.motif,
+			moveSan: liveTactic.moveSan,
+			reason: liveTactic.why,
+			line: liveTactic.line
+		};
+	});
+
+	// Reveal state is per position — a new move clears it, so hints never carry
+	// over from the position they were about.
+	let hintLevel = $state(0);
+	let lastHintFen = game.fen;
+	$effect(() => {
+		if (game.fen !== lastHintFen) {
+			lastHintFen = game.fen;
+			hintLevel = 0;
+		}
+	});
+
 	let hoverUci = $state<string | null>(null);
-	const boardShapes = $derived<DrawShape[]>(
-		hoverUci
+	// Level 3 circles the piece and its target; Level 4+ (move named in text)
+	// upgrades to an arrow — same convention as the Puzzles board.
+	const hintShapes = $derived.by((): DrawShape[] => {
+		if (!ladderHint || !liveTactic || hintLevel < 3) return [];
+		const from = liveTactic.uci.slice(0, 2) as Key;
+		const to = liveTactic.uci.slice(2, 4) as Key;
+		if (hintLevel >= 4) return [{ orig: from, dest: to, brush: 'green' }];
+		return [
+			{ orig: from, brush: 'green' },
+			{ orig: to, brush: 'blue' }
+		];
+	});
+	const boardShapes = $derived<DrawShape[]>([
+		...(hoverUci
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
-			: []
-	);
+			: []),
+		...hintShapes
+	]);
 
 	const resultOutcome = $derived<GameOutcome | null>(
 		game.isGameOver ? (gameOutcome(game.result, session.playerColor) ?? 'draw') : null
@@ -152,12 +190,16 @@
 </script>
 
 {#snippet tacticRow()}
-	{#if liveTactic}
-		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="tactic-row">
-			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-				Tactic
-			</span>
-			{#if fullHints}
+	{#if fullHints}
+		{#if liveTactic}
+			<!-- Full: the pattern stated outright, with the evidence for it. -->
+			<div
+				class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2"
+				data-testid="tactic-row"
+			>
+				<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
+					Tactic
+				</span>
 				<p class="min-w-0 text-body">
 					<span
 						class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
@@ -165,14 +207,13 @@
 					>
 						{liveTactic.motif}
 					</span>
-					{#if liveTactic.why}<span data-testid="tactic-why">{liveTactic.why}</span>{/if}
+					<span data-testid="tactic-why">{liveTactic.why}</span>
 				</p>
-			{:else}
-				<!-- Nudge: flag that something is there without naming the pattern
-				or the move — that is the whole difference between the modes. -->
-				<p class="min-w-0 text-body">There’s a tactic in this position.</p>
-			{/if}
-		</div>
+			</div>
+		{/if}
+	{:else}
+		<!-- Nudge: the same answer, but earned a rung at a time. -->
+		<HintLadder hint={ladderHint} bind:level={hintLevel} standalone={false} />
 	{/if}
 {/snippet}
 

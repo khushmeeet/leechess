@@ -284,23 +284,48 @@ test('Off shows no in-game help at all', async ({ page }) => {
 	// engine's own suggestions go too
 	await page.getByTestId('hint-mode-off').click();
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
+	await expect(page.getByTestId('hint-ladder')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
 });
 
-test('Nudge flags the tactic without naming it', async ({ page }) => {
+test('Nudge makes you climb the ladder for the same answer', async ({ page }) => {
 	await restoreHangingQueen(page);
 	await page.goto('/');
 	await waitForEngineReady(page);
 
 	await page.getByTestId('hint-mode-nudge').click();
-	const row = page.getByTestId('tactic-row');
-	await expect(row).toContainText('There\u2019s a tactic in this position.', { timeout: 15_000 });
+	const reveal = page.getByTestId('hint-reveal');
+	await expect(reveal).toBeVisible({ timeout: 15_000 });
 
-	// the pattern and the move both stay hidden — that is the whole mode
-	await expect(page.getByTestId('tactic-motif')).toBeHidden();
-	await expect(row).not.toContainText('hanging piece');
+	// nothing revealed yet, and no engine answers alongside to short-circuit it
+	for (const level of [1, 2, 3, 4, 5]) {
+		await expect(page.getByTestId(`hint-level-${level}`)).toBeHidden();
+	}
+	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
+
+	// one rung at a time: category, then the pattern, then the squares
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-1')).toContainText('tactic');
+	await expect(page.getByTestId('hint-level-2')).toBeHidden();
+
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-2')).toContainText('hanging piece');
+
+	await reveal.click();
+	await expect(page.locator('.cg-shapes circle').first()).toBeVisible();
+
+	// Level 4 names the move with the same position-specific reason Full states
+	// outright; Level 5 is the line, and the ladder is spent
+	await reveal.click();
+	const move = page.getByTestId('hint-level-4');
+	await expect(move).toContainText('Nxh4');
+	await expect(move).toContainText('the queen on h4 is left undefended');
+
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-5')).toContainText('Nxh4');
+	await expect(reveal).toBeHidden();
 });
 
 test('Full names the motif and why the position is one', async ({ page }) => {

@@ -16,18 +16,22 @@
 </script>
 
 <script lang="ts">
-	// Shared hint ladder (Review / Puzzles). Levels 1-5 reveal one rung at a
-	// time, never all at once, and only when `hint` content is provided. The
-	// parent owns `level` (bindable) — it needs it to highlight Level 3's
-	// squares on the board and to report hint usage with puzzle attempts.
+	// Shared hint ladder (Play's Nudge mode / Puzzles). Levels 1-5 reveal one
+	// rung at a time, never all at once, and only when `hint` content is
+	// provided. The parent owns `level` (bindable) — it needs it to highlight
+	// Level 3's squares on the board and to report hint usage with puzzle
+	// attempts.
 	interface Props {
 		/** Ladder content for Levels 1-5. */
 		hint?: HintContent | null;
 		/** Highest level revealed so far (0-5). */
 		level?: number;
+		/** Own bordered card with its own heading (Puzzles), vs. bare rows meant
+		 * to sit inside a host panel (Play's insight bar). */
+		standalone?: boolean;
 	}
 
-	let { hint = null, level = $bindable(0) }: Props = $props();
+	let { hint = null, level = $bindable(0), standalone = true }: Props = $props();
 
 	const MAX_LEVEL = 5;
 	const nextLabels: Record<number, string> = {
@@ -39,52 +43,68 @@
 	};
 </script>
 
-{#if hint}
-	<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
-		<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
-			Hints
-			<span class="text-xs font-normal text-faint">level {level}/{MAX_LEVEL}</span>
-		</h2>
-
-		<ol class="flex flex-col gap-1.5">
-			{#if level >= 1}
-				<li data-testid="hint-level-1" class="text-body">{hint.category}</li>
-			{/if}
-			{#if level >= 2}
-				<li data-testid="hint-level-2" class="text-body">
-					Look for a
-					<span
-						class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
-					>
-						{hint.motif}
-					</span>
-				</li>
-			{/if}
-			{#if level >= 3}
-				<li data-testid="hint-level-3" class="text-body">
-					The key squares are highlighted on the board.
-				</li>
-			{/if}
-			{#if level >= 4}
-				<li data-testid="hint-level-4" class="text-body">
-					<span class="font-mono font-semibold">{hint.moveSan}</span> — {hint.reason}
-				</li>
-			{/if}
-			{#if level >= 5}
-				<li data-testid="hint-level-5" class="text-body">
-					Full line: <span class="font-mono">{hint.line.join(' ')}</span>
-				</li>
-			{/if}
-		</ol>
-
-		{#if level < MAX_LEVEL}
-			<button
-				data-testid="hint-reveal"
-				onclick={() => (level += 1)}
-				class="mt-2 w-full rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-			>
-				{nextLabels[level]}
-			</button>
+{#snippet rungs(content: HintContent)}
+	<ol class="flex flex-col gap-1.5">
+		{#if level >= 1}
+			<li data-testid="hint-level-1" class="text-body">{content.category}</li>
 		{/if}
-	</section>
+		{#if level >= 2}
+			<li data-testid="hint-level-2" class="text-body">
+				Look for a
+				<span
+					class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
+				>
+					{content.motif}
+				</span>
+			</li>
+		{/if}
+		{#if level >= 3}
+			<li data-testid="hint-level-3" class="text-body">
+				The key squares are highlighted on the board.
+			</li>
+		{/if}
+		{#if level >= 4}
+			<li data-testid="hint-level-4" class="text-body">
+				<span class="font-mono font-semibold">{content.moveSan}</span> — {content.reason}
+			</li>
+		{/if}
+		{#if level >= 5}
+			<li data-testid="hint-level-5" class="text-body">
+				Full line: <span class="font-mono">{content.line.join(' ')}</span>
+			</li>
+		{/if}
+	</ol>
+
+	{#if level < MAX_LEVEL}
+		<button
+			data-testid="hint-reveal"
+			onclick={() => (level += 1)}
+			class="mt-2 w-full rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+		>
+			{nextLabels[level]}
+		</button>
+	{/if}
+{/snippet}
+
+{#if hint}
+	{#if standalone}
+		<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
+			<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
+				Hints
+				<span class="text-xs font-normal text-faint">level {level}/{MAX_LEVEL}</span>
+			</h2>
+			{@render rungs(hint)}
+		</section>
+	{:else}
+		<!-- Hosted: a labelled row matching the panel's Coach/Ideas rows. -->
+		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="hint-ladder">
+			<span
+				class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase"
+				title="hint level {level}/{MAX_LEVEL}"
+			>
+				Tactic
+			</span>
+			<div class="min-w-0">{@render rungs(hint)}</div>
+		</div>
+	{/if}
 {/if}

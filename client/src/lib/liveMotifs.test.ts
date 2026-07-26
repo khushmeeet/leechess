@@ -285,16 +285,36 @@ describe('explainMotif', () => {
 });
 
 describe('liveTactic', () => {
-	it('names the motif and why it is one', () => {
-		const fen = 'rnb1kbnr/pppp1ppp/8/4p3/4P2q/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
-		expect(liveTactic(fen, 'f3h4')).toEqual({
+	const HUNG_QUEEN = 'rnb1kbnr/pppp1ppp/8/4p3/4P2q/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
+
+	it('names the motif, why it is one, and the move that executes it', () => {
+		expect(liveTactic(HUNG_QUEEN, ['f3h4', 'e8d8'])).toEqual({
 			motif: 'hanging piece',
-			why: 'the queen on h4 is left undefended'
+			why: 'the queen on h4 is left undefended',
+			uci: 'f3h4',
+			moveSan: 'Nxh4',
+			line: ['Nxh4', 'Kd8']
 		});
 	});
 
-	it('is null for a quiet best move or no best move at all', () => {
-		expect(liveTactic(START, 'e2e4')).toBeNull();
+	it('caps the line so the ladder’s last rung stays readable', () => {
+		// nine fully legal plies in, eight out
+		const fen = 'r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1';
+		const long = ['d5c7', 'e8f8', 'c7a8', 'f8e8', 'a8b6', 'e8d8', 'b6d5', 'd8e8', 'd5c3'];
+		const tactic = liveTactic(fen, long)!;
+		expect(tactic.motif).toBe('fork');
+		expect(tactic.line).toEqual(['Nc7+', 'Kf8', 'Nxa8', 'Ke8', 'Nb6', 'Kd8', 'Nd5', 'Ke8']);
+	});
+
+	it('stops at the first move the position cannot play', () => {
+		// a truncated/illegal continuation still yields the tactic itself
+		const tactic = liveTactic(HUNG_QUEEN, ['f3h4', 'a1a8'])!;
+		expect(tactic.line).toEqual(['Nxh4']);
+	});
+
+	it('is null for a quiet best move or no line at all', () => {
+		expect(liveTactic(START, ['e2e4', 'e7e5'])).toBeNull();
+		expect(liveTactic(START, [])).toBeNull();
 		expect(liveTactic(START, undefined)).toBeNull();
 	});
 });

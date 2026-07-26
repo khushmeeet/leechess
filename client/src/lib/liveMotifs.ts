@@ -19,16 +19,25 @@
  * there, port it here (and vice versa).
  */
 import { Chess, type Color, type Square } from 'chess.js';
-import { humanizeMotif } from '$lib/motifs';
+import { humanizeMotif, motifReason } from '$lib/motifs';
 
-/** What Play shows for a tactical position: the pattern's name, plus a short
- * position-specific reason it is that pattern. */
+/** The tactic in a live position: enough for Play to either state it outright
+ * (Full) or feed the graduated hint ladder (Nudge). */
 export interface LiveTactic {
 	/** Humanized motif name, e.g. "hanging piece". */
 	motif: string;
-	/** "the queen on h4 is left undefended" — null if it can't be derived. */
-	why: string | null;
+	/** "the queen on h4 is left undefended" — why this position is that motif. */
+	why: string;
+	/** The move that executes it, UCI — for board highlighting. */
+	uci: string;
+	/** The same move as SAN. */
+	moveSan: string;
+	/** The engine's line from here as SANs, capped for readability. */
+	line: string[];
 }
+
+/** How many plies of the engine line to surface as the "full line". */
+const MAX_LINE_PLIES = 8;
 
 export const FORK = 'fork';
 export const PIN = 'pin';
@@ -593,11 +602,33 @@ export function explainMotif(fen: string, uci: string, motif: string): string | 
 	}
 }
 
-/** The motif for the engine's best move in `fen`, with a short explanation of
- * why it is one. Null when the best move carries no recognized tactic. */
-export function liveTactic(fen: string, bestUci: string | undefined): LiveTactic | null {
-	if (!bestUci) return null;
-	const motif = detectLiveMotif(fen, bestUci);
+/** The tactic on the board in `fen`, read off the engine's principal variation
+ * `pvUci`. Null when the best move carries no recognized tactic — most
+ * positions are quiet, and Play then says nothing at all. */
+export function liveTactic(fen: string, pvUci: string[] | undefined): LiveTactic | null {
+	const best = pvUci?.[0];
+	if (!best) return null;
+	const motif = detectLiveMotif(fen, best);
 	if (!motif) return null;
-	return { motif: humanizeMotif(motif), why: explainMotif(fen, bestUci, motif) };
+
+	const chess = new Chess(fen);
+	const line: string[] = [];
+	for (const uci of pvUci.slice(0, MAX_LINE_PLIES)) {
+		try {
+			line.push(chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }).san);
+		} catch {
+			break; // the engine line ran past what this position allows
+		}
+	}
+	if (line.length === 0) return null;
+
+	return {
+		motif: humanizeMotif(motif),
+		// the templated fallback names the move, so it is only reached if a
+		// detector somehow can't produce its own evidence
+		why: explainMotif(fen, best, motif) ?? motifReason(motif, line[0]),
+		uci: best,
+		moveSan: line[0],
+		line
+	};
 }

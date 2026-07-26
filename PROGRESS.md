@@ -41,14 +41,16 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   detectors return their evidence squares instead of bare booleans for exactly this. It
   refuses to explain a motif that isn't present, so a mismatched call returns null rather
   than a half-built sentence.
-- **No ladder in Play** — the graduated Level 1→5 reveal is Puzzles-only; `HintLadder` is
-  back to exactly its pre-existing form (no `nudge`/`maxLevel`/`standalone` props). Play
-  states the pattern outright instead, because clicking through five rungs beside a Coach
-  line that already says "Stockfish prefers Nxh4" was never a real choice.
+- **The ladder is Nudge's whole point** — `HintLadder` keeps its Levels 1→5 unchanged and
+  gains one prop, `standalone` (default `true` → Puzzles' own bordered card; `false` →
+  bare rows for a host panel). Play's Nudge mode feeds it, so the answer is earned a rung
+  at a time with Coach and Ideas switched off; Full skips the climb and states the pattern.
+  Level 4's reason is now the same position-specific sentence Full shows ("Nxh4 — the queen
+  on h4 is left undefended"), not the old generic template.
 - **No pre-move nudge** — the static "Checks, captures, threats?" banner is gone. It said
-  the same thing every move, and the Tactic row now carries the same signal with real
-  information behind it. This drops spec §4.1's pre-move nudge and its 200ms criterion by
-  the owner's call; Nudge mode keeps the name and the intent (prompt, never answer).
+  the same thing every move regardless of position. This drops spec §4.1's pre-move nudge
+  and its 200ms criterion by the owner's call; Nudge mode keeps the name and the intent
+  (work for it, never handed the answer).
 - **One coaching panel** — Play originally stacked two cards: Hints, then the insight bar
   (opening + coach + ideas). That let the Ideas chips show `Nxf4 · Wins material` and the
   coach say "Stockfish prefers Nxf4" while the ladder two panels up sat at level 2/5 asking
@@ -64,17 +66,18 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   | Mode | Panel shows |
   |---|---|
   | Off | opening only — a real game (spec user story 5). Coach and Ideas go too: leaving Ideas up while "hints" are off still handed over the best move, so Off wasn't really off |
-  | Nudge | opening + `TACTIC — There's a tactic in this position.` The pattern and the move both stay unnamed; no Coach, no Ideas |
-  | Full | opening + `TACTIC — [HANGING PIECE] the queen on h4 is left undefended` + Coach + Ideas |
+  | Nudge | opening + the hint ladder, climbed one rung at a time (category → motif chip → board highlight → move + why → full line). No Coach, no Ideas — either would skip every rung at once |
+  | Full | opening + `TACTIC — [HANGING PIECE] the queen on h4 is left undefended` stated outright + Coach + Ideas |
 
   The nav Settings toggles for Coach/Ideas still apply on top, within Full.
-- **Testing**: 3 Play e2e cases in `play.e2e.ts` (Off shows nothing; Nudge flags without
-  naming; Full names the motif and the why), plus one in `insight-bar.e2e.ts` pinning the
-  merged panel and the per-mode gating. `explainMotif` has a unit case per motif asserting
-  the exact sentence, so a wording or evidence regression fails loudly. Client unit suite
-  139 passed, `svelte-check` clean. (The e2e suite needs the FastAPI backend, which requires
-  Python ≥3.14 — unavailable in the web sandbox — so the screens were driven directly in a
-  headless browser against the built SPA: Play's panel in all three modes, and the Puzzles
+- **Testing**: 3 Play e2e cases in `play.e2e.ts` (Off shows nothing; Nudge walks Levels 1→5
+  with the engine's answers absent; Full names the motif and the why with no ladder), plus
+  one in `insight-bar.e2e.ts` pinning the merged panel and the per-mode gating.
+  `explainMotif` has a unit case per motif asserting the exact sentence, so a wording or
+  evidence regression fails loudly. Client unit suite 141 passed, `svelte-check` clean.
+  (The e2e suite needs the FastAPI backend, which requires Python ≥3.14 — unavailable in
+  the web sandbox — so the screens were driven directly in a headless browser against the
+  built SPA: Play's panel in all three modes including a full ladder climb, and the Puzzles
   ladder against a stubbed `/puzzles/next` to confirm the shared component still renders its
   own card and all five rungs.)
 
