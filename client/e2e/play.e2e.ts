@@ -251,3 +251,97 @@ test('engine replies and the game stays in sync', async ({ page }) => {
 	// still one move pair: white's move + the engine reply, nothing extra
 	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
 });
+
+/** Restore a live game where it is the user's (White's) turn and Black has just
+ * blundered the queen with ...Qh4 — Nf3xh4 wins it for free, so the engine's
+ * best line executes a `hanging_piece` tactic the client detector recognizes. */
+async function restoreHangingQueen(page: import('@playwright/test').Page) {
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'leechess.activeGame',
+			JSON.stringify({
+				version: 1,
+				engineSkill: 5,
+				playerColor: 'white',
+				moves: ['e2e4', 'e7e5', 'g1f3', 'd8h4'],
+				evals: [],
+				badges: [],
+				lastFeedback: null,
+				currentEval: null,
+				serverGameId: null,
+				completedGameId: null
+			})
+		);
+	});
+}
+
+test('the pre-move nudge shows on the user turn and can be dismissed', async ({ page }) => {
+	await restoreHangingQueen(page);
+	await page.goto('/');
+
+	// the nudge is client-side and instant — no engine round-trip needed
+	const nudge = page.getByTestId('hint-nudge');
+	await expect(nudge).toContainText('Checks, captures, threats?');
+
+	await page.getByTestId('hint-nudge-dismiss').click();
+	await expect(nudge).toBeHidden();
+});
+
+test('Off hides all in-game hints; the ladder reveals the live tactic in Full', async ({
+	page
+}) => {
+	await restoreHangingQueen(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	// Off: no nudge, no ladder, no matter the position
+	await page.getByTestId('hint-mode-off').click();
+	await expect(page.getByTestId('hint-ladder')).toBeHidden();
+
+	// Full: the engine's best line (Nxh4) is a hanging-piece tactic, so the
+	// ladder appears once the position's candidate lines land
+	await page.getByTestId('hint-mode-full').click();
+	const reveal = page.getByTestId('hint-reveal');
+	await expect(reveal).toBeVisible({ timeout: 15_000 });
+
+	// nothing revealed yet
+	for (const level of [1, 2, 3, 4, 5]) {
+		await expect(page.getByTestId(`hint-level-${level}`)).toBeHidden();
+	}
+
+	// Level 1 — category; Level 2 — the detected motif name
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-1')).toContainText('tactic');
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-2')).toContainText('hanging piece');
+
+	// Level 3 — key squares circled on the board
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-3')).toBeVisible();
+	await expect(page.locator('.cg-shapes circle').first()).toBeVisible();
+
+	// Level 4 — the move itself; Level 5 — the full line, ladder exhausted
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-4')).toContainText('Nxh4');
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-5')).toContainText('Nxh4');
+	await expect(reveal).toBeHidden();
+});
+
+test('Nudge mode shows the prompt but caps the ladder at "there is a tactic"', async ({ page }) => {
+	await restoreHangingQueen(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-nudge').click();
+	await expect(page.getByTestId('hint-nudge')).toBeVisible();
+
+	// one reveal surfaces the category, then the ladder stops — the motif name
+	// and the move stay hidden (Level 0-1 only)
+	const reveal = page.getByTestId('hint-reveal');
+	await expect(reveal).toBeVisible({ timeout: 15_000 });
+	await reveal.click();
+	await expect(page.getByTestId('hint-level-1')).toContainText('tactic');
+	await expect(page.getByTestId('hint-level-2')).toBeHidden();
+	await expect(reveal).toBeHidden();
+});
