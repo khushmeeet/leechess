@@ -1,12 +1,21 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { Idea } from '$lib/ideas';
 	import type { OpeningState } from '$lib/stores/play.svelte';
 
+	// Play's single in-game coaching panel: where you are (opening), what the
+	// position holds (the tactic row), and what the engine suggests (coach +
+	// ideas). These used to be two stacked cards, which let the Ideas chips
+	// name the best move while a hint ladder was still asking the player to
+	// look for it — one panel makes that contradiction visible, and Play's
+	// hint mode now decides which rows exist at all.
 	interface Props {
 		opening: OpeningState | null;
 		openingState: 'loading' | 'ready' | 'failed';
 		/** Plies played so far. */
 		ply: number;
+		/** The live tactic row, rendered under the opening line. */
+		tactic?: Snippet;
 		/** Coach row renders when true; a null sentence shows a pending dash. */
 		showCoach: boolean;
 		coach: string | null;
@@ -21,6 +30,7 @@
 		opening,
 		openingState,
 		ply,
+		tactic,
 		showCoach,
 		coach,
 		showIdeas,
@@ -85,14 +95,11 @@
 		</div>
 	</div>
 
+	{@render tactic?.()}
+
 	{#if showCoach}
-		<div
-			class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-baseline gap-2"
-			data-testid="coach-line"
-		>
-			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-				Coach
-			</span>
+		<div class="panel-row" data-testid="coach-line">
+			<span class="panel-row-label"> Coach </span>
 			{#if coach}
 				<p class="text-body">{coach}</p>
 			{:else}
@@ -102,10 +109,8 @@
 	{/if}
 
 	{#if showIdeas}
-		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="ideas-row">
-			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-				Ideas
-			</span>
+		<div class="panel-row" data-testid="ideas-row">
+			<span class="panel-row-label"> Ideas </span>
 			{#if gameOver}
 				<span class="text-faint">—</span>
 			{:else if ideas.length > 0}
@@ -120,7 +125,7 @@
 							onblur={() => onideahover?.(null)}
 						>
 							<span
-								class="whitespace-nowrap border-r border-line bg-card px-1.5 py-0.5 font-mono font-semibold text-ink"
+								class="border-r border-line bg-card px-1.5 py-0.5 font-mono font-semibold whitespace-nowrap text-ink"
 							>
 								{idea.san}
 							</span>

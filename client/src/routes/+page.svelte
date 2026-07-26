@@ -9,7 +9,7 @@
 	import { coachAdvice } from '$lib/coach';
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
-	import { liveHintFromLine } from '$lib/liveMotifs';
+	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
@@ -57,24 +57,36 @@
 		});
 	});
 
-	// Live hint ladder: the engine's best line for the position the user faces
-	// (freshLines[0]) becomes graduated hints, but only when its first move
-	// executes a recognized tactic — quiet positions show just the nudge.
-	const liveHint = $derived.by((): HintContent | null => {
+	// The tactic in the position the user faces, read off the engine's best line
+	// (freshLines[0]) — null unless that move executes a recognized motif, so
+	// quiet positions say nothing at all.
+	const liveTactic = $derived.by((): LiveTactic | null => {
 		if (displayPrefs.hintMode === 'off' || game.isGameOver) return null;
-		const best = freshLines?.[0];
-		return best ? liveHintFromLine(game.fen, best.pvUci) : null;
+		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci);
 	});
 
-	// Off: nothing. Nudge-only: the pre-move prompt plus a single "there's a
-	// tactic" reveal (Level 0-1). Full: the whole ladder (Level 0-5).
-	const hintMaxLevel = $derived(displayPrefs.hintMode === 'nudge' ? 1 : 5);
-	const nudgeText = $derived(
-		displayPrefs.hintMode !== 'off' && session.userCanMove ? 'Checks, captures, threats?' : null
-	);
+	// The engine-answer rows belong to Full alone. Off is a real game (spec
+	// user story 5 — no help at all, so the training can be tested), and Nudge
+	// makes you climb the ladder for the answer: "Stockfish prefers Nxf4" or an
+	// idea chip sitting alongside would skip every rung at once. Their own
+	// Settings toggles still apply on top, within Full.
+	const fullHints = $derived(displayPrefs.hintMode === 'full');
 
-	// Reveal state is per position — a new move (fen change) clears it so hints
-	// never carry over from the previous position.
+	// Nudge feeds the shared ladder, so the answer is earned a rung at a time;
+	// Full states the pattern outright instead.
+	const ladderHint = $derived.by((): HintContent | null => {
+		if (fullHints || !liveTactic) return null;
+		return {
+			category: 'There’s a tactic in this position.',
+			motif: liveTactic.motif,
+			moveSan: liveTactic.moveSan,
+			reason: liveTactic.why,
+			line: liveTactic.line
+		};
+	});
+
+	// Reveal state is per position — a new move clears it, so hints never carry
+	// over from the position they were about.
 	let hintLevel = $state(0);
 	let lastHintFen = game.fen;
 	$effect(() => {
@@ -85,14 +97,12 @@
 	});
 
 	let hoverUci = $state<string | null>(null);
-	// Level 3 circles the piece and its target; Level 4+ (move shown in text)
+	// Level 3 circles the piece and its target; Level 4+ (move named in text)
 	// upgrades to an arrow — same convention as the Puzzles board.
 	const hintShapes = $derived.by((): DrawShape[] => {
-		if (!liveHint || hintLevel < 3) return [];
-		const best = freshLines?.[0]?.pvUci[0];
-		if (!best) return [];
-		const from = best.slice(0, 2) as Key;
-		const to = best.slice(2, 4) as Key;
+		if (!ladderHint || !liveTactic || hintLevel < 3) return [];
+		const from = liveTactic.uci.slice(0, 2) as Key;
+		const to = liveTactic.uci.slice(2, 4) as Key;
 		if (hintLevel >= 4) return [{ orig: from, dest: to, brush: 'green' }];
 		return [
 			{ orig: from, brush: 'green' },
@@ -178,6 +188,29 @@
 		});
 	});
 </script>
+
+{#snippet tacticRow()}
+	{#if fullHints}
+		{#if liveTactic}
+			<!-- Full: the pattern stated outright, with the evidence for it. -->
+			<div class="panel-row" data-testid="tactic-row">
+				<span class="panel-row-label"> Tactic </span>
+				<p class="min-w-0 text-body">
+					<span
+						class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
+						data-testid="tactic-motif"
+					>
+						{liveTactic.motif}
+					</span>
+					<span data-testid="tactic-why">{liveTactic.why}</span>
+				</p>
+			</div>
+		{/if}
+	{:else}
+		<!-- Nudge: the same answer, but earned a rung at a time. -->
+		<HintLadder hint={ladderHint} bind:level={hintLevel} standalone={false} />
+	{/if}
+{/snippet}
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
@@ -298,12 +331,21 @@
 				</p>
 			</section>
 
-			<HintLadder
-				hint={liveHint}
-				nudge={nudgeText}
-				nudgeKey={game.moves.length}
-				maxLevel={hintMaxLevel}
-				bind:level={hintLevel}
+			<InsightBar
+				opening={session.opening}
+				openingState={session.openingsFailed
+					? 'failed'
+					: session.openingsLoaded
+						? 'ready'
+						: 'loading'}
+				ply={game.moves.length}
+				tactic={tacticRow}
+				showCoach={displayPrefs.showCoach && fullHints}
+				coach={coachText}
+				showIdeas={displayPrefs.showIdeas && fullHints}
+				ideas={candidateIdeas}
+				gameOver={game.isGameOver}
+				onideahover={(uci) => (hoverUci = uci)}
 			/>
 
 			<section
@@ -363,22 +405,6 @@
 					<p class="mt-2 text-sm font-semibold">Game over: {game.result}</p>
 				{/if}
 			</section>
-
-			<InsightBar
-				opening={session.opening}
-				openingState={session.openingsFailed
-					? 'failed'
-					: session.openingsLoaded
-						? 'ready'
-						: 'loading'}
-				ply={game.moves.length}
-				showCoach={displayPrefs.showCoach}
-				coach={coachText}
-				showIdeas={displayPrefs.showIdeas}
-				ideas={candidateIdeas}
-				gameOver={game.isGameOver}
-				onideahover={(uci) => (hoverUci = uci)}
-			/>
 
 			<section class="flex flex-col gap-2">
 				{#if !game.isGameOver && session.started}
