@@ -97,13 +97,8 @@
 		</section>
 	{:else}
 		<!-- Hosted: a labelled row matching the panel's Coach/Ideas rows. -->
-		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="hint-ladder">
-			<span
-				class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase"
-				title="hint level {level}/{MAX_LEVEL}"
-			>
-				Tactic
-			</span>
+		<div class="panel-row" data-testid="hint-ladder">
+			<span class="panel-row-label" title="hint level {level}/{MAX_LEVEL}"> Tactic </span>
 			<div class="min-w-0">{@render rungs(hint)}</div>
 		</div>
 	{/if}

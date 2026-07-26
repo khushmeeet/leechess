@@ -193,13 +193,8 @@
 	{#if fullHints}
 		{#if liveTactic}
 			<!-- Full: the pattern stated outright, with the evidence for it. -->
-			<div
-				class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2"
-				data-testid="tactic-row"
-			>
-				<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-					Tactic
-				</span>
+			<div class="panel-row" data-testid="tactic-row">
+				<span class="panel-row-label"> Tactic </span>
 				<p class="min-w-0 text-body">
 					<span
 						class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"

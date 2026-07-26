@@ -61,6 +61,35 @@
 	color-scheme: light;
 }
 
+/* The in-game insight panel's labelled rows (Tactic / Coach / Ideas): a small
+ * uppercase label in a fixed left column, content in the right.
+ *
+ * Defined once because the markup appears in four places (InsightBar's coach
+ * and ideas rows, Play's tactic row, HintLadder's hosted mode) and had already
+ * drifted — one row aligned on baselines, the others on box tops, so no two
+ * labels sat at the same height relative to their text.
+ *
+ * The label carries the *body's* line-height rather than its own, so its line
+ * box matches the first line of content and the small caps sit centred on it.
+ * Aligning on `start` keeps that true for the ideas row too, whose content is
+ * a wrapping row of chips rather than a run of text. */
+.panel-row {
+	display: grid;
+	grid-template-columns: 3.25rem minmax(0, 1fr);
+	align-items: start;
+	gap: 0.5rem;
+}
+
+.panel-row-label {
+	flex-shrink: 0;
+	font-size: 10px;
+	line-height: 1.25rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--color-faint);
+}
+
 /* Dark mode: same identity, inked on a dark desk instead of aged paper.
  * Overrides every --color-* custom property from @theme above; every
  * component reads colors through Tailwind's bg-paper/text-ink/etc utilities

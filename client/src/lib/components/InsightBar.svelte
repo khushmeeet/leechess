@@ -98,13 +98,8 @@
 	{@render tactic?.()}
 
 	{#if showCoach}
-		<div
-			class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-baseline gap-2"
-			data-testid="coach-line"
-		>
-			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-				Coach
-			</span>
+		<div class="panel-row" data-testid="coach-line">
+			<span class="panel-row-label"> Coach </span>
 			{#if coach}
 				<p class="text-body">{coach}</p>
 			{:else}
@@ -114,10 +109,8 @@
 	{/if}
 
 	{#if showIdeas}
-		<div class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-start gap-2" data-testid="ideas-row">
-			<span class="shrink-0 text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-				Ideas
-			</span>
+		<div class="panel-row" data-testid="ideas-row">
+			<span class="panel-row-label"> Ideas </span>
 			{#if gameOver}
 				<span class="text-faint">—</span>
 			{:else if ideas.length > 0}
