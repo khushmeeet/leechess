@@ -41,6 +41,12 @@ export interface MoveAccepted {
 	game_over: boolean;
 }
 
+/** The game as it stands after a takeback. */
+export interface TakebackResult {
+	ply: number; // plies remaining
+	fen: string;
+}
+
 /** One side's review-table row: avg centipawn loss plus flagged-move counts. */
 export interface SideCpl {
 	avg_cpl: number;
@@ -115,6 +121,15 @@ export function startGame(
 
 export function postMove(gameId: number, uci: string): Promise<MoveAccepted> {
 	return request(`/games/${gameId}/moves`, { method: 'POST', body: JSON.stringify({ uci }) });
+}
+
+/** Drop the plies after `toPly` so the record matches the board again. An
+ * absolute target rather than a count, so a retry can't over-truncate. */
+export function takeBackMoves(gameId: number, toPly: number): Promise<TakebackResult> {
+	return request(`/games/${gameId}/takeback`, {
+		method: 'POST',
+		body: JSON.stringify({ to_ply: toPly })
+	});
 }
 
 /** keepalive: completion often races page exit (resign, then close the tab) —

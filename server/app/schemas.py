@@ -58,6 +58,20 @@ class GameComplete(BaseModel):
         return self
 
 
+class TakebackIn(BaseModel):
+    """Retract the plies after `to_ply`. An absolute target length rather than
+    a count, so a retried or double-fired call can't over-truncate."""
+
+    to_ply: int = Field(ge=0)
+
+
+class TakebackResult(BaseModel):
+    """POST /games/{id}/takeback response — the game as it now stands."""
+
+    ply: int  # plies remaining
+    fen: str
+
+
 class MoveOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

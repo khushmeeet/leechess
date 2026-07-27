@@ -16,6 +16,10 @@
 		ply: number;
 		/** The live tactic row, rendered under the opening line. */
 		tactic?: Snippet;
+		/** The "take back and think again" offer, shown while the last move
+		 * was a blunder. Sits above the tactic row — it's the more urgent
+		 * thing to react to, and it comes and goes. */
+		takeback?: Snippet;
 		/** Coach row renders when true; a null sentence shows a pending dash. */
 		showCoach: boolean;
 		coach: string | null;
@@ -31,6 +35,7 @@
 		openingState,
 		ply,
 		tactic,
+		takeback,
 		showCoach,
 		coach,
 		showIdeas,
@@ -94,6 +99,8 @@
 			{/if}
 		</div>
 	</div>
+
+	{@render takeback?.()}
 
 	{@render tactic?.()}
 

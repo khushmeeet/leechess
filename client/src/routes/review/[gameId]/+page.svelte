@@ -232,16 +232,25 @@
 		citedShape = citedShape?.orig === shape.orig && citedShape?.dest === shape.dest ? null : shape;
 	}
 
-	// ← / → scrub through the game like the Prev/Next buttons.
+	// The layout mounts SettingsMenu and UsernamePrompt on every page, so a text
+	// field can hold focus while this page is up. Arrows belong to the caret
+	// there, not to the board.
+	function isTyping(target: EventTarget | null): boolean {
+		if (!(target instanceof HTMLElement)) return false;
+		return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+	}
+
+	// ← / → scrub through the game like the Prev/Next buttons; Home/End jump to
+	// the ends. `select` clamps, so out-of-range plies are safe to pass.
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.metaKey || event.ctrlKey || event.altKey) return;
-		if (event.key === 'ArrowLeft') {
-			select(selectedPly - 1);
-			event.preventDefault();
-		} else if (event.key === 'ArrowRight') {
-			select(selectedPly + 1);
-			event.preventDefault();
-		}
+		if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+		if (isTyping(event.target)) return;
+		if (event.key === 'ArrowLeft') select(selectedPly - 1);
+		else if (event.key === 'ArrowRight') select(selectedPly + 1);
+		else if (event.key === 'Home') select(1);
+		else if (event.key === 'End') select(game?.moves.length ?? 1);
+		else return;
+		event.preventDefault();
 	}
 
 	// Keep the selected move visible in the move list. Manual scrollTop math
@@ -369,6 +378,8 @@
 				<button
 					onclick={() => select(selectedPly - 1)}
 					disabled={selectedPly <= 1}
+					aria-keyshortcuts="ArrowLeft"
+					title="Previous move (←)"
 					class="rounded-xs border border-line bg-card px-3 py-1 text-sm hover:bg-paper disabled:opacity-40"
 				>
 					← Prev
@@ -376,10 +387,22 @@
 				<button
 					onclick={() => select(selectedPly + 1)}
 					disabled={selectedPly >= game.moves.length}
+					aria-keyshortcuts="ArrowRight"
+					title="Next move (→)"
 					class="rounded-xs border border-line bg-card px-3 py-1 text-sm hover:bg-paper disabled:opacity-40"
 				>
 					Next →
 				</button>
+				<!-- aria-hidden: aria-keyshortcuts above already tells AT the same thing. -->
+				<span
+					class="hidden items-center gap-1 text-xs text-faint sm:inline-flex"
+					aria-hidden="true"
+					data-testid="keyboard-hint"
+				>
+					<kbd class="rounded-xs border border-line px-1">←</kbd>
+					<kbd class="rounded-xs border border-line px-1">→</kbd>
+					to step
+				</span>
 				{#if selectedMove}
 					<span class="ml-1 text-sm text-body" data-testid="selected-move">
 						{Math.ceil(selectedMove.ply / 2)}{selectedMove.ply % 2 ? '.' : '…'}

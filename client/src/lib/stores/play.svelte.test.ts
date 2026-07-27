@@ -16,7 +16,8 @@ const api = vi.hoisted(() => ({
 	postMove: vi.fn(),
 	completeGame: vi.fn(),
 	discardGame: vi.fn(),
-	getGame: vi.fn()
+	getGame: vi.fn(),
+	takeBackMoves: vi.fn()
 }));
 
 const persistence = vi.hoisted(() => ({
@@ -92,6 +93,7 @@ beforeEach(() => {
 	api.completeGame.mockResolvedValue({});
 	api.discardGame.mockResolvedValue(undefined);
 	api.getGame.mockResolvedValue({ moves: [] });
+	api.takeBackMoves.mockResolvedValue({ ply: 0, fen: START_FEN });
 });
 
 describe('start()', () => {
@@ -183,6 +185,177 @@ describe('generation guard and suspend', () => {
 
 		expect(session.game.moves.length).toBe(1); // reply dropped
 		expect(api.postMove.mock.calls.length).toBe(postsBefore);
+	});
+});
+
+describe('take back and think again', () => {
+	/** Baseline is 30 (white POV); dropping to -200 is a 230cp loss → blunder,
+	 * and 'd2d4' as best keeps the played move off the "best" short-circuit. */
+	const BLUNDER_EVAL = -200;
+
+	it('retracts the blunder and the engine reply that followed it', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'e7e5'));
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		expect(session.lastFeedback).toEqual({ ply: 1, san: 'e4', classification: 'blunder' });
+		expect(session.canTakeBack).toBe(true);
+
+		session.takeBack();
+
+		expect(session.game.moves).toEqual([]);
+		expect(session.game.fen).toBe(START_FEN);
+		expect(session.game.turnColor).toBe('white'); // the player's move again
+		expect(session.evals).toEqual([]);
+		expect(session.badges).toEqual([]);
+		expect(session.lastFeedback).toBeNull();
+		expect(session.canTakeBack).toBe(false); // the offer clears itself
+	});
+
+	it('retracts only the blunder when the engine has not replied yet', async () => {
+		const session = await startedSession();
+		const reply = deferred<ReturnType<typeof evalResult>>();
+		engine.play.mockReturnValue(reply.promise);
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'e7e5'));
+
+		// the badge is written before the reply lands — that's the window
+		session.handleBoardMove('e2' as never, 'e4' as never);
+		await vi.waitFor(() => expect(session.lastFeedback?.classification).toBe('blunder'));
+		expect(session.game.moves.length).toBe(1);
+
+		session.takeBack();
+		expect(session.game.moves).toEqual([]);
+		expect(session.engineThinking).toBe(false);
+
+		// the reply was for a position that no longer exists
+		reply.resolve(evalResult(0, 'e7e5'));
+		await settle();
+		expect(session.game.moves).toEqual([]);
+	});
+
+	it('drops an eval that lands after the takeback', async () => {
+		const session = await startedSession();
+		const pending = deferred<ReturnType<typeof evalResult>>();
+		// first call badges the user's move; the second (for the engine's
+		// reply) hangs until after the takeback has been taken
+		engine.evaluate
+			.mockResolvedValueOnce(evalResult(BLUNDER_EVAL, 'e7e5'))
+			.mockReturnValueOnce(pending.promise);
+
+		await playWithReply(session, 'e2', 'e4');
+		await vi.waitFor(() => expect(session.badges[0]).toBe('blunder'));
+
+		session.takeBack();
+		pending.resolve(evalResult(-900, 'a2a3'));
+		await settle();
+
+		expect(session.evals).toEqual([]);
+		expect(session.badges).toEqual([]);
+		expect(session.lastFeedback).toBeNull();
+		expect(session.currentEval).not.toBe(-900);
+	});
+
+	it('saves the shortened game and truncates the server record after the posts', async () => {
+		const session = await startedSession();
+		engine.play
+			.mockResolvedValueOnce(evalResult(0, 'e7e5'))
+			.mockResolvedValueOnce(evalResult(0, 'b8c6'));
+		await playWithReply(session, 'e2', 'e4'); // plies 1-2, unremarkable
+
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'a7a6'));
+		await playWithReply(session, 'd1', 'h5'); // ply 3 blunders, 4 is the reply
+		await settle();
+		expect(session.lastFeedback).toEqual({ ply: 3, san: 'Qh5', classification: 'blunder' });
+
+		persistence.saveActiveGame.mockClear();
+		session.takeBack();
+		await settle();
+
+		expect(session.game.moves.map((move) => move.san)).toEqual(['e4', 'e5']);
+		expect(session.evals.length).toBe(2);
+		expect(persistence.saveActiveGame).toHaveBeenCalledWith(
+			expect.objectContaining({ moves: ['e2e4', 'e7e5'], lastFeedback: null })
+		);
+		expect(api.takeBackMoves).toHaveBeenCalledWith(42, 2);
+
+		// the truncation must land behind the posts for the moves it undoes,
+		// or the server would replay them back onto the record
+		const lastPost = api.postMove.mock.invocationCallOrder.at(-1)!;
+		expect(api.takeBackMoves.mock.invocationCallOrder[0]).toBeGreaterThan(lastPost);
+	});
+
+	it('clears storage when the game is taken back to no moves', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'e7e5'));
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		persistence.clearActiveGame.mockClear();
+		session.takeBack();
+
+		// save() no-ops on an empty game, so a stale one-move snapshot would
+		// otherwise survive a refresh
+		expect(persistence.clearActiveGame).toHaveBeenCalled();
+	});
+
+	it('does nothing when the last move was not a blunder', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(20, 'e7e5')); // 10cp → good
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		expect(session.canTakeBack).toBe(false);
+		session.takeBack();
+		expect(session.game.moves.length).toBe(2);
+		expect(api.takeBackMoves).not.toHaveBeenCalled();
+	});
+
+	it('is withheld once the game is over', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'e7e5'));
+		await playWithReply(session, 'e2', 'e4');
+		expect(session.canTakeBack).toBe(true);
+
+		session.resign();
+		expect(session.canTakeBack).toBe(false);
+	});
+
+	it('is withheld once server sync has failed', async () => {
+		// with the sync chain dead the record can't be truncated, so a
+		// takeback would guarantee a divergent game
+		api.postMove.mockRejectedValue(new ApiError(500, 'boom'));
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(BLUNDER_EVAL, 'e7e5'));
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		expect(session.lastFeedback?.classification).toBe('blunder');
+		expect(session.canTakeBack).toBe(false);
+	});
+
+	it('trims a server record left longer than the restored game', async () => {
+		persistence.loadActiveGame.mockReturnValue({
+			version: 1,
+			engineSkill: 5,
+			playerColor: 'white' as const,
+			moves: ['e2e4', 'e7e5'], // a takeback shortened the local game…
+			evals: [30, 30],
+			badges: ['good' as const, null],
+			lastFeedback: null,
+			currentEval: 30,
+			serverGameId: 7,
+			completedGameId: null
+		});
+		api.getGame.mockResolvedValue({ moves: [{}, {}, {}, {}] }); // …but never reached the server
+		const session = new PlaySession();
+		await session.start();
+		await settle();
+
+		expect(api.takeBackMoves).toHaveBeenCalledWith(7, 2);
+		// nothing to replay once the record matches — and the two restored
+		// moves must not be posted a second time
+		expect(api.postMove).not.toHaveBeenCalled();
 	});
 });
 
