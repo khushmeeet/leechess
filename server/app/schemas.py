@@ -302,6 +302,7 @@ class ProgressOut(BaseModel):
     cpl_trend: list[GameCplPoint]  # oldest → newest
     streak_days: int
     puzzles_solved: int  # correct attempts within the window
+    drills_passed: int  # endgame drills converted/held within the window
 
 
 class WikibookPageOut(BaseModel):

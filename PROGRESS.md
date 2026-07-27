@@ -68,6 +68,30 @@ move orders, and the interesting failure is throwing the win away on move 9.
   720px viewport its back rank falls outside the page and coordinate clicks there hit
   nothing (`mouse.click` doesn't scroll). The spec sets a taller viewport.
 
+### Follow-up — drills wired into Progress
+
+The first cut shipped a training surface the rest of the app couldn't see. Three fixes:
+
+- **The streak counted games and puzzle attempts only**, so a week of daily Lucena left it
+  reading zero — the app called drilling training and then called those days idle.
+  `EndgameDrillAttempt.attempted_at` now joins the activity set in `routers/progress.py`.
+  A *failed* attempt counts too: you showed up.
+- **`drills_passed` stat tile** beside "puzzles solved", linking through to `/endgames`.
+  Deliberately a **count, not a rate** — with 2–4 drills per family and a 20-attempt
+  window, a per-family success rate reads 0/50/100% and swings on one attempt. A
+  weakest-family chart mirroring the motif chart is the obvious next step and was
+  deliberately skipped until the catalog is several times bigger; it would render noise.
+- **The drill list on `/endgames`** — `box` and `due_at` are written on every attempt and
+  appeared in zero pixels of UI, because the queue only ever hands you one drill at a
+  time. `GET /endgames/drills` already returned exactly this and had no caller. The list
+  renders in every state, including "nothing due", which is when knowing *when* each drill
+  returns matters most. At n=11 a list is informative where a rate chart isn't.
+- **`parseUtc` (`client/src/lib/endgames.ts`)** — SQLite drops the tzinfo `utcnow()`
+  attaches, so the API serves naive stamps that are really UTC, and `new Date()` reads them
+  as *local*. That shifts every due date by the viewer's offset — enough to show "in 5h"
+  for a drill due right now. The repo was already inconsistent here: `review/+page.svelte`
+  appends the `Z`, `CplTrend.svelte` doesn't. Unit-tested, including the offset case.
+
 ---
 
 ## Addendum — Play live hint ladder (2026-07-22)

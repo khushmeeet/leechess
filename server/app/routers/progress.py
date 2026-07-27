@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.cpl import aggregate_cpl, player_moves
 from app.db import get_db
-from app.models import Game, Puzzle, PuzzleAttempt, utcnow
+from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt, utcnow
 from app.schemas import GameCplPoint, MotifProgress, ProgressOut
 
 router = APIRouter(prefix="/progress", tags=["progress"])
@@ -117,14 +117,29 @@ def get_progress(
         solved_query = solved_query.where(PuzzleAttempt.attempted_at >= since)
     puzzles_solved = len(db.scalars(solved_query).all())
 
+    # A count, not a rate: with a handful of drills per family a success
+    # *rate* swings on a single attempt, but "how many have I passed" is
+    # honest at any sample size.
+    drills_query = select(EndgameDrillAttempt).where(
+        EndgameDrillAttempt.success.is_(True)
+    )
+    if since is not None:
+        drills_query = drills_query.where(EndgameDrillAttempt.attempted_at >= since)
+    drills_passed = len(db.scalars(drills_query).all())
+
     # Streak is inherently "current", so it ignores the window: any played
-    # game or puzzle attempt counts as activity for its (UTC) day.
+    # game, puzzle attempt, or endgame drill counts as activity for its (UTC)
+    # day. Drills are training like the rest — a day spent on Lucena has to
+    # keep the streak alive or the number quietly calls it idle.
     activity = {
         stamp.date()
         for stamp in db.scalars(select(Game.created_at)).all()
     } | {
         stamp.date()
         for stamp in db.scalars(select(PuzzleAttempt.attempted_at)).all()
+    } | {
+        stamp.date()
+        for stamp in db.scalars(select(EndgameDrillAttempt.attempted_at)).all()
     }
 
     return ProgressOut(
@@ -134,4 +149,5 @@ def get_progress(
         cpl_trend=trend,
         streak_days=day_streak(activity, now.date()),
         puzzles_solved=puzzles_solved,
+        drills_passed=drills_passed,
     )

@@ -38,6 +38,20 @@ test('the drill screen serves a due drill with its goal and side', async ({ page
 	await expect(page.getByTestId('drill-board')).toHaveAttribute('data-fen', drill.fen);
 });
 
+test('the catalog lists every drill with its Leitner state', async ({ page, request }) => {
+	const catalog = await (await request.get(`${API}/endgames/drills`)).json();
+	expect(catalog.length).toBeGreaterThan(0);
+
+	await page.goto('/endgames');
+	await expect(page.getByTestId('drill-catalog')).toBeVisible();
+	await expect(page.getByTestId('drill-row')).toHaveCount(catalog.length);
+
+	// box and due_at exist on every row but appear nowhere else in the UI
+	const first = page.getByTestId('drill-row').first();
+	await expect(first).toContainText(catalog[0].name);
+	await expect(page.getByTestId('drill-catalog')).toContainText(`of ${catalog.length} due`);
+});
+
 test('playing a drill out to a result records the attempt', async ({ page, request }) => {
 	// Philidor first: the user defends, so aimless play loses quickly (white
 	// queens) instead of grinding into the 60-move cap a botched win drill hits.

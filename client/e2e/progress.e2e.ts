@@ -30,6 +30,9 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	// streak/solved stat tiles (game + attempts happened today → streak ≥ 1)
 	await expect(page.getByTestId('streaks')).toContainText('day streak');
 	await expect(page.getByTestId('streaks')).toContainText('puzzles solved');
+	// endgame drills are training too — the tile links through to them
+	await expect(page.getByTestId('drills-passed')).toContainText('endgames drilled');
+	await expect(page.getByTestId('drills-passed')).toHaveAttribute('href', '/endgames');
 
 	// motif chart shows the attempted motif's row with its counts
 	await expect(page.getByTestId('motif-chart')).toContainText(motifLabel);

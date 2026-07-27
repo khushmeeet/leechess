@@ -290,6 +290,7 @@ export interface ProgressSummary {
 	cpl_trend: GameCplPoint[]; // oldest → newest
 	streak_days: number;
 	puzzles_solved: number;
+	drills_passed: number; // endgame drills converted/held in the window
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

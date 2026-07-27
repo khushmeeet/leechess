@@ -33,7 +33,10 @@
 	});
 
 	const empty = $derived(
-		progress !== null && progress.motifs.length === 0 && progress.cpl_trend.length === 0
+		progress !== null &&
+			progress.motifs.length === 0 &&
+			progress.cpl_trend.length === 0 &&
+			progress.drills_passed === 0
 	);
 
 	function percent(rate: number): string {
@@ -71,7 +74,9 @@
 		<p class="font-semibold text-ink">Nothing to chart yet.</p>
 		<p class="mt-1">
 			Play a game — analysis feeds the CPL trend, and solving the puzzles it queues builds your
-			motif stats.
+			motif stats. The
+			<a class="text-accent underline" href={resolve('/endgames')}>Endgames</a>
+			drills need no game history and are ready now.
 		</p>
 	</div>
 {:else}
@@ -85,6 +90,14 @@
 			<p class="font-display text-3xl font-bold tabular-nums">{progress.puzzles_solved}</p>
 			<p class="text-xs text-muted">puzzles solved</p>
 		</div>
+		<a
+			href={resolve('/endgames')}
+			data-testid="drills-passed"
+			class="rounded-xs border border-line bg-card px-4 py-3 hover:border-accent"
+		>
+			<p class="font-display text-3xl font-bold tabular-nums">{progress.drills_passed}</p>
+			<p class="text-xs text-muted">endgames drilled</p>
+		</a>
 	</div>
 
 	{#if progress.weakest_motifs.length > 0}

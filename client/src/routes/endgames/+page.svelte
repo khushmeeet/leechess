@@ -2,13 +2,29 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import Board from '$lib/components/Board.svelte';
+	import { listDrills, type DrillRecord } from '$lib/api/client';
 	import { describeOutcome, DrillSession, MOVE_CAP } from '$lib/stores/endgameDrill.svelte';
-	import { familyLabel } from '$lib/endgames';
+	import { dueLabel, familyLabel, isDue } from '$lib/endgames';
 
 	const session = new DrillSession();
 
+	// Leitner boxes 1-5, mirroring BOX_INTERVALS in server/app/spaced_repetition.py.
+	const BOXES = [1, 2, 3, 4, 5];
+
 	// Progress links here as /endgames?family=philidor.
 	const familyFilter = $derived(page.url.searchParams.get('family'));
+
+	/** The whole catalog with live Leitner state. `box` and `due_at` exist on
+	 * every drill row but appear nowhere else in the UI — the queue only ever
+	 * hands you one drill at a time, so this is where you see what you've
+	 * built up and what's coming back. */
+	let catalog = $state<DrillRecord[]>([]);
+
+	function refreshCatalog() {
+		listDrills()
+			.then((drills) => (catalog = drills))
+			.catch((e) => console.error('loading the drill catalog failed:', e));
+	}
 
 	function loadNext() {
 		session.load(familyFilter);
@@ -19,7 +35,16 @@
 		loadNext();
 	});
 
+	// Re-read after every finished attempt so the box and due date move in step.
+	$effect(() => {
+		void session.completedCount;
+		refreshCatalog();
+	});
+
 	onMount(() => () => session.suspend());
+
+	const families = $derived([...new Set(catalog.map((drill) => drill.family))]);
+	const dueCount = $derived(catalog.filter((drill) => isDue(drill.due_at)).length);
 
 	const goalLabel = $derived(session.goal === 'win' ? 'Convert the win' : 'Hold the draw');
 	const movableColor = $derived(session.userCanMove ? session.playerColor : undefined);
@@ -41,6 +66,58 @@
 		{session.completedCount} drilled this session
 	</span>
 </div>
+
+{#snippet drillTable()}
+	{#if catalog.length > 0}
+		<section class="mt-8" data-testid="drill-catalog">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Your drills — {dueCount} of {catalog.length} due
+			</h2>
+			<div class="rounded-xs border border-line bg-card">
+				{#each families as family (family)}
+					<div class="border-b border-line last:border-b-0">
+						<p
+							class="px-3 pt-3 pb-1 text-[10px] font-semibold tracking-[0.09em] text-muted uppercase"
+						>
+							{familyLabel(family)}
+						</p>
+						{#each catalog.filter((drill) => drill.family === family) as drill (drill.id)}
+							<div
+								class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-3 py-1.5 text-sm {drill.id ===
+								session.drill?.id
+									? 'bg-accent-soft'
+									: ''}"
+								data-testid="drill-row"
+							>
+								<span class="truncate">{drill.name}</span>
+								<span class="text-xs text-muted">
+									{drill.goal === 'win' ? 'convert' : 'hold'}
+								</span>
+								<!-- Leitner box: 5 means the technique survived a 21-day gap -->
+								<span class="flex gap-0.5" title="Leitner box {drill.box} of 5">
+									{#each BOXES as level (level)}
+										<span
+											class="h-1.5 w-1.5 rounded-full {level <= drill.box
+												? 'bg-accent'
+												: 'bg-line'}"
+										></span>
+									{/each}
+								</span>
+								<span
+									class="w-16 text-right text-xs tabular-nums {isDue(drill.due_at)
+										? 'font-semibold text-accent'
+										: 'text-muted'}"
+								>
+									{dueLabel(drill.due_at)}
+								</span>
+							</div>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
+{/snippet}
 
 {#if session.status === 'empty'}
 	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
@@ -152,3 +229,7 @@
 		</aside>
 	</div>
 {/if}
+
+<!-- Always rendered, including the "nothing due" state — that's exactly when
+     you want to see when each drill comes back. -->
+{@render drillTable()}
