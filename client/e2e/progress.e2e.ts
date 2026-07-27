@@ -40,6 +40,21 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 
 	// CPL trend renders, and its table view includes the seeded game
 	await expect(page.getByTestId('cpl-trend')).toBeVisible();
+
+	// hovering anywhere over the chart reads out the nearest game — there are no
+	// per-point hit targets to land on
+	await page.getByTestId('cpl-trend').hover();
+	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${gameId}`);
+
+	// legend entries isolate one phase and toggle back off; "Overall" is the one
+	// series every analyzed game has
+	const isolate = page.getByRole('button', { name: 'Overall' });
+	await expect(isolate).toHaveAttribute('aria-pressed', 'false');
+	await isolate.click();
+	await expect(isolate).toHaveAttribute('aria-pressed', 'true');
+	await isolate.click();
+	await expect(isolate).toHaveAttribute('aria-pressed', 'false');
+
 	await page.getByText('View as table').click();
 	await expect(page.getByRole('cell', { name: `#${gameId}` })).toBeVisible();
 

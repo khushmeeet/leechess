@@ -55,6 +55,24 @@
 	 * the status palette above, kept as its own token so it can shift in
 	 * dark mode without dragging the "inaccuracy" hue along with it. */
 	--color-highlight: #b5822e;
+
+	/* CplTrend's per-phase series hues. Categorical (identity, not severity),
+	 * so they sit apart from the status palette — a phase line must never read
+	 * as "blunder". "Overall" isn't here: it draws in --color-ink, because it's
+	 * the aggregate the phases decompose, not a fourth category.
+	 *
+	 * Chosen by running the data-viz validator over both card surfaces
+	 * (#fdfaf1 light, #242019 dark) on the all-pairs list — lines cross, so any
+	 * two can end up adjacent. Both sets clear the lightness band, chroma
+	 * floor, CVD separation, normal-vision floor and 3:1 contrast.
+	 *
+	 * Endgame is teal rather than the violet it used to be: violet and blue
+	 * collapse into each other under protan/deutan once both are stepped bright
+	 * enough for the dark card (ΔE 1.9, against a floor of 6), and no step of
+	 * either hue escapes that. Teal separates from blue in both modes. */
+	--color-series-opening: #0369a1;
+	--color-series-middlegame: #b45309;
+	--color-series-endgame: #17a06f;
 }
 
 :root {
@@ -125,6 +143,12 @@
 	--color-err-line: #5c2f26;
 
 	--color-highlight: #d9a54f;
+
+	/* Same three hues, re-stepped for the dark card — brighter and less
+	 * saturated, since the light steps land at 2.7:1 and 2.3:1 here. */
+	--color-series-opening: #4a97dd;
+	--color-series-middlegame: #cf7c1e;
+	--color-series-endgame: #1ba372;
 
 	/* Native form controls (checkboxes, selects, scrollbars) pick a light or
 	 * dark rendering from the browser itself; without this they stay light
