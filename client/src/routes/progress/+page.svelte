@@ -164,7 +164,11 @@
 			{/if}
 		</section>
 
-		<section>
+		<!-- The trend is one point per analyzed game with no server-side cap, so it
+		     takes the full row: at half width a few hundred games collapse into a
+		     vertical smear. min-w-0 lets the grid child shrink to its column so the
+		     chart can measure a real width. -->
+		<section class="min-w-0 lg:col-span-2">
 			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
 				CPL per game (lower is better)
 			</h2>
