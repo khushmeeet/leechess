@@ -25,16 +25,28 @@ export function computeDests(chess: Chess): Map<Key, Key[]> {
 }
 
 /** Client-side game state. chess.js is the source of truth for legality/SAN;
- * chessground only renders and reports drag/click input. */
+ * chessground only renders and reports drag/click input.
+ *
+ * `startFen` defaults to the initial position, so a normal game constructs
+ * with no arguments; endgame drills pass the position they begin from, and
+ * `reset()` returns there rather than to move one. */
 export class GameStore {
-	private chess = new Chess();
+	private readonly startFen: string | undefined;
+	private chess: Chess;
 
-	fen = $state(this.chess.fen());
-	dests = $state(computeDests(this.chess));
+	fen = $state('');
+	dests = $state<Map<Key, Key[]>>(new SvelteMap());
 	moves = $state<PlayedMove[]>([]);
 	lastMove = $state<[Key, Key] | undefined>(undefined);
 	isGameOver = $state(false);
 	result = $state('*');
+
+	constructor(startFen?: string) {
+		this.startFen = startFen;
+		this.chess = new Chess(startFen);
+		this.fen = this.chess.fen();
+		this.dests = computeDests(this.chess);
+	}
 
 	turnColor: 'white' | 'black' = $derived(this.fen.split(' ')[1] === 'b' ? 'black' : 'white');
 
@@ -107,7 +119,7 @@ export class GameStore {
 	}
 
 	reset(): void {
-		this.chess = new Chess();
+		this.chess = new Chess(this.startFen);
 		this.fen = this.chess.fen();
 		this.dests = computeDests(this.chess);
 		this.moves = [];

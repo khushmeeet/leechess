@@ -7,7 +7,14 @@ from datetime import date, datetime, timedelta, timezone
 import chess
 import pytest
 
-from app.models import Game, Move, Puzzle, PuzzleAttempt
+from app.models import (
+    EndgameDrill,
+    EndgameDrillAttempt,
+    Game,
+    Move,
+    Puzzle,
+    PuzzleAttempt,
+)
 from app.routers.progress import day_streak, game_cpl
 
 pytestmark = pytest.mark.unit
@@ -36,6 +43,27 @@ def seed(db_session):
             for correct in results:
                 puzzle.attempts.append(
                     PuzzleAttempt(correct=correct, attempted_at=at or days_ago(0))
+                )
+            db_session.commit()
+
+        def drill(self, key: str = "test-drill", family: str = "philidor") -> EndgameDrill:
+            """A drill outside the seeded catalog, so its key can't collide."""
+            drill = EndgameDrill(
+                key=key, family=family, name="Test drill", fen=FEN,
+                player_color="black", goal="draw", technique="",
+            )  # fmt: skip
+            db_session.add(drill)
+            db_session.commit()
+            return drill
+
+        def drill_attempts(
+            self, drill: EndgameDrill, *results: bool, at: datetime | None = None
+        ) -> None:
+            for success in results:
+                drill.attempts.append(
+                    EndgameDrillAttempt(
+                        success=success, outcome="held", attempted_at=at or days_ago(0)
+                    )
                 )
             db_session.commit()
 
@@ -82,6 +110,7 @@ def test_empty_database_returns_zeroes_not_errors(client):
         "cpl_trend": [],
         "streak_days": 0,
         "puzzles_solved": 0,
+        "drills_passed": 0,
     }
 
 
@@ -266,6 +295,50 @@ def test_games_count_as_activity_too(client, seed):
     seed.attempts(fork, True, at=days_ago(0))
 
     assert get(client)["streak_days"] == 2
+
+
+def test_endgame_drills_count_as_activity_too(client, seed):
+    """Drilling is training. A day spent on Lucena has to keep the streak
+    alive, or the number quietly calls that day idle."""
+    drill = seed.drill()
+    seed.drill_attempts(drill, True, at=days_ago(1))
+    seed.drill_attempts(drill, False, at=days_ago(0))
+
+    assert get(client)["streak_days"] == 2
+
+
+def test_a_failed_drill_still_counts_as_activity(client, seed):
+    drill = seed.drill()
+    seed.drill_attempts(drill, False, at=days_ago(0))
+
+    assert get(client)["streak_days"] == 1
+
+
+# --- drills passed ---
+
+
+def test_drills_passed_counts_only_successes(client, seed):
+    drill = seed.drill()
+    seed.drill_attempts(drill, True, False, True)
+
+    assert get(client)["drills_passed"] == 2
+
+
+def test_drills_passed_respects_the_window(client, seed):
+    drill = seed.drill()
+    seed.drill_attempts(drill, True, at=days_ago(40))
+    seed.drill_attempts(drill, True, at=days_ago(1))
+
+    assert get(client, days=30)["drills_passed"] == 1
+    assert get(client)["drills_passed"] == 2
+
+
+def test_seeded_catalog_alone_is_not_progress(client):
+    """The catalog seeds 11 drills at startup; untouched, they must not read
+    as achievement or keep a streak alive."""
+    body = get(client)
+    assert body["drills_passed"] == 0
+    assert body["streak_days"] == 0
 
 
 def test_streak_alive_with_activity_only_yesterday():

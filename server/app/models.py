@@ -172,6 +172,56 @@ class PuzzleAttempt(Base):
     puzzle: Mapped[Puzzle] = relationship(back_populates="attempts")
 
 
+class EndgameDrill(Base):
+    """One curated endgame position, played out against the engine rather than
+    solved (app/endgame_drills.py holds the catalog these rows are seeded
+    from). `goal` is "win" or "draw" — the whole grading rule, since a drill
+    is scored on the result it reaches, not on a stored move sequence.
+
+    Leitner state (box, due_at) works exactly as it does on Puzzle: new drills
+    start in box 1, due immediately."""
+
+    __tablename__ = "endgame_drills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Stable catalog slug — seeding is insert-if-missing on this, so it is
+    # what keeps a restart from duplicating or resetting drills.
+    key: Mapped[str] = mapped_column(String, unique=True, index=True)
+    family: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String)
+    fen: Mapped[str] = mapped_column(String)
+    # The side the user plays; the engine takes the other one. When it isn't
+    # this side's turn in `fen`, the engine opens the drill.
+    player_color: Mapped[str] = mapped_column(String)
+    goal: Mapped[str] = mapped_column(String)
+    technique: Mapped[str] = mapped_column(Text)
+    box: Mapped[int] = mapped_column(Integer, default=1)
+    due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    attempts: Mapped[list["EndgameDrillAttempt"]] = relationship(
+        back_populates="drill",
+        cascade="all, delete-orphan",
+        order_by="EndgameDrillAttempt.id",
+    )
+
+
+class EndgameDrillAttempt(Base):
+    __tablename__ = "endgame_drill_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    drill_id: Mapped[int] = mapped_column(ForeignKey("endgame_drills.id"), index=True)
+    # Did the play-out reach the drill's goal (converted the win / held the draw)?
+    success: Mapped[bool] = mapped_column(Boolean)
+    # The user's own moves, not plies — how long the technique took.
+    moves_played: Mapped[int] = mapped_column(Integer, default=0)
+    # Why the drill ended, e.g. "promoted", "mate", "stalemate", "pawn-lost".
+    outcome: Mapped[str] = mapped_column(String)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    drill: Mapped[EndgameDrill] = relationship(back_populates="attempts")
+
+
 class WikibookCache(Base):
     """One fetched Wikibooks opening-theory page, keyed by our computed page
     title. html is NULL when Wikibooks has no page for the line ("out of

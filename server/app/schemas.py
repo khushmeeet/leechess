@@ -213,6 +213,56 @@ class PuzzleDetail(PuzzleOut):
     attempts: list[AttemptOut]
 
 
+class DrillOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    key: str
+    family: str
+    name: str
+    fen: str
+    player_color: str
+    # "win" (convert it) or "draw" (hold it) — the client's whole grading rule.
+    goal: str
+    technique: str
+    box: int
+    due_at: datetime
+
+
+class DrillAttemptIn(BaseModel):
+    """The client plays the drill out against its own WASM engine and reports
+    the verdict, the same trust model the Puzzles screen already uses."""
+
+    success: bool
+    moves_played: int = Field(default=0, ge=0)
+    # Why it ended; free-form but drawn from a small client-side set
+    # ("promoted", "mate", "stalemate", "pawn-lost", "move-cap", …).
+    outcome: str = Field(default="", max_length=40)
+
+
+class DrillAttemptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    drill_id: int
+    success: bool
+    moves_played: int
+    outcome: str
+    attempted_at: datetime
+
+
+class DrillAttemptRecorded(DrillAttemptOut):
+    """POST /endgames/{id}/attempt response: the attempt plus the drill's
+    updated Leitner state, mirroring AttemptRecorded."""
+
+    box: int
+    due_at: datetime
+
+
+class DrillDetail(DrillOut):
+    attempts: list[DrillAttemptOut]
+
+
 class PracticeQueued(BaseModel):
     """POST /games/{id}/practice response."""
 
@@ -252,6 +302,7 @@ class ProgressOut(BaseModel):
     cpl_trend: list[GameCplPoint]  # oldest → newest
     streak_days: int
     puzzles_solved: int  # correct attempts within the window
+    drills_passed: int  # endgame drills converted/held within the window
 
 
 class WikibookPageOut(BaseModel):

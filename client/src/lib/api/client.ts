@@ -212,6 +212,56 @@ export function practiceGame(gameId: number): Promise<PracticeQueued> {
 	return request(`/games/${gameId}/practice`, { method: 'POST' });
 }
 
+export interface DrillRecord {
+	id: number;
+	key: string;
+	family: string;
+	name: string;
+	fen: string;
+	player_color: 'white' | 'black';
+	/** "win" = convert it, "draw" = hold it. The whole grading rule. */
+	goal: 'win' | 'draw';
+	technique: string;
+	box: number;
+	due_at: string;
+}
+
+export interface DrillAttemptRecorded {
+	id: number;
+	drill_id: number;
+	success: boolean;
+	moves_played: number;
+	outcome: string;
+	attempted_at: string;
+	box: number;
+	due_at: string;
+}
+
+/** The whole catalog with live Leitner state. */
+export function listDrills(family?: string | null): Promise<DrillRecord[]> {
+	const suffix = family ? `?family=${encodeURIComponent(family)}` : '';
+	return request(`/endgames/drills${suffix}`);
+}
+
+/** Read-only: returns the same drill until an attempt reschedules it.
+ * Throws ApiError with status 404 when nothing is due. */
+export function getNextDrill(family?: string | null): Promise<DrillRecord> {
+	const suffix = family ? `?family=${encodeURIComponent(family)}` : '';
+	return request(`/endgames/next${suffix}`);
+}
+
+export function recordDrillAttempt(
+	drillId: number,
+	success: boolean,
+	movesPlayed: number,
+	outcome: string
+): Promise<DrillAttemptRecorded> {
+	return request(`/endgames/${drillId}/attempt`, {
+		method: 'POST',
+		body: JSON.stringify({ success, moves_played: movesPlayed, outcome })
+	});
+}
+
 export interface MotifProgress {
 	motif: string;
 	attempts: number;
@@ -240,6 +290,7 @@ export interface ProgressSummary {
 	cpl_trend: GameCplPoint[]; // oldest → newest
 	streak_days: number;
 	puzzles_solved: number;
+	drills_passed: number; // endgame drills converted/held in the window
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

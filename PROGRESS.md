@@ -14,6 +14,86 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Endgame drills (2026-07-26)
+
+**Goal:** the Progress screen has plotted endgame CPL since Phase 4, but nothing in the app
+trained endgames — the user watched a number get worse with no action to take. Endgames
+don't fit the Puzzle model: a puzzle is graded by matching `Puzzle.solution` move by move,
+which works for tactics because there is one forcing answer. A rook ending has many winning
+move orders, and the interesting failure is throwing the win away on move 9.
+
+- **Goal-based, not line-based.** Each drill carries a `goal` of `win` or `draw`, and is
+  played out against full-strength Stockfish until it resolves. Success is "you converted"
+  / "you held", read off the final position. One shared adjudicator (`judgeDrill` in
+  `client/src/lib/stores/endgameDrill.svelte.ts`) covers both:
+
+  | Goal | Success | Failure |
+  |---|---|---|
+  | `win` | mate, **or** a promotion the opponent can't capture on the reply | drawn terminal state, or nothing left to win with |
+  | `draw` | any drawn terminal state, or the opponent runs out of winning material | mated, or the opponent promotes |
+
+  A win drill ends on promotion rather than mate so nobody grinds out K+Q vs K twenty
+  times; a defense drill ends on the opponent's promotion for the same reason. A 60-move
+  cap backstops both — it fails a win drill and *passes* a draw drill, which is how those
+  endings resolve over the board.
+- **No engine eval in the grading path.** Every branch above is a board fact chess.js
+  already knows, so `judgeDrill` is pure and unit-testable with no engine and no board.
+  The strictness an eval guard would add is already supplied by the opponent: against
+  perfect defense, a technique error gets punished. `canStillWin` compares material rather
+  than piece types — the first cut checked "has a major, opponent has none", which would
+  have graded a promotion in a R+P drill (Q+R vs R) as `material-lost`.
+- **The play loop already existed.** `stockfish.play(fen, skill)` is the Play screen's
+  engine opponent and skill 20 is full strength, so drills reuse it as-is with the engine
+  reply retry and `generation` guards borrowed from `PlaySession`. The server's native
+  Stockfish stays batch-analysis only — the drill loop adds no engine load to the Fly
+  machine. `GameStore` gained an optional starting FEN (default unchanged) so a drill can
+  begin mid-game and `reset()` returns there rather than to move one.
+- **Leitner reuse is literal.** `schedule_attempt()` was already pure and puzzle-free;
+  drills call it with `hint_level_used=0`, since a drill has no hint ladder for the
+  reveal rule to apply to. Boxes therefore mean "I can still execute this three weeks
+  later", not "I remember the line".
+- **`server/app/endgame_drills.py`** — 11 curated positions across four families (K+P key
+  squares ×4, Lucena ×2, Philidor ×2, rook-and-pawn conversion ×3), each with the side you
+  play, the goal, and a one-line technique prompt. Seeding is insert-if-missing on `key`,
+  so a restart never resets the box or due date of a drill in progress. `/endgames/next`
+  mirrors the puzzle queue: due drills, weakest family first, then earliest due.
+- **Testing**: `test_endgame_drills.py` — catalog integrity, seeding idempotence, selection
+  order, Leitner wiring, plus an **engine-marked test that evaluates every catalog FEN and
+  asserts the eval agrees with the declared goal**. That is the one that matters: a
+  mistyped FEN otherwise ships a "win" drill nobody can pass, and the box just keeps
+  resetting to 1. Server suite 232 passed; client unit 162 passed (20 new adjudicator
+  cases); `endgames.e2e.ts` reads the live position off the board and plays a drill to a
+  verdict against the real WASM engine, then asserts the recorded attempt and box.
+- **Gotcha**: the drill board sits lower than the Puzzles board, so at Playwright's default
+  720px viewport its back rank falls outside the page and coordinate clicks there hit
+  nothing (`mouse.click` doesn't scroll). The spec sets a taller viewport.
+
+### Follow-up — drills wired into Progress
+
+The first cut shipped a training surface the rest of the app couldn't see. Three fixes:
+
+- **The streak counted games and puzzle attempts only**, so a week of daily Lucena left it
+  reading zero — the app called drilling training and then called those days idle.
+  `EndgameDrillAttempt.attempted_at` now joins the activity set in `routers/progress.py`.
+  A *failed* attempt counts too: you showed up.
+- **`drills_passed` stat tile** beside "puzzles solved", linking through to `/endgames`.
+  Deliberately a **count, not a rate** — with 2–4 drills per family and a 20-attempt
+  window, a per-family success rate reads 0/50/100% and swings on one attempt. A
+  weakest-family chart mirroring the motif chart is the obvious next step and was
+  deliberately skipped until the catalog is several times bigger; it would render noise.
+- **The drill list on `/endgames`** — `box` and `due_at` are written on every attempt and
+  appeared in zero pixels of UI, because the queue only ever hands you one drill at a
+  time. `GET /endgames/drills` already returned exactly this and had no caller. The list
+  renders in every state, including "nothing due", which is when knowing *when* each drill
+  returns matters most. At n=11 a list is informative where a rate chart isn't.
+- **`parseUtc` (`client/src/lib/endgames.ts`)** — SQLite drops the tzinfo `utcnow()`
+  attaches, so the API serves naive stamps that are really UTC, and `new Date()` reads them
+  as *local*. That shifts every due date by the viewer's offset — enough to show "in 5h"
+  for a drill due right now. The repo was already inconsistent here: `review/+page.svelte`
+  appends the `Z`, `CplTrend.svelte` doesn't. Unit-tested, including the offset case.
+
+---
+
 ## Addendum — Play live hint ladder (2026-07-22)
 
 **Goal:** complete the Play screen's original Off / Nudge / Full hint toggle (product spec
