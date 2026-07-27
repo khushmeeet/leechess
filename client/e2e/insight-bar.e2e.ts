@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { move, waitForEngineReady } from './helpers';
 
 // The in-game insight bar — Play's single coaching panel: opening name/ECO
@@ -22,7 +22,13 @@ test('opening name appears once the book position is reached', async ({ page }) 
 	await expect(page.getByTestId('opening-subtitle')).toContainText('Known book position');
 });
 
-test('ideas and coach render for the starting position', async ({ page }) => {
+test('ideas and coach stay inside the panel on a narrow screen', async ({ page }) => {
+	// 377px is the narrowest phone the layout targets. The Ideas row is
+	// explicitly `flex-wrap` (see InsightBar.svelte) — three chips are meant to
+	// fall onto a second line here rather than overflow, so the contract is
+	// "every chip visible and inside the panel", not "all on one row". The
+	// previous version of this test asserted a single row, which the component
+	// has never produced at this width.
 	await page.setViewportSize({ width: 377, height: 900 });
 	await page.goto('/');
 	await waitForEngineReady(page);
@@ -30,21 +36,40 @@ test('ideas and coach render for the starting position', async ({ page }) => {
 	// warmup eval is MultiPV 3: idea chips + coach line for white's first move
 	const ideaButtons = page.getByTestId('ideas-row').locator('button');
 	await expect(ideaButtons).toHaveCount(3);
-	const ideaTops = await ideaButtons.evaluateAll((buttons) =>
-		buttons.map((button) => button.getBoundingClientRect().top)
+	for (const button of await ideaButtons.all()) {
+		await expect(button).toBeVisible();
+	}
+
+	const bar = page.getByTestId('insight-bar');
+	const barBox = (await bar.boundingBox())!;
+	for (const button of await ideaButtons.all()) {
+		const chip = (await button.boundingBox())!;
+		expect(chip.x).toBeGreaterThanOrEqual(barBox.x - 1);
+		expect(chip.x + chip.width).toBeLessThanOrEqual(barBox.x + barBox.width + 1);
+		expect(chip.y).toBeGreaterThanOrEqual(barBox.y - 1);
+		expect(chip.y + chip.height).toBeLessThanOrEqual(barBox.y + barBox.height + 1);
+	}
+
+	// wrapping, not overflowing: the panel itself never scrolls sideways, and
+	// it fits the viewport
+	const scroll = await bar.evaluate((el) => ({
+		scrollWidth: el.scrollWidth,
+		clientWidth: el.clientWidth
+	}));
+	expect(scroll.scrollWidth).toBeLessThanOrEqual(scroll.clientWidth);
+	expect(barBox.x + barBox.width).toBeLessThanOrEqual(377);
+
+	// the chips really did wrap rather than all fitting by luck — otherwise
+	// this test would keep passing if flex-wrap were removed
+	const tops = await ideaButtons.evaluateAll((buttons) =>
+		buttons.map((button) => Math.round(button.getBoundingClientRect().top))
 	);
-	expect(new Set(ideaTops).size).toBe(1);
-	const [barBox, lastIdeaBox] = await Promise.all([
-		page.getByTestId('insight-bar').boundingBox(),
-		ideaButtons.last().boundingBox()
-	]);
-	expect(barBox).not.toBeNull();
-	expect(lastIdeaBox).not.toBeNull();
-	expect(lastIdeaBox!.x + lastIdeaBox!.width).toBeLessThanOrEqual(barBox!.x + barBox!.width);
+	expect(new Set(tops).size).toBeGreaterThan(1);
+
 	await expect(page.getByTestId('coach-line')).toContainText(
 		'Fight for the center and develop quickly.'
 	);
-	await expect(page.getByTestId('insight-bar')).not.toContainText('Eval');
+	await expect(bar).not.toContainText('Eval');
 });
 
 test('coach and ideas toggles hide the rows and persist across reloads', async ({ page }) => {

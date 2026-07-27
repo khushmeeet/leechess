@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { API, move, waitForEngineReady } from './helpers';
 
 // Phase 1 acceptance criteria for the Play screen: live classification badge

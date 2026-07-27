@@ -1,0 +1,435 @@
+{
+	"_comment": "Single source of truth for the rule-based motif taxonomy AND the cross-language conformance suite. Consumed by server/tests/test_motif_parity.py (python-chess detector in server/app/motifs.py) and client/src/lib/motifParity.test.ts (chess.js port in client/src/lib/liveMotifs.ts). Every case runs through BOTH detectors and must produce the exact same motif set — taxonomy equality alone cannot catch semantic drift. `taxonomy` must equal the detector constants exported by each implementation. Cases are LEGAL moves only: the server detector documents legal-move-only input, so illegal-move handling is asserted per-implementation instead.",
+	"taxonomy": [
+		"back_rank_mate",
+		"deflection",
+		"discovered_attack",
+		"discovered_check",
+		"double_check",
+		"fork",
+		"hanging_piece",
+		"overloading",
+		"pin",
+		"skewer",
+		"trapped_piece",
+		"zwischenzug"
+	],
+	"cases": [
+		{
+			"id": "fork-royal-knight-fork-king-and-rook",
+			"fen": "r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1",
+			"uci": "b5c7",
+			"motifs": [
+				"fork"
+			]
+		},
+		{
+			"id": "fork-knight-forks-king-and-rook-from-d5",
+			"fen": "r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1",
+			"uci": "d5c7",
+			"motifs": [
+				"fork"
+			]
+		},
+		{
+			"id": "fork-defended-pawn-forks-two-minors",
+			"fen": "4k3/8/2n1b3/8/3PP3/8/8/4K3 w - - 0 1",
+			"uci": "d4d5",
+			"motifs": [
+				"fork"
+			]
+		},
+		{
+			"id": "fork-pawn-forks-two-knights",
+			"fen": "8/8/2n1n3/8/3P4/8/8/4K1k1 w - - 0 1",
+			"uci": "d4d5",
+			"motifs": [
+				"fork"
+			]
+		},
+		{
+			"id": "fork-not-when-forking-square-is-attacked-by-a-pawn",
+			"fen": "4k3/3q4/5pr1/8/8/3N4/8/4K3 w - - 0 1",
+			"uci": "d3e5",
+			"motifs": [],
+			"nearMissFor": [
+				"fork"
+			]
+		},
+		{
+			"id": "fork-not-when-both-targets-are-defended-equals",
+			"fen": "4k3/p5p1/1b3b2/8/8/2N5/8/4K3 w - - 0 1",
+			"uci": "c3d5",
+			"motifs": [],
+			"nearMissFor": [
+				"fork"
+			]
+		},
+		{
+			"id": "pin-absolute-knight-pinned-to-king",
+			"fen": "4k3/8/2n5/8/8/8/4B3/4K3 w - - 0 1",
+			"uci": "e2b5",
+			"motifs": [
+				"pin"
+			]
+		},
+		{
+			"id": "pin-absolute-knight-pinned-to-king-from-f1",
+			"fen": "4k3/8/2n5/8/8/8/8/5BK1 w - - 0 1",
+			"uci": "f1b5",
+			"motifs": [
+				"pin"
+			]
+		},
+		{
+			"id": "pin-relative-knight-pinned-to-queen",
+			"fen": "6k1/4q3/8/8/4n3/8/8/R5K1 w - - 0 1",
+			"uci": "a1e1",
+			"motifs": [
+				"pin"
+			]
+		},
+		{
+			"id": "pin-not-when-only-a-pawn-is-behind-the-piece",
+			"fen": "4k3/3p4/2n5/8/8/8/4B3/4K3 w - - 0 1",
+			"uci": "e2b5",
+			"motifs": [],
+			"nearMissFor": [
+				"pin"
+			]
+		},
+		{
+			"id": "skewer-king-skewered-to-queen",
+			"fen": "4q3/8/8/4k3/8/8/8/1K5R w - - 0 1",
+			"uci": "h1e1",
+			"motifs": [
+				"skewer"
+			]
+		},
+		{
+			"id": "skewer-king-skewered-to-queen-from-f1",
+			"fen": "4q3/8/8/4k3/8/8/8/5RK1 w - - 0 1",
+			"uci": "f1e1",
+			"motifs": [
+				"skewer"
+			]
+		},
+		{
+			"id": "skewer-not-when-only-a-pawn-is-behind",
+			"fen": "8/4p3/8/4k3/8/8/8/1K5R w - - 0 1",
+			"uci": "h1e1",
+			"motifs": [],
+			"nearMissFor": [
+				"skewer"
+			]
+		},
+		{
+			"id": "back-rank-classic-rook-mate",
+			"fen": "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1",
+			"uci": "e1e8",
+			"motifs": [
+				"back_rank_mate"
+			]
+		},
+		{
+			"id": "back-rank-rook-mate-down-the-a-file",
+			"fen": "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1",
+			"uci": "a1a8",
+			"motifs": [
+				"back_rank_mate"
+			]
+		},
+		{
+			"id": "back-rank-not-any-checkmate",
+			"fen": "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
+			"uci": "h5f7",
+			"motifs": [],
+			"nearMissFor": [
+				"back_rank_mate"
+			]
+		},
+		{
+			"id": "hanging-undefended-bishop-taken",
+			"fen": "4k3/8/8/3b4/8/8/8/3RK3 w - - 0 1",
+			"uci": "d1d5",
+			"motifs": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "hanging-undefended-queen-taken-by-knight",
+			"fen": "rnb1kbnr/pppp1ppp/8/4p3/4P2q/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+			"uci": "f3h4",
+			"motifs": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "hanging-defended-queen-taken-by-pawn",
+			"fen": "4k3/8/2p5/3q4/4P3/8/8/4K3 w - - 0 1",
+			"uci": "e4d5",
+			"motifs": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "hanging-not-a-defended-equal-trade",
+			"fen": "4k3/8/3p4/4n3/8/5N2/8/4K3 w - - 0 1",
+			"uci": "f3e5",
+			"motifs": [],
+			"nearMissFor": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "hanging-not-a-defended-equal-trade-from-the-opening",
+			"fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 1",
+			"uci": "f3e5",
+			"motifs": [],
+			"nearMissFor": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "hanging-not-a-plain-pawn-grab",
+			"fen": "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1",
+			"uci": "e4d5",
+			"motifs": [],
+			"nearMissFor": [
+				"hanging_piece"
+			]
+		},
+		{
+			"id": "discovered-check-knight-unmasks-rook",
+			"fen": "4k3/8/8/4N3/8/8/8/4RK2 w - - 0 1",
+			"uci": "e5c6",
+			"motifs": [
+				"discovered_check"
+			],
+			"nearMissFor": [
+				"double_check"
+			]
+		},
+		{
+			"id": "discovered-check-knight-on-e4-unmasks-rook",
+			"fen": "4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1",
+			"uci": "e4c5",
+			"motifs": [
+				"discovered_check"
+			],
+			"nearMissFor": [
+				"double_check"
+			]
+		},
+		{
+			"id": "double-check-knight-checks-and-unmasks-rook",
+			"fen": "4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1",
+			"uci": "e4d6",
+			"motifs": [
+				"discovered_check",
+				"double_check"
+			]
+		},
+		{
+			"id": "double-check-knight-to-f6-checks-and-unmasks-rook",
+			"fen": "4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1",
+			"uci": "e4f6",
+			"motifs": [
+				"discovered_check",
+				"double_check"
+			]
+		},
+		{
+			"id": "discovered-not-castling-rook-check",
+			"fen": "5k2/8/8/8/8/8/8/4K2R w K - 0 1",
+			"uci": "e1g1",
+			"motifs": [],
+			"nearMissFor": [
+				"discovered_check",
+				"double_check"
+			]
+		},
+		{
+			"id": "discovered-attack-knight-unmasks-rook-onto-queen",
+			"fen": "4q1k1/8/8/8/4N3/8/8/4R1K1 w - - 0 1",
+			"uci": "e4c5",
+			"motifs": [
+				"discovered_attack"
+			]
+		},
+		{
+			"id": "discovered-attack-knight-unmasks-rook-onto-rook",
+			"fen": "r6k/8/8/8/N7/8/8/R3K3 w Q - 0 1",
+			"uci": "a4c5",
+			"motifs": [
+				"discovered_attack"
+			]
+		},
+		{
+			"id": "discovered-attack-not-when-only-a-pawn-is-revealed",
+			"fen": "6k1/4p3/8/8/4N3/8/8/4R1K1 w - - 0 1",
+			"uci": "e4c5",
+			"motifs": [],
+			"nearMissFor": [
+				"discovered_attack"
+			]
+		},
+		{
+			"id": "discovered-attack-not-onto-a-piece-it-cannot-win",
+			"fen": "r6k/r7/8/8/N7/8/8/R3K3 w Q - 0 1",
+			"uci": "a4c5",
+			"motifs": [],
+			"nearMissFor": [
+				"discovered_attack"
+			]
+		},
+		{
+			"id": "deflection-attacked-queen-is-the-knights-sole-defender",
+			"fen": "6k1/3q4/8/3n4/2P1P3/5N2/8/6K1 w - - 0 1",
+			"uci": "f3e5",
+			"motifs": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-pawn-hits-the-sole-defender",
+			"fen": "6k1/3n4/8/2P1n3/8/8/8/4R1K1 w - - 0 1",
+			"uci": "c5c6",
+			"motifs": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-not-when-the-guarded-piece-has-a-second-defender",
+			"fen": "6k1/3q4/2p5/3n4/2P1P3/5N2/8/6K1 w - - 0 1",
+			"uci": "f3e5",
+			"motifs": [],
+			"nearMissFor": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-not-when-the-defender-can-stay-put",
+			"fen": "6k1/3n4/8/4n3/8/8/8/3RR1K1 w - - 0 1",
+			"uci": "d1d6",
+			"motifs": [],
+			"nearMissFor": [
+				"deflection"
+			]
+		},
+		{
+			"id": "overloading-defender-guards-two-attacked-minors",
+			"fen": "6k1/3n4/1b3n2/P7/6P1/8/8/7K w - - 0 1",
+			"uci": "g4g5",
+			"motifs": [
+				"overloading"
+			]
+		},
+		{
+			"id": "overloading-defender-guards-two-attacked-rooks",
+			"fen": "1r1b1r1k/3n4/8/8/8/8/8/1R2R1K1 w - - 0 1",
+			"uci": "e1f1",
+			"motifs": [
+				"overloading"
+			]
+		},
+		{
+			"id": "overloading-not-when-only-one-piece-is-attacked",
+			"fen": "6k1/3n4/1b3n2/8/6P1/8/8/7K w - - 0 1",
+			"uci": "g4g5",
+			"motifs": [],
+			"nearMissFor": [
+				"overloading"
+			]
+		},
+		{
+			"id": "overloading-not-when-only-one-rook-is-attacked",
+			"fen": "1r1b1r1k/3n4/8/8/8/8/8/1R2R1K1 w - - 0 1",
+			"uci": "e1e2",
+			"motifs": [],
+			"nearMissFor": [
+				"overloading"
+			]
+		},
+		{
+			"id": "trapped-bishop-no-safe-square-after-flight-is-sealed",
+			"fen": "4k3/8/8/5p2/8/7b/5PP1/5K2 w - - 0 1",
+			"uci": "f2f3",
+			"motifs": [
+				"trapped_piece"
+			]
+		},
+		{
+			"id": "trapped-knight-boxed-in-by-the-bishop",
+			"fen": "6k1/2Q5/1n6/P7/8/3B4/8/R5K1 w - - 0 1",
+			"uci": "d3e4",
+			"motifs": [
+				"trapped_piece"
+			]
+		},
+		{
+			"id": "trapped-not-when-the-bishop-has-an-open-diagonal",
+			"fen": "4k3/8/8/8/8/7b/5PP1/5K2 w - - 0 1",
+			"uci": "f2f3",
+			"motifs": [],
+			"nearMissFor": [
+				"trapped_piece"
+			]
+		},
+		{
+			"id": "trapped-not-when-the-knight-still-has-a-flight-square",
+			"fen": "6k1/2Q5/1n6/P7/4B3/8/8/R5K1 w - - 0 1",
+			"uci": "e4d3",
+			"motifs": [],
+			"nearMissFor": [
+				"trapped_piece"
+			]
+		},
+		{
+			"id": "zwischenzug-check-first-and-leave-the-rook-hanging",
+			"fen": "6k1/8/8/6p1/6NR/8/8/6K1 w - - 0 1",
+			"uci": "g4h6",
+			"motifs": [
+				"zwischenzug"
+			]
+		},
+		{
+			"id": "zwischenzug-check-first-and-leave-the-knight-hanging",
+			"fen": "7k/8/2p5/3N4/8/8/8/R5K1 w - - 0 1",
+			"uci": "a1a8",
+			"motifs": [
+				"zwischenzug"
+			]
+		},
+		{
+			"id": "zwischenzug-not-a-plain-check-with-nothing-hanging",
+			"fen": "6k1/8/8/8/6NR/8/8/6K1 w - - 0 1",
+			"uci": "g4h6",
+			"motifs": [],
+			"nearMissFor": [
+				"zwischenzug"
+			]
+		},
+		{
+			"id": "zwischenzug-not-a-plain-check-with-a-safe-knight",
+			"fen": "7k/8/8/3N4/8/8/8/R5K1 w - - 0 1",
+			"uci": "a1a8",
+			"motifs": [],
+			"nearMissFor": [
+				"zwischenzug"
+			]
+		},
+		{
+			"id": "quiet-developing-move-has-no-motif",
+			"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+			"uci": "e2e4",
+			"motifs": [],
+			"nearMissFor": [
+				"fork",
+				"pin",
+				"skewer",
+				"hanging_piece"
+			]
+		}
+	]
+}

@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
+import { consoleErrors } from './helpers';
 
 test('play screen renders the board with no console errors', async ({ page }) => {
-	const errors: string[] = [];
-	page.on('console', (msg) => {
-		if (msg.type() === 'error') errors.push(msg.text());
-	});
-	page.on('pageerror', (err) => errors.push(err.message));
+	const errors = consoleErrors(page);
 
 	await page.goto('/');
 

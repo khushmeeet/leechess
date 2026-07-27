@@ -1,0 +1,135 @@
+{
+	"_comment": "Cross-language conformance table for the eval-delta → classification rule in shared/classification.json. Run through BOTH implementations — server/app/analysis.py::classify_move (server/tests/test_classification.py) and client/src/lib/classification.ts::classifyMove (client/src/lib/classification.test.ts) — so a threshold change or an off-by-one in either one fails immediately. `clampCases` do the same for the eval clamp.",
+	"cases": [
+		{
+			"evalBefore": 50,
+			"evalAfter": 50,
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "no loss"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 55,
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "gained eval (engine wobble)"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 41,
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "loss 9 < 10"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 40,
+			"moverIsWhite": true,
+			"expected": "good",
+			"why": "loss 10 — the boundary is exclusive for best"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 26,
+			"moverIsWhite": true,
+			"expected": "good",
+			"why": "loss 24"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 25,
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "loss 25"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 1,
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "loss 49"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": 0,
+			"moverIsWhite": true,
+			"expected": "mistake",
+			"why": "loss 50"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": -49,
+			"moverIsWhite": true,
+			"expected": "mistake",
+			"why": "loss 99"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": -50,
+			"moverIsWhite": true,
+			"expected": "blunder",
+			"why": "loss 100"
+		},
+		{
+			"evalBefore": 200,
+			"evalAfter": -800,
+			"moverIsWhite": true,
+			"expected": "blunder",
+			"why": "loss 1000"
+		},
+		{
+			"evalBefore": -50,
+			"evalAfter": -41,
+			"moverIsWhite": false,
+			"expected": "best",
+			"why": "black: loss 9"
+		},
+		{
+			"evalBefore": -50,
+			"evalAfter": -25,
+			"moverIsWhite": false,
+			"expected": "inaccuracy",
+			"why": "black: loss 25"
+		},
+		{
+			"evalBefore": 0,
+			"evalAfter": 100,
+			"moverIsWhite": false,
+			"expected": "blunder",
+			"why": "black: loss 100"
+		},
+		{
+			"evalBefore": 0,
+			"evalAfter": -100,
+			"moverIsWhite": false,
+			"expected": "best",
+			"why": "black gained"
+		},
+		{
+			"evalBefore": 50,
+			"evalAfter": -30,
+			"moverIsWhite": true,
+			"playedIsBest": true,
+			"expected": "best",
+			"why": "playing the engine's own choice is never a mistake, however the eval wobbled"
+		}
+	],
+	"clampCases": [
+		{
+			"cp": 99994,
+			"expected": 1000,
+			"why": "mate scores hit the clamp"
+		},
+		{
+			"cp": -99994,
+			"expected": -1000,
+			"why": "and so do the negatives"
+		},
+		{
+			"cp": 37,
+			"expected": 37,
+			"why": "ordinary evals pass through"
+		}
+	]
+}

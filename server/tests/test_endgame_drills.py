@@ -1,14 +1,14 @@
 """Endgame drills: catalog integrity, seeding, selection, Leitner wiring.
 
-The engine-marked test at the bottom is the important one — it is what stops a
-mistyped FEN from shipping a "win" drill that is actually drawn.
+Everything here is pure logic or SQLite. The Stockfish verification of the
+catalog — the check that stops a mistyped FEN from shipping a "win" drill
+that is actually drawn — lives in test_endgame_catalog_engine.py so that this
+module's `unit` mark keeps its registered meaning ("no Stockfish involved").
 """
 
-import shutil
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import chess
-import chess.engine
 import pytest
 
 from app.endgame_drills import CATALOG, FAMILY_NAMES, seed_drills
@@ -17,9 +17,13 @@ from app.spaced_repetition import BOX_INTERVALS
 
 pytestmark = pytest.mark.unit
 
-# Same lookup test_engine.py uses; Debian installs the binary into /usr/games,
-# which the Dockerfile adds to PATH.
-STOCKFISH = shutil.which("stockfish")
+
+def _parse_due(stamp: str) -> datetime:
+    """SQLite drops the tzinfo utcnow() attaches, so the API serves a naive
+    stamp; read it back as the UTC it actually is (the same thing the client's
+    parseUtc does)."""
+    parsed = datetime.fromisoformat(stamp)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 # --- catalog integrity ----------------------------------------------------
@@ -148,58 +152,27 @@ def test_failure_resets_the_box_and_comes_back_soon(client):
     drill = client.get("/endgames/next").json()
     for _ in range(3):  # climb a few boxes first
         client.post(f"/endgames/{drill['id']}/attempt", json={"success": True})
-    assert client.get(f"/endgames/{drill['id']}").json()["box"] > 1
+    climbed = client.get(f"/endgames/{drill['id']}").json()
+    assert climbed["box"] > 1
+    # the schedule really did stretch out with the box, so the reset below has
+    # something to undo
+    assert _parse_due(climbed["due_at"]) - utcnow() > timedelta(hours=1)
 
+    before = utcnow()
     body = client.post(
         f"/endgames/{drill['id']}/attempt",
         json={"success": False, "outcome": "pawn-lost"},
     ).json()
+    after = utcnow()
     assert body["box"] == 1
 
     detail = client.get(f"/endgames/{drill['id']}").json()
     assert len(detail["attempts"]) == 4
-    # box 1 means due again within the hour, not tomorrow
-    assert BOX_INTERVALS[1] < timedelta(hours=1)
+    assert detail["box"] == 1
 
-
-# --- engine verification --------------------------------------------------
-
-# Deep enough that these simple endings are read exactly; shallower searches
-# can still call a theoretically drawn K+P position "winning".
-VERIFY_DEPTH = 30
-# This is a typo detector, not a precision instrument: a mistyped FEN reads
-# near zero (or negative), nowhere near three pawns. Some drills only resolve
-# to a mate score several plies deeper than VERIFY_DEPTH — rook-pawn-cut-off
-# is mate-in-31 but reads ~+490 here — so don't demand a mate score.
-WINNING_CP = 300
-# A "draw" drill must sit on the drawn line, not "nearly holdable".
-DRAWN_CP = 60
-
-
-@pytest.mark.engine
-@pytest.mark.skipif(STOCKFISH is None, reason="stockfish binary not in PATH")
-@pytest.mark.parametrize("drill", CATALOG, ids=lambda d: d.key)
-def test_catalog_position_matches_its_goal(drill):
-    """Every drill's stated goal must be the position's actual truth.
-
-    Without this, a transposed FEN character ships a drill nobody can pass and
-    the Leitner box just keeps resetting to 1.
-    """
-    board = chess.Board(drill.fen)
-    player = chess.WHITE if drill.player_color == "white" else chess.BLACK
-    with chess.engine.SimpleEngine.popen_uci(STOCKFISH) as engine:
-        info = engine.analyse(board, chess.engine.Limit(depth=VERIFY_DEPTH))
-    score = info["score"].pov(player)
-
-    if drill.goal == "win":
-        assert score.is_mate() or (score.score() or 0) > WINNING_CP, (
-            f"{drill.key} is declared winning but evaluates {score}"
-        )
-        assert not score.is_mate() or score.mate() > 0, (
-            f"{drill.key} is declared winning but the player is getting mated"
-        )
-    else:
-        assert not score.is_mate(), f"{drill.key} is declared drawn but evaluates {score}"
-        assert abs(score.score() or 0) <= DRAWN_CP, (
-            f"{drill.key} is declared drawn but evaluates {score}"
-        )
+    # The response and the persisted row must both say "due again in ten
+    # minutes" — the reset is worthless if the drill stays scheduled for next
+    # week. Bracketed by the call's own clock readings rather than compared to
+    # a constant, so this fails if the endpoint stops applying BOX_INTERVALS.
+    for due in (_parse_due(body["due_at"]), _parse_due(detail["due_at"])):
+        assert before + BOX_INTERVALS[1] <= due <= after + BOX_INTERVALS[1]
