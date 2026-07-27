@@ -1,4 +1,12 @@
-import { ApiError, completeGame, discardGame, getGame, postMove, startGame } from '$lib/api/client';
+import {
+	ApiError,
+	completeGame,
+	discardGame,
+	getGame,
+	postMove,
+	startGame,
+	takeBackMoves
+} from '$lib/api/client';
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
 import { engineName } from '$lib/engine';
 import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
@@ -96,6 +104,11 @@ export class PlaySession {
 	private chain: Promise<void> = Promise.resolve();
 	private sync: Promise<void> = Promise.resolve();
 	private generation = 0;
+	/** Bumped by `takeBack()`. Separate from `generation` because a takeback
+	 * must invalidate queued engine work without touching the sync chain —
+	 * dropping a queued postMove for a move that is still on the board would
+	 * desync the server record permanently. */
+	private boardEpoch = 0;
 	/** False after a resignation: the finished game must not be re-saved by
 	 * late eval/sync work. New game turns persistence back on. */
 	private persistable = true;
@@ -128,11 +141,17 @@ export class PlaySession {
 	}
 
 	/** Queue a job behind all prior engine/eval work; stale jobs from a
-	 * previous game (before a reset) are dropped via the generation guard. */
+	 * previous game (before a reset) are dropped via the generation guard, and
+	 * jobs describing plies a takeback has since retracted via boardEpoch. */
 	private inChain(job: () => Promise<void>): void {
 		const generation = this.generation;
+		const boardEpoch = this.boardEpoch;
 		this.chain = this.chain
-			.then(() => (generation === this.generation && !this.suspended ? job() : undefined))
+			.then(() =>
+				generation === this.generation && boardEpoch === this.boardEpoch && !this.suspended
+					? job()
+					: undefined
+			)
 			.catch((error) => console.error('engine chain:', error));
 	}
 
@@ -201,6 +220,15 @@ export class PlaySession {
 				}
 				this.serverGameId = id;
 				synced = 0;
+			}
+			// A takeback whose truncation never landed (offline, tab closed)
+			// leaves the record longer than the local game. Without this the
+			// replay loop below posts nothing and the record stays divergent
+			// for the rest of the game.
+			if (synced > moves.length) {
+				await takeBackMoves(this.serverGameId, moves.length);
+				if (generation !== this.generation) return;
+				synced = moves.length;
 			}
 			for (const uci of moves.slice(synced)) {
 				await postMove(this.serverGameId, uci);
@@ -351,6 +379,7 @@ export class PlaySession {
 	/** Runs inside `chain`: eval after this ply becomes the next baseline;
 	 * classification compares it to the baseline captured at execution time. */
 	private async evaluatePly(played: PlayedMove, badge: boolean): Promise<void> {
+		const boardEpoch = this.boardEpoch;
 		const evalBefore = this.baselineEval;
 		const bestBefore = this.pendingBestMove;
 
@@ -368,6 +397,9 @@ export class PlaySession {
 			// candidate lines the insight bar's Ideas row shows.
 			const multiPv = badge ? 1 : IDEAS_MULTIPV;
 			const result = await stockfish.evaluate(played.fenAfter, LIVE_EVAL_DEPTH, multiPv);
+			// A takeback landed while this search ran: the ply it describes is
+			// off the board now, so none of it may be written back.
+			if (boardEpoch !== this.boardEpoch) return;
 			evalAfter = normalizeEval(result);
 			this.pendingBestMove = result.bestMove;
 			this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
@@ -467,6 +499,57 @@ export class PlaySession {
 			this.completedGameId = this.serverGameId;
 			this.save();
 		});
+	}
+
+	/** True while the last thing the player did was blunder and the position is
+	 * still theirs to retake. It clears itself as soon as they play a
+	 * replacement (which sets fresh feedback) or the game ends — no timer,
+	 * since a deadline would punish exactly the thinking this is here for. */
+	get canTakeBack(): boolean {
+		return (
+			this.lastFeedback?.classification === 'blunder' &&
+			this.lastFeedback.ply <= this.game.moves.length &&
+			!this.game.isGameOver &&
+			this.serverError === null
+		);
+	}
+
+	/** "Take back and think again": retract the blundered move, plus the
+	 * engine's reply if it already landed. The badge is written before the
+	 * reply is queued, so both orderings are live — targeting the ply the
+	 * feedback names covers each without branching on which happened. */
+	takeBack(): void {
+		if (!this.canTakeBack) return;
+		const targetPly = this.lastFeedback!.ply - 1;
+		if (!this.game.takeBack(this.game.moves.length - targetPly)) return;
+
+		this.boardEpoch += 1;
+		// engineReply sets this synchronously before queueing; the job it
+		// belongs to is now skipped, so its `finally` never runs
+		this.engineThinking = false;
+		this.engineError = null;
+
+		this.evals = this.evals.slice(0, targetPly);
+		this.badges = this.badges.slice(0, targetPly);
+		this.lastFeedback = null;
+		this.currentEval = this.evals[targetPly - 1] ?? null;
+		this.refreshOpening();
+		// save() no-ops once the game is back to no moves — clear instead, or
+		// a refresh would restore the move that was just retracted
+		if (this.started) this.save();
+		else clearActiveGame();
+
+		const serverGameId = this.serverGameId;
+		if (serverGameId !== null) {
+			// queued behind any pending postMove, so the truncation always
+			// lands after the moves it undoes
+			this.inSync(async () => {
+				await takeBackMoves(serverGameId, targetPly);
+			});
+		}
+		// re-establish baseline/best-move/insight/ideas for the position the
+		// player is looking at again
+		this.inChain(() => this.rebaselineRestored());
 	}
 
 	resign(): void {

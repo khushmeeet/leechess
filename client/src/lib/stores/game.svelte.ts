@@ -99,6 +99,14 @@ export class GameStore {
 		return true;
 	}
 
+	/** Retract the last `count` plies by replaying what remains, so fen/dests/
+	 * lastMove/game-over are all re-derived rather than unwound by hand.
+	 * Returns false (leaving the game untouched) for an out-of-range count. */
+	takeBack(count: number): boolean {
+		if (count <= 0 || count > this.moves.length) return false;
+		return this.loadMoves(this.moves.slice(0, -count).map((move) => move.uci));
+	}
+
 	/** End the game by resignation of `color`. */
 	resign(color: 'white' | 'black'): void {
 		if (this.isGameOver) return;

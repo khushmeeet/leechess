@@ -37,6 +37,67 @@ test('live classification badge appears within 500ms of a move', async ({ page }
 	);
 });
 
+test('a blundered move can be taken back, and Off withholds the offer', async ({ page }) => {
+	await page.goto('/');
+	await waitForEngineReady(page);
+	await page.getByTestId('hint-mode-full').click();
+
+	const badge = page.getByTestId('move-badge');
+	const offer = page.getByTestId('takeback-offer');
+	const panel = page.getByTestId('moves-panel');
+
+	// the list element isn't rendered at all with no moves, which is exactly
+	// where taking back a first-move blunder lands
+	const listText = async () => {
+		const list = page.getByTestId('move-list');
+		return (await list.count()) ? ((await list.textContent()) ?? '') : '';
+	};
+
+	// The engine opponent isn't scriptable, so walk a deliberately awful line
+	// until one move grades out as a blunder — g4 then f3 is the fool's-mate
+	// structure, which lands almost immediately.
+	const awful = [
+		['g2', 'g4'],
+		['f2', 'f3'],
+		['h2', 'h4'],
+		['a2', 'a3'],
+		['b2', 'b4']
+	] as const;
+	let blundered = false;
+	for (const [from, to] of awful) {
+		await move(page, from, to);
+		await expect(badge).toBeVisible({ timeout: 5_000 });
+		if ((await badge.textContent())!.includes('blunder')) {
+			blundered = true;
+			break;
+		}
+		await expect(offer).toBeHidden(); // the offer belongs to blunders alone
+		await expect(panel).toContainText('white to move', { timeout: 15_000 });
+	}
+	expect(blundered).toBe(true);
+
+	await expect(offer).toBeVisible();
+
+	// the hint-mode gate: Off is a real game, so the do-over goes away with
+	// the rest of the help — without the position changing underneath
+	const before = await listText();
+	await page.getByTestId('hint-mode-off').click();
+	await expect(offer).toBeHidden();
+	await page.getByTestId('hint-mode-full').click();
+	await expect(offer).toBeVisible();
+	expect(await listText()).toBe(before);
+
+	await page.getByTestId('takeback').click();
+
+	await expect(offer).toBeHidden();
+	await expect(badge).toBeHidden(); // the feedback went with the move
+	await expect(panel).not.toContainText('blunder');
+	const after = await listText();
+	expect(after.length).toBeLessThan(before.length);
+	expect(before.startsWith(after)).toBe(true); // only the tail was dropped
+	await expect(panel).toContainText('white to move'); // the position is ours again
+});
+
 test('finished game auto-saves, completes, and queues analysis', async ({ page, request }) => {
 	await page.goto('/');
 	await waitForEngineReady(page);

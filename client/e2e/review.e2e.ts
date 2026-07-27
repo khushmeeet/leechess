@@ -55,6 +55,36 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	await expect(page.getByTestId('best-move-hint')).toContainText('best was');
 });
 
+test('arrow keys step through the game and yield to text fields', async ({ page, request }) => {
+	const gameId = await seedCompletedGame(request);
+
+	// navigation works off the raw move list — no need to wait for analysis
+	await page.goto(`/review/${gameId}`);
+	const selected = page.getByTestId('selected-move');
+	await expect(selected).toContainText('e4');
+
+	// ← / → scrub like the Prev/Next buttons
+	await page.keyboard.press('ArrowRight');
+	await expect(selected).toContainText('e5');
+	await page.keyboard.press('ArrowLeft');
+	await expect(selected).toContainText('e4');
+
+	// Home/End jump to the ends (scholar's mate finishes on Qxf7#)
+	await page.keyboard.press('End');
+	await expect(selected).toContainText('Qxf7#');
+	await page.keyboard.press('Home');
+	await expect(selected).toContainText('e4');
+
+	// the layout mounts Settings on every page: arrows typed into its username
+	// field must move the caret, not the board
+	await page.getByTestId('settings-button').click();
+	const username = page.getByTestId('username-setting-input');
+	await username.fill('ada');
+	await username.press('ArrowLeft');
+	await expect(selected).toContainText('e4');
+	expect(await username.evaluate((el) => (el as HTMLInputElement).selectionStart)).toBe(2);
+});
+
 test('motif tags render on flagged moves', async ({ page, request }) => {
 	// Phase 2: 3.Qxe5+?? hangs the queen to 3...Nxe5 — a deterministic
 	// hanging_piece tag at any depth. Same scripted game as the backend's

@@ -72,6 +72,11 @@
 	// Settings toggles still apply on top, within Full.
 	const fullHints = $derived(displayPrefs.hintMode === 'full');
 
+	// Taking a move back is help, so it lives with the hints: Off is a real
+	// game (spec user story 5), and offering a do-over there would break the
+	// same contract the engine-answer rows respect.
+	const offerTakeback = $derived(displayPrefs.hintMode !== 'off' && session.canTakeBack);
+
 	// Nudge feeds the shared ladder, so the answer is earned a rung at a time;
 	// Full states the pattern outright instead.
 	const ladderHint = $derived.by((): HintContent | null => {
@@ -188,6 +193,27 @@
 		});
 	});
 </script>
+
+{#snippet takebackRow()}
+	{#if offerTakeback}
+		<!-- polite, not assertive: this appears in the middle of the game and
+		     must not cut across the move it is reacting to. -->
+		<div class="panel-row" data-testid="takeback-offer" role="status" aria-live="polite">
+			<span class="panel-row-label text-err">Blunder</span>
+			<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+				<span class="min-w-0">That drops material. Take it back and think again?</span>
+				<button
+					type="button"
+					data-testid="takeback"
+					onclick={() => session.takeBack()}
+					class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+				>
+					Take it back
+				</button>
+			</p>
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet tacticRow()}
 	{#if fullHints}
@@ -339,6 +365,7 @@
 						? 'ready'
 						: 'loading'}
 				ply={game.moves.length}
+				takeback={takebackRow}
 				tactic={tacticRow}
 				showCoach={displayPrefs.showCoach && fullHints}
 				coach={coachText}

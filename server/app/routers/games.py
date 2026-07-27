@@ -20,6 +20,8 @@ from app.schemas import (
     MoveAccepted,
     MoveIn,
     PracticeQueued,
+    TakebackIn,
+    TakebackResult,
 )
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -160,6 +162,28 @@ def submit_move(
         turn="white" if board.turn == chess.WHITE else "black",
         game_over=board.is_game_over(),
     )
+
+
+@router.post("/{game_id}/takeback", response_model=TakebackResult)
+def take_back(
+    game_id: int, payload: TakebackIn, db: Session = Depends(get_db)
+) -> TakebackResult:
+    """Play's "take back and think again": drop the trailing plies so the
+    record matches the board the player is now looking at. Pending games only
+    — a completed game's moves own analysis rows (and the puzzles generated
+    from them), and its PGN is already written."""
+    game = _get_game_or_404(game_id, db)
+    if game.analysis_status != "pending":
+        raise HTTPException(status_code=409, detail="Game is already completed")
+    if payload.to_ply > len(game.moves):
+        raise HTTPException(status_code=409, detail="to_ply is beyond the last move")
+
+    # delete-orphan on Game.moves turns the detach into a row delete; the
+    # relationship is ply-ordered, so the slice is the tail.
+    for move in list(game.moves[payload.to_ply :]):
+        game.moves.remove(move)
+    db.commit()
+    return TakebackResult(ply=len(game.moves), fen=_current_board(game).fen())
 
 
 @router.post("/{game_id}/complete", response_model=GameOut)

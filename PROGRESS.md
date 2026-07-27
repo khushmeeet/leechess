@@ -14,6 +14,50 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Takeback on a live blunder, keyboard review nav (2026-07-27)
+
+**Goal:** two places where the app produced feedback the player couldn't act on. Review had
+Prev/Next buttons and an arrow-key handler nobody knew about; Play told you "blunder" within
+500ms of the move and then made you live with it.
+
+- **Arrow keys already worked in Review** (`handleKeydown`, added back in `3ad3102`) but were
+  invisible, untested, and buggy: the handler never inspected `event.target`, so typing in the
+  Settings username field — mounted on every page by the layout — scrubbed the board and ate
+  the caret keys. Now guarded on editable targets, extended with Home/End, surfaced with a
+  keycap hint plus `aria-keyshortcuts`, and covered by an e2e that asserts the focus case.
+
+- **"Take back and think again" is gated on hint mode, not a new setting.** There is no
+  casual/rated distinction to hang it on (`Game.mode` is only `engine`/`local`), and hint mode
+  `off` is already contractually "a real game — no help at all, so the training can be tested".
+  A do-over is help, so it lives with the other hints and disappears in Off. Blunders only:
+  mistakes are frequent enough at low engine strength to become nagging.
+
+- **The record shrinks with the board.** `submit_move` is append-only and derives ply from
+  `len(game.moves)`, so a client-only takeback would leave the review replaying an illegal
+  game. New `POST /games/{id}/takeback` takes `to_ply` as an *absolute* target length rather
+  than a count, which makes it idempotent under a retry or a double-click. Pending games only —
+  a completed game's moves own analysis rows, generated puzzles, and a written PGN.
+
+- **A takeback must not bump `generation`.** That counter guards the sync chain too, so
+  bumping it would silently drop queued `postMove` jobs for moves still on the board and
+  desync the record permanently. `newGame()` can bump it because it discards the whole game; a
+  takeback can't. Hence a second counter, `boardEpoch`, that invalidates queued engine work
+  only. `evaluatePly` re-checks it after its `await` — the engine-reply eval is typically
+  still in flight when the offer is clicked, and would otherwise write a badge and a baseline
+  for a ply that is no longer on the board.
+
+- **Targeting `lastFeedback.ply - 1` covers both orderings.** The badge is written before the
+  engine's reply is queued, so the player may click before or after that reply lands; naming
+  the ply rather than a count means no branching on which happened. The queued `engineReply`
+  needs no new guard — after the truncation it's the user's turn again, which its existing
+  turn check already treats as a cancellation.
+
+- Restore path hardened to match: `resyncServer` now trims a server record left *longer* than
+  the local game (a takeback whose truncation never landed), and `parseSavedGame` drops a
+  `lastFeedback` pointing past the end of the move list.
+
+---
+
 ## Addendum — Endgame drills (2026-07-26)
 
 **Goal:** the Progress screen has plotted endgame CPL since Phase 4, but nothing in the app

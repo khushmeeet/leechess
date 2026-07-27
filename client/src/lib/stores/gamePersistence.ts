@@ -79,7 +79,9 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 		// badge/eval arrays align to moves by ply index — never let them run past
 		evals: (saved.evals as (number | null)[]).slice(0, moves.length),
 		badges: (saved.badges as (Classification | null)[]).slice(0, moves.length),
-		lastFeedback: feedback,
+		// same rule for the feedback pointer: a save written mid-takeback could
+		// name a ply that is no longer on the board
+		lastFeedback: feedback && feedback.ply <= moves.length ? feedback : null,
 		currentEval: saved.currentEval,
 		serverGameId: saved.serverGameId,
 		completedGameId: saved.completedGameId
