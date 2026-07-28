@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StockfishClient } from './stockfish';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+// Same position with Black to move — UCI scores come from the side to move, so
+// this is the only way to see the white-POV normalization happen.
+const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1';
 // Well past any real init (20s) or depth-search (15s) ceiling in stockfish.ts;
 // init resolves via `uciok` first, so its timer is cleared and only the search
 // timeout can fire within this window.
@@ -124,5 +127,156 @@ describe('StockfishClient', () => {
 		expect(result.bestMove).toBe('e2e4');
 		expect(createdWorkers.length).toBe(2); // a brand-new worker, not the dead one
 		expect(createdWorkers[0].terminated).toBe(true);
+	});
+
+	it('normalizes a black-to-move score to white’s perspective', async () => {
+		// UCI reports "+50 for the side to move". With Black to move that is
+		// -50 for White, and the whole app (eval bar, classification, CPL) reads
+		// white-POV. Only exercising white-to-move searches let this flip go
+		// unnoticed in either direction.
+		configureNextWorker = (w) => {
+			w.onGo = (self) =>
+				queueMicrotask(() => {
+					self.send('info depth 16 score cp 50 multipv 1 pv e7e5 g1f3');
+					self.send('bestmove e7e5');
+				});
+		};
+		const client = new StockfishClient();
+		const result = await client.evaluate(BLACK_TO_MOVE_FEN, 16, 1);
+		expect(result.cp).toBe(-50);
+		expect(result.lines[0].cp).toBe(-50);
+		expect(result.mate).toBeUndefined();
+	});
+
+	it('parses a mate score, signed from white’s perspective', async () => {
+		configureNextWorker = (w) => {
+			w.onGo = (self) =>
+				queueMicrotask(() => {
+					self.send('info depth 12 score mate 3 multipv 1 pv d1h5 g7g6');
+					self.send('bestmove d1h5');
+				});
+		};
+		const client = new StockfishClient();
+		const white = await client.evaluate(START_FEN, 12, 1);
+		expect(white.mate).toBe(3);
+		expect(white.cp).toBeUndefined();
+
+		// the same "mate in 3 for the side to move", reported with Black to move
+		const black = await client.evaluate(BLACK_TO_MOVE_FEN, 12, 1);
+		expect(black.mate).toBe(-3);
+	});
+
+	it('keeps MultiPV lines in rank order regardless of the order they arrive', async () => {
+		// Stockfish interleaves multipv lines across depths; the idea chips read
+		// lines[0..2] positionally, so rank — not arrival order — has to decide
+		// the slot.
+		configureNextWorker = (w) => {
+			w.onGo = (self) =>
+				queueMicrotask(() => {
+					self.send('info depth 14 score cp 5 multipv 3 pv b1c3 e7e5');
+					self.send('info depth 14 score cp 20 multipv 2 pv d2d4 d7d5');
+					self.send('info depth 14 score cp 31 multipv 1 pv e2e4 e7e5');
+					self.send('bestmove e2e4');
+				});
+		};
+		const client = new StockfishClient();
+		const result = await client.evaluate(START_FEN, 14, 3);
+		expect(result.lines.map((line) => line.pvUci[0])).toEqual(['e2e4', 'd2d4', 'b1c3']);
+		expect(result.lines.map((line) => line.cp)).toEqual([31, 20, 5]);
+		// the eval itself comes from the primary line, not the last one seen
+		expect(result.cp).toBe(31);
+		expect(result.bestMove).toBe(result.lines[0].pvUci[0]);
+	});
+
+	it('sets skill and MultiPV only when they change', async () => {
+		// Both are sticky on the engine process, so play() has to put MultiPV
+		// back to 1 or the skill-limited opponent silently pays for a
+		// three-line search. Re-sending an unchanged option is pure latency on
+		// the 500ms live-badge budget.
+		const client = new StockfishClient();
+		await client.evaluate(START_FEN, 16, 3);
+		await client.evaluate(START_FEN, 16, 3);
+		await client.play(START_FEN, 5);
+		await client.play(START_FEN, 5);
+
+		const options = createdWorkers[0].posted.filter((msg) => msg.startsWith('setoption'));
+		expect(options).toEqual([
+			'setoption name MultiPV value 3', // first evaluate: skill is already 20
+			'setoption name Skill Level value 5', // first play
+			'setoption name MultiPV value 1'
+		]);
+	});
+
+	it('resets the cached options when a broken worker is replaced', async () => {
+		// The cache describes one engine process. After a teardown the next
+		// worker boots at Stockfish's defaults (skill 20, MultiPV 1), so a stale
+		// cache would skip the setoption the new process needs.
+		configureNextWorker = (w) => {
+			w.onGo = null; // first worker hangs
+		};
+		const client = new StockfishClient();
+		const hung = client.evaluate(START_FEN, 16, 3);
+		const rejected = expect(hung).rejects.toThrow(/timed out/);
+		await vi.advanceTimersByTimeAsync(PAST_ANY_TIMEOUT_MS);
+		await rejected;
+
+		configureNextWorker = (w) => {
+			w.onGo = respondNormally;
+		};
+		await client.evaluate(START_FEN, 16, 3);
+		expect(createdWorkers[1].posted).toContain('setoption name MultiPV value 3');
+	});
+
+	it('runs searches one at a time on the single engine process', async () => {
+		// One worker, one search: overlapping `position`/`go` pairs would have
+		// the second search read the first one's position.
+		const goOrder: string[] = [];
+		let release: (() => void)[] = [];
+		configureNextWorker = (w) => {
+			w.onGo = (self) => {
+				goOrder.push(self.posted.filter((m) => m.startsWith('position'))!.at(-1)!);
+				release.push(() => {
+					self.send('info depth 8 score cp 12 multipv 1 pv e2e4');
+					self.send('bestmove e2e4');
+				});
+			};
+		};
+		const client = new StockfishClient();
+		const first = client.evaluate(START_FEN, 8);
+		const second = client.evaluate(BLACK_TO_MOVE_FEN, 8);
+
+		await vi.advanceTimersByTimeAsync(0);
+		expect(goOrder).toHaveLength(1); // the second search has not started yet
+		release.shift()!();
+		await first;
+
+		await vi.advanceTimersByTimeAsync(0);
+		expect(goOrder).toEqual([`position fen ${START_FEN}`, `position fen ${BLACK_TO_MOVE_FEN}`]);
+		release.shift()!();
+		await second;
+		expect(createdWorkers).toHaveLength(1);
+		release = [];
+	});
+
+	it('recovers when init itself times out', async () => {
+		// A worker that never answers `uci` must not poison initPromise —
+		// otherwise every later search re-throws the same boot failure and the
+		// engine can never come back.
+		configureNextWorker = (w) => {
+			w.emitUciok = false;
+		};
+		const client = new StockfishClient();
+		const warm = client.warmup();
+		const rejected = expect(warm).rejects.toThrow(/init timed out/);
+		await vi.advanceTimersByTimeAsync(PAST_ANY_TIMEOUT_MS);
+		await rejected;
+		expect(createdWorkers[0].terminated).toBe(true);
+
+		configureNextWorker = (w) => {
+			w.onGo = respondNormally;
+		};
+		const result = await client.evaluate(START_FEN, 16, 1);
+		expect(result.bestMove).toBe('e2e4');
+		expect(createdWorkers).toHaveLength(2);
 	});
 });

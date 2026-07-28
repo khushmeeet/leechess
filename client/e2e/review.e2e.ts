@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { type APIRequestContext } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { API, scholarsMateSans } from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end

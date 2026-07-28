@@ -1,22 +1,24 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { Chess } from 'chess.js';
-import { API, hungQueenSans, seedGame, waitForAnalysis } from './helpers';
+import { HUNG_QUEEN, seedHungQueenPuzzle } from './helpers';
 
 // Phase 3: the shared HintLadder's full Levels 1-5, tested once against the
-// Puzzles screen (simplest context — Play reuses the same component). This
-// spec runs first alphabetically, so the seeded hung-queen puzzle is the
-// only one in the queue and every assertion is deterministic.
+// Puzzles screen (simplest context — Play reuses the same component).
+//
+// This used to say it was deterministic because it "runs first
+// alphabetically", which is not a contract any runner offers — rename a file
+// and the queue serves something else. It now seeds its own puzzle into a
+// database emptied by e2e/fixtures.ts, so the position is the same whenever
+// and in whatever order this spec runs.
 
 test('hint ladder reveals one level at a time and never resets', async ({ page, request }) => {
-	const gameId = await seedGame(request, hungQueenSans);
-	await waitForAnalysis(request, gameId);
+	const { puzzle } = await seedHungQueenPuzzle(request);
 
-	// /puzzles/next is read-only — the UI is about to load this same puzzle
-	const puzzle = await (await request.get(`${API}/puzzles/next`)).json();
 	const chess = new Chess(puzzle.fen);
 	const solutionSans = puzzle.solution.map((uci: string) => {
 		return chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }).san;
 	});
+	expect(solutionSans).toEqual(['Nxe5']);
 
 	await page.goto('/puzzles');
 	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
@@ -35,7 +37,9 @@ test('hint ladder reveals one level at a time and never resets', async ({ page, 
 
 	// Level 2 — motif name; level 1 stays visible (no skip, no reset)
 	await reveal.click();
-	await expect(page.getByTestId('hint-level-2')).toContainText(puzzle.motif.replaceAll('_', ' '));
+	await expect(page.getByTestId('hint-level-2')).toContainText(
+		HUNG_QUEEN.motif.replaceAll('_', ' ')
+	);
 	await expect(page.getByTestId('hint-level-1')).toBeVisible();
 
 	// Level 3 — squares highlighted on the board, move still hidden

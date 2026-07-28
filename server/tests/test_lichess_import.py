@@ -19,6 +19,10 @@ pytestmark = pytest.mark.unit
 
 SAMPLE = FIXTURES / "lichess_puzzles_sample.csv"
 
+# The sample's MULTI row, whose Themes column maps to more than one motif.
+MULTI_ROW_FEN = "3qk3/8/8/8/8/8/8/3RK3 b - - 0 1"
+MULTI_ROW_SETUP_MOVE = "d8d4"
+
 
 def import_sample(db, **kwargs):
     with open(SAMPLE, newline="") as file:
@@ -52,13 +56,22 @@ def test_fen_is_the_position_after_the_opponents_setup_move(db_session):
 
 def test_first_mappable_theme_wins_when_several_map(db_session):
     import_sample(db_session)
-    multi = db_session.scalars(select(Puzzle).where(Puzzle.fen.contains("3q4"))).all()
-    # MULTI row lists "hangingPiece fork ..." — hangingPiece maps first
-    queen_hang = db_session.scalars(
-        select(Puzzle).where(Puzzle.motif == "hanging_piece")
-    ).one()
-    assert queen_hang.solution == "d1d4"
-    assert multi is not None  # row imported exactly once overall
+
+    # The MULTI row lists "hangingPiece fork ..." — hangingPiece maps first, so
+    # the row must land under that motif and under no other. `.one()` is the
+    # assertion that it was imported exactly once: a second copy (say, one row
+    # per mappable theme) raises MultipleResultsFound.
+    board = chess.Board(MULTI_ROW_FEN)
+    board.push_uci(MULTI_ROW_SETUP_MOVE)
+    multi = db_session.scalars(select(Puzzle).where(Puzzle.fen == board.fen())).one()
+    assert multi.motif == "hanging_piece"
+    assert multi.solution == "d1d4"
+
+    # ...and no fork puzzle came from it: the two forks in the pool are the
+    # sample's own fork rows.
+    forks = db_session.scalars(select(Puzzle).where(Puzzle.motif == "fork")).all()
+    assert len(forks) == 2
+    assert all(puzzle.fen != multi.fen for puzzle in forks)
 
 
 def test_max_per_motif_caps_the_pool(db_session):

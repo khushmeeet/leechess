@@ -38,10 +38,16 @@ def test_sweep_marks_orphaned_analyzing_games_failed(db_engine, monkeypatch):
         assert statuses == ["complete", "failed", "pending"]
 
 
-def test_startup_runs_the_sweep(db_engine, monkeypatch):
+def test_startup_runs_the_sweep(lifespan_sessions):
     """The lifespan hook sweeps on boot — a deploy or auto-stopped machine
-    must not leave games spinning as "analyzing" forever."""
-    TestSession = _session_factory(db_engine, monkeypatch)
+    must not leave games spinning as "analyzing" forever.
+
+    Uses the lifespan_sessions fixture rather than patching app.analysis
+    alone: entering the lifespan also runs maybe_autoseed and seed_catalog,
+    whose own session factories would otherwise still point at the configured
+    application database.
+    """
+    TestSession = lifespan_sessions
     with TestSession() as db:
         game = Game(pgn="", analysis_status="analyzing")
         db.add(game)

@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.analysis import reset_stale_analyses, stockfish_binary
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
-from app.routers import endgames, games, progress, puzzles, wikibook
+from app.routers import endgames, games, progress, puzzles, testing, wikibook
 from app.seeding import maybe_autoseed
 
 
@@ -80,6 +80,12 @@ app.include_router(puzzles.router)
 app.include_router(progress.router)
 app.include_router(endgames.router)
 app.include_router(wikibook.router)
+
+# Test-support only: the truncate endpoint the browser suite uses to give each
+# spec a clean database. Off by default, so these paths simply do not exist in
+# a normal dev run or a deploy.
+if testing.enabled():
+    app.include_router(testing.router)
 
 
 @app.get("/healthz")

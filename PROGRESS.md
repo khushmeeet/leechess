@@ -152,11 +152,18 @@ had no way to name the tactic in a *live* position (no server round-trip in the 
   signatures the server settles for — under-tagging beats a tagger that cries wolf.
   `liveHintFromLine(fen, pvUci)` turns the engine's best line into ladder `HintContent`,
   but only when the first move executes a recognized tactic — quiet positions get just the
-  nudge. Only x-ray and the strategic motifs are absent, because the server lacks them too;
-  `MOTIF_PRIORITY` is pinned against the server's list by a test so the two can't drift.
-  Unit-tested (`liveMotifs.test.ts`, 30 cases: a positive **and** a near-miss per motif,
-  plus taxonomy-parity and reason-template guards). Detection costs ~0.4ms on a dense
-  middlegame position, so it adds nothing measurable to the live loop.
+  nudge. Only x-ray and the strategic motifs are absent, because the server lacks them too.
+  Drift against the server is prevented by a shared conformance suite rather than by a
+  hand-copied list: `shared/motifs.json` holds the taxonomy plus 48 (FEN, UCI, exact motif
+  set) cases, and both `server/tests/test_motif_parity.py` and
+  `client/src/lib/motifParity.test.ts` run every case through their own detector — so a rule
+  refined on one side and not the other fails on the other side. Each taxonomy entry is
+  required to have a positive case *and* a declared near miss, and every fixture move is
+  asserted legal (python-chess's `board.push` does not validate, which had let a "double
+  check" case assert on a knight move that isn't one). `liveMotifs.test.ts` keeps the
+  client-only behaviour: priority ordering, the explanation sentences, and the line builder.
+  Detection costs ~0.4ms on a dense middlegame position, so it adds nothing measurable to
+  the live loop.
 - **`explainMotif(fen, uci, motif)`** — a short sentence for *why* the move is that motif,
   naming the pieces actually involved ("the queen on h4 is left undefended", "the knight on
   d7 is the only piece guarding both the rook on b8 and the rook on f8") rather than
@@ -438,10 +445,12 @@ component. All automatable exit criteria met; two manual checks gate calling it 
   with a `syncKey` prop on `Board.svelte` — bump it to force `api.set()` re-sync.
 - **Lichess dump FEN is pre-setup-move** — importing FEN+Moves verbatim produces puzzles
   where the *opponent* is to move. Apply `Moves[0]` first; solution is `Moves[1:]`.
-- **e2e determinism with a shared queue**: `hint-ladder.e2e.ts` runs first alphabetically,
-  so its seeded hung-queen puzzle is the only one due → motif assertions are safe there.
-  `puzzles.e2e.ts` never assumes which puzzle is served — it reads `/puzzles/next`
-  (read-only) and drives the board from the response.
+- **e2e determinism comes from a per-test reset, not from file order**: every spec used to
+  share one `data/e2e.db` wiped once at startup, so `hint-ladder.e2e.ts` relied on running
+  "first alphabetically" and `puzzles.e2e.ts` had to derive its position from whatever
+  `/puzzles/next` happened to serve. `client/e2e/fixtures.ts` now truncates and reseeds
+  through `POST /testing/reset` (mounted only under `LEECHESS_TEST_RESET=on`) before each
+  test, so specs seed the exact puzzle they assert on and run in any order.
 
 ### Not done yet / deferred
 
@@ -633,8 +642,15 @@ sanity-check remains (below).
   a JS stub ("Could not find stockfish.js") instead of the native engine. Fixed twice over:
   the Playwright webServer env strips node_modules from PATH, and `LEECHESS_STOCKFISH` can
   pin an explicit binary path.
-- **Playwright `reuseExistingServer` must be set explicitly** with multiple webServer
-  entries, otherwise a manually-running dev server on the same port errors the run.
+- **Playwright must never reuse a server it did not start.** `reuseExistingServer: !CI` on
+  port 8000 meant a developer's own backend was silently adopted — with none of the test
+  env applied, so the specs read and wrote the real `leechess.db`. The backend now has its
+  own port (8123) and reuse is off for both servers; a busy port fails the run instead.
+- **`page.mouse.click` does not scroll.** At Playwright's default 720px viewport the board's
+  first rank sits below the fold, so clicks on g1/b1 landed outside the viewport and were
+  discarded with no error — which is why "the game continues where it left off" could never
+  play Ng1-f3 after a reload. The config sets a 900px viewport and `squareCenter` throws if
+  a square is off screen.
 - `workers: 1` in the Playwright config — the 500ms-badge assertion shares CPU with the
   WASM engine and flakes under parallel spec execution.
 

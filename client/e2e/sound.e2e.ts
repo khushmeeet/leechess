@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { move, waitForEngineReady } from './helpers';
 
 // There is nothing to hear from a test runner, so count started sample sources

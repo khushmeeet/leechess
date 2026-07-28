@@ -1,10 +1,11 @@
-import { expect, test } from '@playwright/test';
-import { API, hungQueenSans, seedGame, waitForAnalysis } from './helpers';
+import { expect, test } from './fixtures';
+import { API, hungQueenSans, scholarsMateSans, seedGame, waitForAnalysis } from './helpers';
 
 // Phase 4 Progress screen. Seeds through the API (a real analyzed game +
 // puzzle attempts) rather than playing via the UI — faster and deterministic
-// for a data-heavy screen. Never assumes WHICH puzzle the queue serves;
-// assertions key off the /puzzles/next response.
+// for a data-heavy screen. The database is emptied before each test
+// (e2e/fixtures.ts), so the games and attempts on screen are exactly the ones
+// seeded here.
 
 test('progress screen renders seeded aggregates and drills into the weakest motif', async ({
 	page,
@@ -41,8 +42,8 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	// CPL trend renders, and its table view includes the seeded game
 	await expect(page.getByTestId('cpl-trend')).toBeVisible();
 
-	// hovering anywhere over the chart reads out the nearest game — there are no
-	// per-point hit targets to land on
+	// with one game charted, the nearest point is that game wherever the
+	// pointer goes
 	await page.getByTestId('cpl-trend').hover();
 	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${gameId}`);
 
@@ -64,4 +65,37 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	await drillLink.click();
 	await expect(page).toHaveURL(new RegExp(`/puzzles\\?motif=${puzzle.motif}`));
 	await expect(page.getByRole('heading', { name: /Puzzles/ })).toContainText(motifLabel);
+});
+
+test('the CPL tooltip reads out the point nearest the pointer, not the newest game', async ({
+	page,
+	request
+}) => {
+	// Two games, so "nearest" is a claim about where the pointer is rather
+	// than a coincidence. Hovering anywhere and expecting the newest game is
+	// what the previous version of this assertion did — it passed only while
+	// the chart had one point, and reported the wrong game the moment earlier
+	// specs had left others behind.
+	const oldest = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, oldest);
+	const newest = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, newest);
+
+	await page.goto('/progress');
+	const chart = page.getByTestId('cpl-trend');
+	await expect(chart).toBeVisible();
+	const box = (await chart.boundingBox())!;
+	const midY = box.y + box.height / 2;
+
+	// the chart plots games oldest-first, left to right
+	await page.mouse.move(box.x + box.width * 0.02, midY);
+	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${oldest}`);
+
+	await page.mouse.move(box.x + box.width * 0.98, midY);
+	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${newest}`);
+
+	// and back again, so this cannot pass on a tooltip that simply never
+	// changes after the first hover
+	await page.mouse.move(box.x + box.width * 0.02, midY);
+	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${oldest}`);
 });
