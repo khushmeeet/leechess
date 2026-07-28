@@ -59,6 +59,30 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+/** A promise the test resolves by hand, so two loads can be put in flight and
+ * finished in whatever order the network would have chosen. */
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (error: Error) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+/** A second puzzle, distinguishable from the first at a glance. */
+const otherPuzzle = {
+	id: 99,
+	fen: '6k1/8/8/8/8/8/8/K6R w - - 0 1',
+	solution: ['h1h8'],
+	motif: 'back_rank_mate',
+	difficulty: 800,
+	source_move_id: null,
+	box: 1,
+	due_at: '2026-01-01T00:00:00Z'
+};
+
 describe('promotion moves', () => {
 	it('solves when the picked piece matches the solution', async () => {
 		const session = new PuzzleSession();
@@ -253,5 +277,70 @@ describe('load failures', () => {
 		await session.load();
 		session.handleBoardMove('e2', 'e4');
 		expect(api.recordAttempt).not.toHaveBeenCalled();
+	});
+});
+
+describe('overlapping loads', () => {
+	// The Puzzles screen calls load() from an $effect on the motif filter AND
+	// from the "next puzzle" button, so two requests are easily in flight at
+	// once. Whichever the SERVER answers first is not necessarily the one the
+	// user asked for last, and before the load generation existed the slower
+	// response simply won.
+	it('keeps the newest puzzle when an older request resolves last', async () => {
+		const older = deferred<typeof underpromotionPuzzle>();
+		const newer = deferred<typeof otherPuzzle>();
+		api.getNextPuzzle.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+		const session = new PuzzleSession();
+		const first = session.load();
+		const second = session.load('back_rank_mate');
+
+		newer.resolve({ ...otherPuzzle });
+		await second;
+		expect(session.puzzle?.id).toBe(99);
+
+		older.resolve({ ...underpromotionPuzzle });
+		await first;
+		expect(session.puzzle?.id).toBe(99);
+		expect(session.fen).toBe(otherPuzzle.fen);
+		expect(session.status).toBe('solving');
+	});
+
+	it('does not let a stale failure bury a newer puzzle', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		const older = deferred<typeof underpromotionPuzzle>();
+		const newer = deferred<typeof otherPuzzle>();
+		api.getNextPuzzle.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+		const session = new PuzzleSession();
+		const first = session.load();
+		const second = session.load('back_rank_mate');
+
+		newer.resolve({ ...otherPuzzle });
+		await second;
+
+		older.reject(new ApiError(404, 'No puzzles due'));
+		await first;
+		expect(session.status).toBe('solving'); // not 'empty'
+		expect(session.puzzle?.id).toBe(99);
+		expect(session.error).toBeNull();
+	});
+
+	it('does not let a stale success bury a newer empty queue', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		const older = deferred<typeof underpromotionPuzzle>();
+		api.getNextPuzzle
+			.mockReturnValueOnce(older.promise)
+			.mockRejectedValueOnce(new ApiError(404, 'No puzzles due'));
+
+		const session = new PuzzleSession();
+		const first = session.load();
+		await session.load('back_rank_mate');
+		expect(session.status).toBe('empty');
+
+		older.resolve({ ...underpromotionPuzzle });
+		await first;
+		expect(session.status).toBe('empty');
+		expect(session.puzzle).toBeNull();
 	});
 });

@@ -8,9 +8,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+import pytest
+
 from app import analysis
 from app.main import app
 from app.models import Game
+
+pytestmark = pytest.mark.unit
 
 
 def _session_factory(db_engine, monkeypatch):

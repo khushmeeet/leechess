@@ -14,6 +14,7 @@ const PAST_ANY_TIMEOUT_MS = 30000;
  * how it answers a `go` search is configured per instance so a test can make
  * it respond, hang, or crash. */
 class MockWorker {
+	constructor(readonly script: string) {}
 	onmessage: ((e: { data: string }) => void) | null = null;
 	onerror: ((e: { message: string }) => void) | null = null;
 	posted: string[] = [];
@@ -60,15 +61,17 @@ beforeEach(() => {
 	vi.stubGlobal(
 		'Worker',
 		class {
-			constructor() {
-				const w = new MockWorker();
+			constructor(script: string) {
+				const w = new MockWorker(script);
 				createdWorkers.push(w);
 				configureNextWorker(w);
 				return w as unknown as Worker;
 			}
 		}
 	);
-	// Force the single-threaded boot path (no `navigator.hardwareConcurrency`).
+	// Default to the single-threaded boot path; the isolated path has its own
+	// describe block below, since production picks it whenever COOP/COEP are
+	// in effect — which is everywhere the app actually runs.
 	vi.stubGlobal('crossOriginIsolated', false);
 });
 
@@ -278,5 +281,66 @@ describe('StockfishClient', () => {
 		const result = await client.evaluate(START_FEN, 16, 1);
 		expect(result.bestMove).toBe('e2e4');
 		expect(createdWorkers).toHaveLength(2);
+	});
+
+	it('boots the single-threaded build when the page is not cross-origin isolated', async () => {
+		const client = new StockfishClient();
+		await client.warmup();
+		expect(createdWorkers[0].script).toBe('/stockfish/stockfish-18-lite-single.js');
+		expect(client.flavor).toBe('single-threaded');
+		// no SharedArrayBuffer means no threads to configure. (`toContain` on an
+		// array compares by identity, so an asymmetric matcher here would pass
+		// whatever was posted — hence the explicit filter.)
+		expect(createdWorkers[0].posted.filter((msg) => msg.includes('Threads'))).toEqual([]);
+	});
+});
+
+describe('StockfishClient on a cross-origin-isolated page', () => {
+	// This is the path production takes: smoke.e2e.ts asserts
+	// crossOriginIsolated === true, so the app always picks the multi-threaded
+	// build. Forcing the flag false for every unit test left the branch that
+	// chooses the worker — and the Threads option it sends — with no coverage
+	// at all, and "silently fell back to single-threaded" is exactly the
+	// failure the implementation plan warns about.
+	beforeEach(() => {
+		vi.stubGlobal('crossOriginIsolated', true);
+		vi.stubGlobal('SharedArrayBuffer', class {});
+	});
+
+	it('boots the multi-threaded build and leaves one core for the page', async () => {
+		vi.stubGlobal('navigator', { hardwareConcurrency: 8 });
+		const client = new StockfishClient();
+		await client.warmup();
+
+		expect(createdWorkers[0].script).toBe('/stockfish/stockfish-18-lite.js');
+		expect(client.flavor).toBe('multi-threaded');
+		// 8 cores → 7 wanted, capped at 4
+		expect(createdWorkers[0].posted).toContain('setoption name Threads value 4');
+	});
+
+	it('caps threads at 4 however many cores there are', async () => {
+		vi.stubGlobal('navigator', { hardwareConcurrency: 32 });
+		const client = new StockfishClient();
+		await client.warmup();
+		expect(createdWorkers[0].posted).toContain('setoption name Threads value 4');
+	});
+
+	it('never asks for fewer than one thread on a single-core machine', async () => {
+		// hardwareConcurrency - 1 is 0 here; `Threads value 0` is rejected by
+		// Stockfish and the engine would boot misconfigured.
+		vi.stubGlobal('navigator', { hardwareConcurrency: 1 });
+		const client = new StockfishClient();
+		await client.warmup();
+		expect(createdWorkers[0].posted).toContain('setoption name Threads value 1');
+	});
+
+	it('sets Threads before any search is issued', async () => {
+		vi.stubGlobal('navigator', { hardwareConcurrency: 4 });
+		const client = new StockfishClient();
+		await client.evaluate(START_FEN, 16, 1);
+		const posted = createdWorkers[0].posted;
+		expect(posted.indexOf('setoption name Threads value 3')).toBeLessThan(
+			posted.findIndex((msg) => msg.startsWith('go '))
+		);
 	});
 });

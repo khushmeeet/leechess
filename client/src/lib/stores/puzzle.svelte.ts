@@ -39,6 +39,8 @@ export class PuzzleSession {
 	private chess = new Chess();
 	private attemptRecorded = false;
 	private replyTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Bumped per load() so an out-of-order response can be dropped. */
+	private loadGeneration = 0;
 
 	get playerColor(): 'white' | 'black' {
 		return this.orientation;
@@ -92,10 +94,16 @@ export class PuzzleSession {
 
 	async load(motif?: string | null): Promise<void> {
 		clearTimeout(this.replyTimer);
+		// Latest request wins. The screen calls load() from an $effect on the
+		// motif filter and from the "next puzzle" button, so two can easily be
+		// in flight — and without this the SLOWER one lands last and puts the
+		// puzzle the user already moved past back on the board.
+		const generation = ++this.loadGeneration;
 		this.status = 'loading';
 		this.error = null;
 		try {
 			const puzzle = await getNextPuzzle(motif);
+			if (generation !== this.loadGeneration) return;
 			this.puzzle = puzzle;
 			this.chess = new Chess(puzzle.fen);
 			this.fen = puzzle.fen;
@@ -108,6 +116,8 @@ export class PuzzleSession {
 			this.solutionIndex = 0;
 			this.status = 'solving';
 		} catch (e) {
+			// A stale failure must not bury a newer success either.
+			if (generation !== this.loadGeneration) return;
 			this.puzzle = null;
 			if (e instanceof ApiError && e.status === 404) {
 				this.status = 'empty';
