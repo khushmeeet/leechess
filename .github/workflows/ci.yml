@@ -1,0 +1,119 @@
+name: CI
+
+# The suite is only a gate if something runs it. Three jobs so a failure names
+# the layer it came from, and so the fast ones report without waiting on the
+# browser run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Debian installs the binary into /usr/games, which is not on PATH by
+      # default — the same arrangement the Dockerfile makes.
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends stockfish
+          echo /usr/games >> "$GITHUB_PATH"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      - name: Sync dependencies
+        working-directory: server
+        run: uv sync --frozen
+
+      # The full suite, engine tests included: the depth-30 endgame catalog
+      # check is what stops a mistyped FEN shipping an unpassable drill, so it
+      # must not be the thing that only ever runs locally.
+      - name: Run tests
+        working-directory: server
+        run: uv run pytest -q
+
+      # Guards the marker contract itself. These two selections cover the same
+      # tests by definition, and the collection hook rejects a test carrying
+      # both marks or neither — if that ever drifts, the counts diverge here.
+      - name: Check marker split
+        working-directory: server
+        run: |
+          # Just the "339/355 tests collected" counts — the summary line also
+          # carries a duration, which never compares equal.
+          collected() { uv run pytest "$@" --collect-only -q | tail -1 | cut -d' ' -f1; }
+          unit=$(collected -m unit)
+          fast=$(collected -m "not engine")
+          echo "-m unit:        $unit"
+          echo "-m 'not engine': $fast"
+          [ "$unit" = "$fast" ] || {
+            echo "::error::-m unit and -m 'not engine' select different tests"
+            exit 1
+          }
+
+  client:
+    name: lint, typecheck, vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: client
+      - run: bun run lint
+        working-directory: client
+      - run: bun run check
+        working-directory: client
+      - run: bun run test:unit
+        working-directory: client
+
+  e2e:
+    name: playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The browser suite boots the real backend, and its specs wait on the
+      # analysis job — which shells out to native Stockfish.
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends stockfish
+          echo /usr/games >> "$GITHUB_PATH"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - name: Sync backend dependencies
+        working-directory: server
+        run: uv sync --frozen
+
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: client
+      - run: bunx playwright install --with-deps chromium
+        working-directory: client
+
+      # playwright.config.ts starts the preview server and uvicorn itself and
+      # reuses neither, so nothing needs starting here.
+      - run: bunx playwright test
+        working-directory: client
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            client/playwright-report
+            client/test-results
+          retention-days: 7

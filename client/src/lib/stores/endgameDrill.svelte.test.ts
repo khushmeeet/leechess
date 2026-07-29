@@ -477,3 +477,85 @@ describe('DrillSession', () => {
 		expect(api.recordDrillAttempt).toHaveBeenCalledTimes(2);
 	});
 });
+
+describe('DrillSession overlapping loads', () => {
+	// Same shape as the puzzle screen: the Endgames page calls load() from an
+	// $effect on the family filter, so two requests can be in flight and the
+	// server need not answer them in order.
+	const OTHER_DRILL = {
+		...WIN_DRILL,
+		id: 21,
+		key: 'lucena-1',
+		family: 'lucena',
+		fen: '1K1k4/1P6/8/8/8/8/6R1/7r w - - 0 1'
+	};
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		api.recordDrillAttempt.mockResolvedValue(undefined);
+		engine.warmup.mockResolvedValue(undefined);
+		engine.play.mockResolvedValue({ bestMove: 'd5c5', cp: 0, depth: 20, ms: 1, lines: [] });
+	});
+
+	it('keeps the newest drill when an older request resolves last', async () => {
+		const older = deferred<typeof WIN_DRILL>();
+		const newer = deferred<typeof OTHER_DRILL>();
+		api.getNextDrill.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+		const session = new DrillSession();
+		const first = session.load();
+		const second = session.load('lucena');
+
+		newer.resolve({ ...OTHER_DRILL });
+		await second;
+		expect(session.drill?.id).toBe(21);
+
+		older.resolve({ ...WIN_DRILL });
+		await first;
+		expect(session.drill?.id).toBe(21);
+		expect(session.game.fen).toBe(OTHER_DRILL.fen);
+		expect(session.status).toBe('playing');
+	});
+
+	it('does not let a stale failure bury a newer drill', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		const older = deferred<typeof WIN_DRILL>();
+		api.getNextDrill.mockReturnValueOnce(older.promise).mockResolvedValueOnce({ ...OTHER_DRILL });
+
+		const session = new DrillSession();
+		const first = session.load();
+		await session.load('lucena');
+		expect(session.drill?.id).toBe(21);
+
+		older.reject(new ApiError(404, 'nothing due'));
+		await first;
+		expect(session.status).toBe('playing'); // not 'empty'
+		expect(session.drill?.id).toBe(21);
+		expect(session.error).toBeNull();
+	});
+
+	it('does not let a stale warmup failure post an engine error over a newer drill', async () => {
+		// The abandoned load's warmup is still running when the new drill
+		// arrives; its failure belongs to an engine nobody is waiting on.
+		const warmup = deferred<void>();
+		engine.warmup.mockReturnValueOnce(warmup.promise).mockResolvedValue(undefined);
+		api.getNextDrill.mockResolvedValueOnce({ ...WIN_DRILL }).mockResolvedValueOnce({
+			...OTHER_DRILL
+		});
+
+		const session = new DrillSession();
+		const first = session.load();
+		// let the first drill arrive and reach its warmup before the second
+		// load supersedes it — otherwise the load generation drops it earlier
+		// and the warmup path never runs at all
+		await settle();
+		await session.load('lucena');
+		expect(session.engineError).toBeNull();
+
+		warmup.reject(new Error('wasm blocked'));
+		await first;
+		await settle();
+		expect(session.engineError).toBeNull();
+		expect(session.drill?.id).toBe(21);
+	});
+});

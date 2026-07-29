@@ -32,10 +32,28 @@ cd client && bun run dev
 ## Tests
 
 ```sh
-cd server && make test        # pytest, full suite incl. engine tests
-cd server && make test-fast   # pytest -m "not engine", fast loop
-cd client && bun run test:e2e # playwright (boots frontend + backend itself)
+cd server && make test          # pytest, full suite incl. engine tests
+cd server && make test-fast     # pytest -m "not engine", fast loop
+cd client && bun run test:unit  # vitest, the client unit suite
+cd client && bun run test:e2e   # playwright (boots frontend + backend itself)
+cd client && bun run test       # typecheck, then unit, then e2e
 ```
+
+Every backend test carries exactly one of the `unit`/`engine` markers, and a
+collection hook fails the run if one carries both or neither — so `-m unit`
+means what it says (no Stockfish) and nothing quietly drops out of it.
+
+Playwright starts its own preview server and backend and **never reuses one it
+did not start**: the backend runs on `:8123` with a throwaway `data/e2e.db`,
+and a busy port fails the run rather than adopting whatever is listening.
+Ports `4173` and `8123` therefore need to be free. Each browser test truncates
+and reseeds through `POST /testing/reset`, which only exists when
+`LEECHESS_TEST_RESET=on` — so a spec pointed at a real server fails loudly
+instead of mutating its database.
+
+Cross-language behaviour lives in `shared/`: `motifs.json` (taxonomy plus 48
+detector cases) and `classification-cases.json` are each run through both the
+Python and the TypeScript implementation, so the two cannot drift.
 
 The multi-threaded WASM engine needs `crossOriginIsolated === true`; the
 COOP/COEP headers are set by a vite middleware in dev/preview and by FastAPI

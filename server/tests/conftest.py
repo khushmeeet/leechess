@@ -39,18 +39,26 @@ LIFESPAN_SESSION_FACTORIES = (
 
 
 def pytest_collection_modifyitems(items):
-    """`unit` is registered as "no Stockfish involved" — a test carrying both
-    marks makes `pytest -m unit` shell out to the engine, which is how the
-    endgame catalog's twelve depth-30 searches ended up in the fast suite."""
-    both = [
-        item.nodeid
-        for item in items
-        if item.get_closest_marker("unit") and item.get_closest_marker("engine")
-    ]
-    if both:
+    """Every test carries exactly one of `unit` and `engine`.
+
+    Both marks at once contradicts the registered meanings ("unit: no
+    Stockfish involved") — that is how the endgame catalog's twelve depth-30
+    searches ended up inside the fast suite. Neither mark is the quieter
+    problem: the test simply drops out of `-m unit` and nobody notices it
+    stopped running there.
+    """
+    problems = []
+    for item in items:
+        unit = item.get_closest_marker("unit") is not None
+        engine = item.get_closest_marker("engine") is not None
+        if unit and engine:
+            problems.append(f"{item.nodeid} — marked both `unit` and `engine`")
+        elif not unit and not engine:
+            problems.append(f"{item.nodeid} — marked neither `unit` nor `engine`")
+    if problems:
         raise pytest.UsageError(
-            "these tests are marked both `unit` and `engine`, which contradicts "
-            "the registered marker meanings:\n  " + "\n  ".join(both)
+            "every test must carry exactly one of the registered markers:\n  "
+            + "\n  ".join(problems)
         )
 
 

@@ -220,13 +220,21 @@ export class DrillSession {
 	}
 
 	async load(family?: string | null): Promise<void> {
-		this.generation += 1;
+		// Bumping generation invalidates queued engine work; capturing it also
+		// makes this load "latest wins". The screen calls load() from an
+		// $effect on the family filter, so two can be in flight at once — and
+		// without the checks below the SLOWER response lands last and puts a
+		// drill the user already moved past back on the board, engine and all.
+		const generation = ++this.generation;
 		this.status = 'loading';
 		this.error = null;
 		try {
 			const drill = await getNextDrill(family);
+			if (generation !== this.generation) return;
 			this.begin(drill);
 		} catch (e) {
+			// A stale failure must not bury a newer success either.
+			if (generation !== this.generation) return;
 			this.drill = null;
 			if (e instanceof ApiError && e.status === 404) {
 				this.status = 'empty';
@@ -260,13 +268,17 @@ export class DrillSession {
 
 	/** Warm the engine, then let it open if the drill starts on its turn. */
 	private async startEngine(): Promise<void> {
+		// Warmup can outlive the drill that asked for it, so a failure from an
+		// abandoned load must not post an engine error over the current one.
+		const generation = this.generation;
 		try {
 			await stockfish.warmup();
 		} catch (error) {
+			if (generation !== this.generation) return;
 			this.engineError = error instanceof Error ? error.message : 'the engine failed to start';
 			return;
 		}
-		if (this.suspended) return;
+		if (this.suspended || generation !== this.generation) return;
 		this.engineReady = true;
 		if (this.status === 'playing' && !this.isPlayersTurn) this.engineReply();
 	}

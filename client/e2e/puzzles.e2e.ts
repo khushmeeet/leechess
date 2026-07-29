@@ -129,3 +129,30 @@ test('an illegal move is refused without counting as a wrong attempt', async ({
 	await playSolution(page, puzzle);
 	await expect(page.getByTestId('puzzle-correct')).toBeVisible();
 });
+
+test('an empty queue renders the empty state, not an error', async ({ page, request }) => {
+	// The reset fixture leaves no puzzles at all and the generic Lichess pool
+	// is never auto-seeded, so /puzzles/next 404s. Every other spec seeds a
+	// puzzle first, which left the whole 404 path — the one that decides
+	// between "nothing due" and "something broke" — unexercised in a browser.
+	expect((await request.get(`${API}/puzzles/next`)).status()).toBe(404);
+
+	await page.goto('/puzzles');
+	await expect(page.getByText('No puzzles due.')).toBeVisible();
+	await expect(page.getByText(/Failed to load a puzzle/)).toBeHidden();
+	await expect(page.getByTestId('puzzle-heading')).toHaveCount(0);
+});
+
+test('a motif filter with nothing due says so, and does not fall back to another motif', async ({
+	page,
+	request
+}) => {
+	// The hung-queen puzzle IS due, but under a different motif — a filtered
+	// queue must stay empty rather than serving whatever else is around.
+	await seedHungQueenPuzzle(request);
+	expect((await request.get(`${API}/puzzles/next?motif=fork`)).status()).toBe(404);
+
+	await page.goto('/puzzles?motif=fork');
+	await expect(page.getByText('No puzzles due for this motif.')).toBeVisible();
+	await expect(page.getByTestId('puzzle-heading')).toHaveCount(0);
+});
