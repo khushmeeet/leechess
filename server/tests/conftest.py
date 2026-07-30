@@ -103,6 +103,27 @@ def _no_real_llm(monkeypatch):
     monkeypatch.setenv("LEECHESS_AUTO_SEED", "off")
 
 
+@pytest.fixture(autouse=True)
+def _session_cookie_survives_http(monkeypatch):
+    """TestClient speaks plain http to `testserver`, and a Secure cookie is
+    never sent back over that — every request after a sign-in would look
+    anonymous. `make dev` and the browser suite turn the flag off for the same
+    reason; a deploy leaves it on."""
+    monkeypatch.setenv("LEECHESS_AUTH_COOKIE_SECURE", "off")
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """The failed-sign-in counter is module state, so it outlives any one app
+    instance — without this, a test that trips the limit locks the same
+    username out of every test that follows it."""
+    from app.auth import throttle
+
+    throttle.reset()
+    yield
+    throttle.reset()
+
+
 @pytest.fixture()
 def db_engine(tmp_path):
     """Throwaway SQLite database per test — never touches the dev database."""
@@ -157,6 +178,32 @@ def client(db_engine, lifespan_sessions):
             yield test_client
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def test_user(db_session):
+    """A registered account, written straight to the database. Tests that care
+    about the sign-in flow itself go through /auth/register instead."""
+    from app.auth.models import User
+
+    user = User(username="tester", hashed_password="not-a-real-hash", is_verified=True)
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
+@pytest.fixture()
+def authed_client(client, test_user):
+    """`client`, but every request arrives as `test_user`.
+
+    Overriding the dependency rather than minting a real cookie keeps route
+    tests about the route: the cookie and token path is covered on its own in
+    test_auth_register_login.py. The `client` fixture clears the overrides.
+    """
+    from app.auth.backend import current_active_user
+
+    app.dependency_overrides[current_active_user] = lambda: test_user
+    return client
 
 
 @pytest.fixture(scope="session")

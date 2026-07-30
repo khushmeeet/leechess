@@ -10,10 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.analysis import reset_stale_analyses, stockfish_binary
+from app.auth import router as auth_router
+from app.auth.backend import fastapi_users
 
 # Imported for its side effect: registering the users table on Base.metadata
-# before create_all runs below. Nothing else here touches it yet.
+# before create_all runs below.
 from app.auth import models as auth_models  # noqa: F401
+from app.auth.schemas import UserRead, UserUpdate
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
 from app.routers import endgames, games, progress, puzzles, testing, wikibook
@@ -75,8 +78,22 @@ async def cross_origin_isolation_headers(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    # The session cookie: in dev the SPA is a different origin to this API, so
+    # without this the browser sends no credentials and every request looks
+    # signed out. Safe alongside an explicit origin list — Starlette echoes the
+    # matching origin and never pairs credentials with a wildcard.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+auth_router.register_error_handlers(app)
+app.include_router(auth_router.router)
+# PATCH /users/me, which is how a username gets changed. The register, reset
+# and verify routers are deliberately not mounted: all three are built around
+# an email address, and this app has neither the column nor a way to send mail.
+app.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]
 )
 
 app.include_router(games.router)

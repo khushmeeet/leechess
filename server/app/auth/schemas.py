@@ -43,6 +43,15 @@ class PasswordSet(BaseModel):
     password: str
 
 
+class PasswordVerify(BaseModel):
+    """Body of /auth/login. Deliberately unconstrained: rejecting a badly
+    shaped username with a 422 before checking it would tell a caller which
+    names could exist."""
+
+    username: str
+    password: str
+
+
 class SessionOut(BaseModel):
     """Answer to "who am I?", called once on SPA boot. Always 200, including
     when signed out: GET /users/me answers that question with a 401, which

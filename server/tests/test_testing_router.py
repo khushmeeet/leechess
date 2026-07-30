@@ -113,3 +113,32 @@ def test_reset_empties_every_table_and_reseeds_the_catalog(reset_client, db_engi
     new_id = reset_client.post("/games", json={}).json()["id"]
     with Session(db_engine) as db:
         assert db.scalars(select(Game)).one().id == new_id
+
+
+def test_reset_clears_accounts_too(reset_client, db_engine):
+    """The loop above covers `users` automatically, since it walks the
+    metadata. This is the part that would not have been noticed: accounts are
+    what every browser spec signs in with, so a reset that left them behind
+    would leak one spec's user into the next — and a reset that could not
+    delete them at all (the row is referenced elsewhere) would fail loudly
+    here rather than mid-suite.
+    """
+    from sqlalchemy.orm import Session
+
+    from app.auth.models import User
+
+    reset_client.post("/auth/register", json={"username": "alice", "password": "correct-horse"})
+    with Session(db_engine) as db:
+        assert db.scalars(select(User)).all() != []
+
+    reset_client.post("/testing/reset")
+
+    with Session(db_engine) as db:
+        assert db.scalars(select(User)).all() == []
+    # the freed name is available again, which is what a spec re-running needs
+    assert (
+        reset_client.post(
+            "/auth/register", json={"username": "alice", "password": "correct-horse"}
+        ).status_code
+        == 200
+    )

@@ -59,10 +59,38 @@ The multi-threaded WASM engine needs `crossOriginIsolated === true`; the
 COOP/COEP headers are set by a vite middleware in dev/preview and by FastAPI
 middleware in production. The e2e smoke test asserts this stays true.
 
+## Accounts
+
+Username and password, and nothing else — no email column, no mail sender, no
+third-party sign-in. That means **there is no password reset**: a forgotten
+password is a lost account, which the sign-up form says out loud.
+
+A guest is an ordinary user row with no password (`users.is_guest`). It owns
+games and survives a reload like any other account, and `POST /auth/upgrade`
+sets a password on that same row — so signing up later moves no data.
+
+The username is the login identifier, so `users.username_canonical` holds the
+lowercased form under a unique index and every lookup goes through it;
+`users.username` keeps the casing you typed for display.
+
+Two environment variables:
+
+- `LEECHESS_AUTH_SECRET` — signs the session JWT. The server refuses to boot
+  with the built-in default once `LEECHESS_STATIC_DIR` is set (i.e. in the
+  deployed image), so set it with `fly secrets set`.
+- `LEECHESS_AUTH_COOKIE_SECURE` — `on` unless set to `off`. `make dev` and the
+  browser suite turn it off, because a browser will not send a `Secure` cookie
+  back over plain-http localhost.
+
 ## Deploy
 
 ```sh
 fly deploy --ha=false --remote-only
 ```
 
-SQLite lives on the `leechess_data` volume mounted at `/data`.
+SQLite lives on the `leechess_data` volume mounted at `/data`. Before the
+first deploy of an account-carrying build:
+
+```sh
+fly secrets set LEECHESS_AUTH_SECRET="$(openssl rand -hex 32)"
+```
