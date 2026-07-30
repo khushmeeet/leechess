@@ -14,7 +14,8 @@ import { GameStore, type PlayedMove } from './game.svelte';
 import { soundPrefs } from './soundPrefs.svelte';
 import { clearActiveGame, loadActiveGame, saveActiveGame } from './gamePersistence';
 import { stockfish, type EngineEval, type EngineLine } from './stockfish';
-import { usernamePrefs } from './username.svelte';
+// Aliased: `session` in this file already means the play session.
+import { session as account } from './session.svelte';
 import type { Key } from 'chessground/types';
 
 export interface MoveFeedback {
@@ -209,7 +210,7 @@ export class PlaySession {
 				const id = (
 					await startGame(
 						'engine',
-						usernamePrefs.name ?? undefined,
+						account.name ?? undefined,
 						this.playerColor,
 						engineName(this.engineSkill)
 					)
@@ -349,7 +350,7 @@ export class PlaySession {
 				const id = (
 					await startGame(
 						'engine',
-						usernamePrefs.name ?? undefined,
+						account.name ?? undefined,
 						this.playerColor,
 						engineName(this.engineSkill)
 					)
