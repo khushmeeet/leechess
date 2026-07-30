@@ -10,6 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.analysis import reset_stale_analyses, stockfish_binary
+
+# Imported for its side effect: registering the users table on Base.metadata
+# before create_all runs below. Nothing else here touches it yet.
+from app.auth import models as auth_models  # noqa: F401
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
 from app.routers import endgames, games, progress, puzzles, testing, wikibook
