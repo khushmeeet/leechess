@@ -48,14 +48,18 @@ export const test = base.extend<{ signedIn: boolean; cleanDatabase: void }>({
 				// too, so signing in first would leave the browser holding a
 				// perfectly valid cookie whose subject no longer exists — and
 				// every request in the spec would 401 for no visible reason.
-				//
-				// context.request shares the browser context's cookie jar, so the
-				// page is signed in without going through the welcome screen.
-				// Cookies ignore ports, so one set via :8123 is sent to :4173.
-				const guest = await context.request.post(`${API}/auth/guest`, {
+				const guest = await request.post(`${API}/auth/guest`, {
 					data: { username: 'e2e-player' }
 				});
 				expect(guest.ok()).toBe(true);
+
+				// `request` and the browser context are separate cookie jars, and
+				// specs use both — seeding games through `request`, then asserting
+				// on them in the page. Copying the session across makes them the
+				// same account, without which the seeded rows belong to nobody the
+				// page is signed in as. Cookies ignore ports, so one set by the
+				// API on :8123 is sent by the SPA on :4173.
+				await context.addCookies((await request.storageState()).cookies);
 			}
 
 			await use();

@@ -8,7 +8,7 @@ import chess
 import pytest
 from sqlalchemy import select
 
-from app.models import Game, Move, Puzzle, PuzzleAttempt
+from app.models import Game, Move, Puzzle, PuzzleAttempt, PuzzleState
 from app.spaced_repetition import BOX_INTERVALS
 
 pytestmark = pytest.mark.unit
@@ -25,39 +25,55 @@ def future() -> datetime:
 
 
 @pytest.fixture()
-def seed(db_session):
+def seed(db_session, signed_in_user):
     """Factory for personal/generic puzzles and attempt history. Personal
-    puzzles hang off one real stored move so source_move_id is genuine."""
-    game = Game(pgn="", analysis_status="complete")
+    puzzles hang off one real stored move so source_move_id is genuine.
+
+    Scheduling is per account now: a puzzle with no PuzzleState row for you
+    has never been served to you, which the queue reads as due. So `due_at`
+    only needs a row when the test wants something *not* due.
+    """
+    owner = signed_in_user.id
+    game = Game(pgn="", analysis_status="complete", user_id=owner)
     move = Move(ply=1, san="e4", fen_before=FEN, fen_after=FEN)
     game.moves.append(move)
     db_session.add(game)
 
     class Seed:
+        def _schedule(self, puzzle: Puzzle, due_at: datetime | None) -> None:
+            if due_at is None:
+                return
+            db_session.add(
+                PuzzleState(user_id=owner, puzzle_id=puzzle.id, due_at=due_at)
+            )
+            db_session.commit()
+
         def personal(self, motif: str, due_at: datetime | None = None) -> Puzzle:
             puzzle = Puzzle(
                 source_move=move, fen=FEN, solution="e2e4", motif=motif,
-                due_at=due_at or past(),
+                user_id=owner,
             )  # fmt: skip
             db_session.add(puzzle)
             db_session.commit()
+            self._schedule(puzzle, due_at)
             return puzzle
 
         def generic(
             self, motif: str, difficulty: int = 1200, due_at: datetime | None = None
         ) -> Puzzle:
+            # user_id stays NULL: the generic pool is shared by every account.
             puzzle = Puzzle(
                 fen=FEN, solution="e2e4", motif=motif, difficulty=difficulty,
-                due_at=due_at or past(),
             )  # fmt: skip
             db_session.add(puzzle)
             db_session.commit()
+            self._schedule(puzzle, due_at)
             return puzzle
 
         def attempts(self, puzzle: Puzzle, *results: bool) -> None:
             """Attempt history only — doesn't touch the puzzle's due date."""
             for correct in results:
-                puzzle.attempts.append(PuzzleAttempt(correct=correct))
+                puzzle.attempts.append(PuzzleAttempt(correct=correct, user_id=owner))
             db_session.commit()
 
     return Seed()
@@ -153,9 +169,13 @@ def test_correct_attempt_advances_the_box_and_reschedules(client, seed):
     assert [a["correct"] for a in detail["attempts"]] == [True]
 
 
-def test_wrong_attempt_resets_to_box_one_due_soon(client, seed, db_session):
+def test_wrong_attempt_resets_to_box_one_due_soon(
+    client, seed, db_session, signed_in_user
+):
     puzzle = seed.personal("fork")
-    puzzle.box = 4
+    db_session.add(
+        PuzzleState(user_id=signed_in_user.id, puzzle_id=puzzle.id, box=4, due_at=past())
+    )
     db_session.commit()
 
     body = client.post(
@@ -164,8 +184,11 @@ def test_wrong_attempt_resets_to_box_one_due_soon(client, seed, db_session):
     assert body["box"] == 1
 
     db_session.expire_all()
+    state = db_session.scalars(
+        select(PuzzleState).where(PuzzleState.puzzle_id == puzzle.id)
+    ).one()
     naive_now = datetime.now(timezone.utc).replace(tzinfo=None)
-    assert puzzle.due_at <= naive_now + BOX_INTERVALS[1]
+    assert state.due_at <= naive_now + BOX_INTERVALS[1]
 
 
 def test_revealed_answer_keeps_the_box(client, seed):

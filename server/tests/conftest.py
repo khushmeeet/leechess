@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 # Point the application database at a throwaway file BEFORE anything imports
@@ -17,7 +18,7 @@ os.environ["LEECHESS_DB_URL"] = f"sqlite:///{Path(_TEST_DB_DIR) / 'import-time.d
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.db import Base, get_db  # noqa: E402
@@ -35,6 +36,7 @@ LIFESPAN_SESSION_FACTORIES = (
     "app.analysis.session_factory",
     "app.seeding.session_factory",
     "app.endgame_drills.session_factory",
+    "app.legacy_ownership.session_factory",
 )
 
 
@@ -158,12 +160,11 @@ def lifespan_sessions(db_engine, monkeypatch):
     return TestSession
 
 
-@pytest.fixture()
-def client(db_engine, lifespan_sessions):
+@contextmanager
+def _test_client(TestSession):
     """Each request gets its own session, exactly like production get_db —
     sharing one session across requests leaks stale identity-map state
     (a cached Game can mask the analysis job's committed writes)."""
-    TestSession = lifespan_sessions
 
     def override_get_db():
         db = TestSession()
@@ -181,29 +182,56 @@ def client(db_engine, lifespan_sessions):
 
 
 @pytest.fixture()
-def test_user(db_session):
-    """A registered account, written straight to the database. Tests that care
-    about the sign-in flow itself go through /auth/register instead."""
-    from app.auth.models import User
-
-    user = User(username="tester", hashed_password="not-a-real-hash", is_verified=True)
-    db_session.add(user)
-    db_session.commit()
-    return user
+def anon_client(db_engine, lifespan_sessions):
+    """A client with no session. For the auth routes themselves, and for
+    asserting that everything else refuses an anonymous caller."""
+    with _test_client(lifespan_sessions) as test_client:
+        yield test_client
 
 
 @pytest.fixture()
-def authed_client(client, test_user):
-    """`client`, but every request arrives as `test_user`.
+def client(anon_client):
+    """Signed in as a guest, because every route outside /auth now requires an
+    account — an anonymous client would only ever prove that 401 works.
 
-    Overriding the dependency rather than minting a real cookie keeps route
-    tests about the route: the cookie and token path is covered on its own in
-    test_auth_register_login.py. The `client` fixture clears the overrides.
+    A real sign-in through the API rather than a dependency override: the
+    cookie, the token and the ownership columns are the thing under test in
+    most of these files, and an override would quietly skip all three.
     """
-    from app.auth.backend import current_active_user
+    response = anon_client.post("/auth/guest", json={"username": "tester"})
+    assert response.status_code == 200, response.text
+    return anon_client
 
-    app.dependency_overrides[current_active_user] = lambda: test_user
-    return client
+
+GUEST_USERNAME = "tester"
+OTHER_USERNAME = "somebody-else"
+
+
+@pytest.fixture()
+def signed_in_user(client, db_session):
+    """The account the `client` fixture is signed in as — for tests that write
+    rows directly and have to stamp them with an owner."""
+    from app.auth.models import User
+
+    # By name rather than "the only row": ownership tests add a second account.
+    return db_session.scalars(
+        select(User).where(User.username == GUEST_USERNAME)
+    ).one()
+
+
+@pytest.fixture()
+def second_client(client):
+    """A second account, with a cookie jar of its own.
+
+    A separate TestClient, not a second sign-in on the same one: cookies live
+    on the client, so reusing it would just swap which account the single
+    browser is. `client` has already installed the get_db override and run the
+    lifespan, so this needs neither.
+    """
+    other = TestClient(app)
+    response = other.post("/auth/guest", json={"username": OTHER_USERNAME})
+    assert response.status_code == 200, response.text
+    return other
 
 
 @pytest.fixture(scope="session")

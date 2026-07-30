@@ -3,6 +3,7 @@ import uuid
 from collections.abc import Iterator
 
 from fastapi import Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, UUIDIDMixin
 from fastapi_users.exceptions import FastAPIUsersException, InvalidPasswordException
@@ -11,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.config import auth_secret
 from app.auth.db import SyncUserDatabase, get_user_db
 from app.auth.models import USERNAME_PATTERN, User
+from app.legacy_ownership import adopt_orphaned_rows
 
 # No complexity rules. There is no password reset here — leechess holds no
 # email address to send one to — so anything that nudges people toward a
@@ -101,6 +103,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         except IntegrityError as exc:
             # Lost the race against a concurrent signup on the same name.
             raise UsernameTaken(username) from exc
+
+        # Data written before accounts existed has no owner. If this is the
+        # only account, it is unambiguously theirs — see app/legacy_ownership.
+        # Doing it here as well as at boot is what makes the realistic order
+        # work: deploy first, sign up second.
+        await run_in_threadpool(adopt_orphaned_rows, self.user_db.session)
 
         await self.on_after_register(user, request)
         return user

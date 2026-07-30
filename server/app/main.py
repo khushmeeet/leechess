@@ -19,6 +19,7 @@ from app.auth import models as auth_models  # noqa: F401
 from app.auth.schemas import UserRead, UserUpdate
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
+from app.legacy_ownership import claim_legacy_rows
 from app.routers import endgames, games, progress, puzzles, testing, wikibook
 from app.seeding import maybe_autoseed
 
@@ -35,6 +36,10 @@ async def lifespan(app: FastAPI):
     # The endgame-drill catalog is a fixed dozen rows — insert the ones this
     # database doesn't have yet, leaving the Leitner state of the rest alone.
     seed_catalog()
+    # Data written before accounts existed has no owner. If the sole account
+    # is already there (a restart after signing up), hand it over; otherwise
+    # the same call runs again when that account is created.
+    claim_legacy_rows()
     yield
 
 
@@ -50,8 +55,11 @@ def _migrate_existing_tables() -> None:
     from sqlalchemy import text
 
     with engine.connect() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(games)"))}
-        if "user_color" not in columns:
+
+        def columns_of(table: str) -> set[str]:
+            return {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+
+        if "user_color" not in columns_of("games"):
             conn.execute(
                 text(
                     "ALTER TABLE games ADD COLUMN user_color VARCHAR "
@@ -59,6 +67,20 @@ def _migrate_existing_tables() -> None:
                 )
             )
             conn.commit()
+
+        # Ownership. SQLite only allows ADD COLUMN with a NULL default when a
+        # REFERENCES clause is attached, which is what we want anyway: rows
+        # written before accounts existed have no owner, and the routers treat
+        # NULL as "not yours" — an un-adopted row is invisible, never public.
+        for table in ("games", "puzzles", "puzzle_attempts", "endgame_drill_attempts"):
+            if "user_id" not in columns_of(table):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ADD COLUMN user_id CHAR(36) "
+                        "REFERENCES users(id)"
+                    )
+                )
+                conn.commit()
 
 
 _migrate_existing_tables()

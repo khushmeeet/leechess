@@ -192,8 +192,9 @@ def test_request_summary_calls_claude_and_extracts_text(monkeypatch):
 # --- the review endpoint serves the stored text ---
 
 
-def test_review_endpoint_serves_summary(claude, client, db_session):
+def test_review_endpoint_serves_summary(claude, client, db_session, signed_in_user):
     game = tagged_hung_queen_game()
+    game.user_id = signed_in_user.id
     db_session.add(game)
     generate_summary_for_game(game)
     db_session.commit()

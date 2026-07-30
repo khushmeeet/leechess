@@ -83,11 +83,13 @@ def test_player_moves_local_games_count_both_sides():
 
 
 @pytest.fixture()
-def seeded_game(db_session):
+def seeded_game(db_session, signed_in_user):
     """An analyzed local game with hand-set evals and classifications.
     White: losses 60 and 0 → avg 30, one mistake.
     Black: losses 30 and 110 → avg 70, one inaccuracy and one blunder."""
-    game = Game(pgn="", mode="local", analysis_status="complete")
+    game = Game(
+        pgn="", mode="local", analysis_status="complete", user_id=signed_in_user.id
+    )
     rows = [
         (1, 20.0, -40.0, "mistake"),
         (2, -40.0, -10.0, "inaccuracy"),
@@ -115,8 +117,8 @@ def test_game_detail_serves_the_per_side_summary(client, seeded_game):
     }
 
 
-def test_game_detail_summary_null_until_analyzed(client, db_session):
-    game = Game(pgn="", mode="local")
+def test_game_detail_summary_null_until_analyzed(client, db_session, signed_in_user):
+    game = Game(pgn="", mode="local", user_id=signed_in_user.id)
     game.moves.append(Move(ply=1, san="e4", fen_before=FEN, fen_after=FEN))
     db_session.add(game)
     db_session.commit()

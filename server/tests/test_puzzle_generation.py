@@ -9,7 +9,7 @@ import chess
 import pytest
 from sqlalchemy import select
 
-from app.models import Game, Move, Puzzle
+from app.models import Game, Move, Puzzle, PuzzleState
 from app.puzzle_generation import create_puzzles_for_game
 from tests.test_motifs import analyzed_hung_queen_game
 
@@ -44,9 +44,9 @@ def test_blunder_generates_a_punish_the_mistake_puzzle(db_session):
     assert puzzle.solution == "c6e5"
     assert puzzle.motif == "hanging_piece"
     assert puzzle.difficulty is None
-    # fresh puzzles are in box 1 and due immediately
-    assert puzzle.box == 1
-    assert puzzle.due_at <= datetime.now(timezone.utc)
+    # Scheduling is per account (PuzzleState) and written lazily, so a fresh
+    # puzzle has no state row at all — which is what "box 1, due now" means.
+    assert puzzle.states == []
 
 
 ROYAL_FORK_FEN = "r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1"
@@ -114,13 +114,22 @@ def test_create_puzzles_is_idempotent(db_session):
 
 
 @pytest.mark.unit
-def test_practice_makes_this_games_puzzles_due_now(client, db_session):
+def test_practice_makes_this_games_puzzles_due_now(
+    client, db_session, signed_in_user
+):
     game = analyzed_hung_queen_game()
+    game.user_id = signed_in_user.id
     db_session.add(game)
     create_puzzles_for_game(game)
     puzzle = game.moves[4].puzzles[0]
-    puzzle.box = 3
-    puzzle.due_at = datetime(2030, 1, 1)  # scheduled far out
+    db_session.commit()
+    state = PuzzleState(
+        user_id=signed_in_user.id,
+        puzzle_id=puzzle.id,
+        box=3,
+        due_at=datetime(2030, 1, 1),  # scheduled far out
+    )
+    db_session.add(state)
     db_session.commit()
 
     response = client.post(f"/games/{game.id}/practice")
@@ -128,17 +137,18 @@ def test_practice_makes_this_games_puzzles_due_now(client, db_session):
     assert response.json() == {"game_id": game.id, "queued": 1}
 
     db_session.expire_all()
-    assert puzzle.due_at <= naive_utcnow()
-    assert puzzle.box == 3  # drilling now doesn't reset learning progress
+    assert state.due_at <= naive_utcnow()
+    assert state.box == 3  # drilling now doesn't reset learning progress
     # no duplicate rows were created
     assert len(db_session.scalars(select(Puzzle)).all()) == 1
 
 
 @pytest.mark.unit
 def test_practice_backfills_puzzles_for_games_analyzed_before_phase3(
-    client, db_session
+    client, db_session, signed_in_user
 ):
     game = analyzed_hung_queen_game()  # analyzed, but no puzzle rows yet
+    game.user_id = signed_in_user.id
     db_session.add(game)
     db_session.commit()
 

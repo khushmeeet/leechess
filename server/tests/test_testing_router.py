@@ -65,6 +65,7 @@ def reset_client(db_engine, lifespan_sessions, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     try:
         with TestClient(app) as test_client:
+            _sign_in(test_client)
             yield test_client
     finally:
         app.dependency_overrides.clear()
@@ -73,6 +74,13 @@ def reset_client(db_engine, lifespan_sessions, monkeypatch):
             for route in app.router.routes
             if getattr(route, "path", "") != "/testing/reset"
         ]
+
+
+def _sign_in(client) -> None:
+    """The reset endpoint is the bootstrap and stays anonymous, but everything
+    it is used to set up and check needs an account."""
+    response = client.post("/auth/guest", json={"username": "resetter"})
+    assert response.status_code == 200, response.text
 
 
 def test_reset_empties_every_table_and_reseeds_the_catalog(reset_client, db_engine):
@@ -108,7 +116,10 @@ def test_reset_empties_every_table_and_reseeds_the_catalog(reset_client, db_engi
             else:
                 assert remaining == 0, f"{table.name} survived the reset"
 
-    # and the app still works: a fresh game starts from an empty database
+    # and the app still works: a fresh game starts from an empty database.
+    # Signing in again first, because the truncate above took the account with
+    # it — which is exactly why the browser fixture resets before it logs in.
+    _sign_in(reset_client)
     assert reset_client.get("/endgames/next").status_code == 200
     new_id = reset_client.post("/games", json={}).json()["id"]
     with Session(db_engine) as db:
@@ -127,9 +138,8 @@ def test_reset_clears_accounts_too(reset_client, db_engine):
 
     from app.auth.models import User
 
-    reset_client.post("/auth/register", json={"username": "alice", "password": "correct-horse"})
     with Session(db_engine) as db:
-        assert db.scalars(select(User)).all() != []
+        assert db.scalars(select(User)).all() != []  # the fixture signed in
 
     reset_client.post("/testing/reset")
 

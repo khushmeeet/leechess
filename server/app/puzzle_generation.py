@@ -55,6 +55,11 @@ def create_puzzles_for_game(game: Game) -> list[Puzzle]:
             continue
         puzzle = puzzle_for_move(move, reply.best_move if reply else None)
         if puzzle is not None:
+            # A personal puzzle belongs to whoever played the game it came
+            # from — it is a position they got wrong, and nobody else's queue
+            # should serve it. (The generic Lichess pool leaves this NULL and
+            # is shared; see models.Puzzle.)
+            puzzle.user_id = game.user_id
             move.puzzles.append(puzzle)
             created.append(puzzle)
     return created

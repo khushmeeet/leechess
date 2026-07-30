@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.backend import current_active_user
+from app.auth.models import User
 from app.cpl import aggregate_cpl, player_moves
 from app.db import get_db
 from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt, utcnow
@@ -25,12 +27,16 @@ MIN_CALLOUT_ATTEMPTS = 3
 WEAKEST_LIMIT = 3
 
 
-def motif_progress(db: Session, since: datetime | None) -> list[MotifProgress]:
+def motif_progress(
+    db: Session, user: User, since: datetime | None
+) -> list[MotifProgress]:
     """All-attempt success rate per motif within the window, weakest first.
     (The puzzle queue's "weakest" uses a recent-attempts window instead —
     that one drives scheduling, this one reports totals.)"""
-    query = select(Puzzle.motif, PuzzleAttempt.correct).join(
-        Puzzle, PuzzleAttempt.puzzle_id == Puzzle.id
+    query = (
+        select(Puzzle.motif, PuzzleAttempt.correct)
+        .join(Puzzle, PuzzleAttempt.puzzle_id == Puzzle.id)
+        .where(PuzzleAttempt.user_id == user.id)
     )
     if since is not None:
         query = query.where(PuzzleAttempt.attempted_at >= since)
@@ -86,11 +92,12 @@ def day_streak(activity_dates: set[date], today: date) -> int:
 def get_progress(
     days: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> ProgressOut:
     now = utcnow()
     since = now - timedelta(days=days) if days is not None else None
 
-    motifs = motif_progress(db, since)
+    motifs = motif_progress(db, user, since)
     # "Weakest" needs enough attempts to be a trend, and a perfect record —
     # however small the sample pool ranks it — isn't a weakness to drill.
     weakest = [
@@ -101,7 +108,7 @@ def get_progress(
 
     games_query = (
         select(Game)
-        .where(Game.analysis_status == "complete")
+        .where(Game.user_id == user.id, Game.analysis_status == "complete")
         .order_by(Game.created_at, Game.id)
     )
     if since is not None:
@@ -112,7 +119,9 @@ def get_progress(
         if (point := game_cpl(game)) is not None
     ]
 
-    solved_query = select(PuzzleAttempt).where(PuzzleAttempt.correct.is_(True))
+    solved_query = select(PuzzleAttempt).where(
+        PuzzleAttempt.user_id == user.id, PuzzleAttempt.correct.is_(True)
+    )
     if since is not None:
         solved_query = solved_query.where(PuzzleAttempt.attempted_at >= since)
     puzzles_solved = len(db.scalars(solved_query).all())
@@ -121,7 +130,8 @@ def get_progress(
     # *rate* swings on a single attempt, but "how many have I passed" is
     # honest at any sample size.
     drills_query = select(EndgameDrillAttempt).where(
-        EndgameDrillAttempt.success.is_(True)
+        EndgameDrillAttempt.user_id == user.id,
+        EndgameDrillAttempt.success.is_(True),
     )
     if since is not None:
         drills_query = drills_query.where(EndgameDrillAttempt.attempted_at >= since)
@@ -131,16 +141,30 @@ def get_progress(
     # game, puzzle attempt, or endgame drill counts as activity for its (UTC)
     # day. Drills are training like the rest — a day spent on Lucena has to
     # keep the streak alive or the number quietly calls it idle.
-    activity = {
-        stamp.date()
-        for stamp in db.scalars(select(Game.created_at)).all()
-    } | {
-        stamp.date()
-        for stamp in db.scalars(select(PuzzleAttempt.attempted_at)).all()
-    } | {
-        stamp.date()
-        for stamp in db.scalars(select(EndgameDrillAttempt.attempted_at)).all()
-    }
+    activity = (
+        {
+            stamp.date()
+            for stamp in db.scalars(
+                select(Game.created_at).where(Game.user_id == user.id)
+            ).all()
+        }
+        | {
+            stamp.date()
+            for stamp in db.scalars(
+                select(PuzzleAttempt.attempted_at).where(
+                    PuzzleAttempt.user_id == user.id
+                )
+            ).all()
+        }
+        | {
+            stamp.date()
+            for stamp in db.scalars(
+                select(EndgameDrillAttempt.attempted_at).where(
+                    EndgameDrillAttempt.user_id == user.id
+                )
+            ).all()
+        }
+    )
 
     return ProgressOut(
         days=days,
