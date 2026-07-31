@@ -58,7 +58,7 @@
 									class="font-semibold text-accent underline"
 									href={resolve('/review/[gameId]', { gameId: String(game.id) })}
 								>
-									{game.id}
+									{game.number}
 								</a>
 							</td>
 							<td class="py-1.5">{game.white} vs {game.black}</td>

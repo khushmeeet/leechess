@@ -1,5 +1,12 @@
 import { expect, test } from './fixtures';
-import { API, hungQueenSans, scholarsMateSans, seedGame, waitForAnalysis } from './helpers';
+import {
+	API,
+	gameNumber,
+	hungQueenSans,
+	scholarsMateSans,
+	seedGame,
+	waitForAnalysis
+} from './helpers';
 
 // Phase 4 Progress screen. Seeds through the API (a real analyzed game +
 // puzzle attempts) rather than playing via the UI — faster and deterministic
@@ -14,6 +21,7 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	// One analyzed game feeds the CPL trend and queues a personal puzzle.
 	const gameId = await seedGame(request, hungQueenSans);
 	await waitForAnalysis(request, gameId);
+	const number = await gameNumber(request, gameId);
 
 	// Three attempts on one puzzle so its motif clears the weakest-motif
 	// callout's minimum-sample gate (and 1/3 correct keeps it weak).
@@ -45,7 +53,7 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	// with one game charted, the nearest point is that game wherever the
 	// pointer goes
 	await page.getByTestId('cpl-trend').hover();
-	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${gameId}`);
+	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${number}`);
 
 	// legend entries isolate one phase and toggle back off; "Overall" is the one
 	// series every analyzed game has
@@ -57,7 +65,7 @@ test('progress screen renders seeded aggregates and drills into the weakest moti
 	await expect(isolate).toHaveAttribute('aria-pressed', 'false');
 
 	await page.getByText('View as table').click();
-	await expect(page.getByRole('cell', { name: `#${gameId}` })).toBeVisible();
+	await expect(page.getByRole('cell', { name: `#${number}` })).toBeVisible();
 
 	// weakest-motif callout → filtered puzzle drill
 	const drillLink = page.getByTestId('weakest-motif-link').filter({ hasText: motifLabel }).first();
@@ -76,10 +84,12 @@ test('the CPL tooltip reads out the point nearest the pointer, not the newest ga
 	// what the previous version of this assertion did — it passed only while
 	// the chart had one point, and reported the wrong game the moment earlier
 	// specs had left others behind.
-	const oldest = await seedGame(request, hungQueenSans);
-	await waitForAnalysis(request, oldest);
-	const newest = await seedGame(request, scholarsMateSans, '1-0');
-	await waitForAnalysis(request, newest);
+	const oldestId = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, oldestId);
+	const newestId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, newestId);
+	const oldest = await gameNumber(request, oldestId);
+	const newest = await gameNumber(request, newestId);
 
 	await page.goto('/progress');
 	const chart = page.getByTestId('cpl-trend');

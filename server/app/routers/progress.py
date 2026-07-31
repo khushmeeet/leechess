@@ -66,6 +66,7 @@ def game_cpl(game: Game) -> GameCplPoint | None:
         return None
     return GameCplPoint(
         game_id=game.id,
+        number=game.number,
         created_at=game.created_at,
         mode=game.mode,
         avg_cpl=agg.avg_cpl,

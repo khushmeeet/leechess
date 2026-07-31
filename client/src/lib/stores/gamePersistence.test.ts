@@ -8,6 +8,7 @@ import {
 } from './gamePersistence';
 
 const snapshot: Omit<SavedGame, 'version'> = {
+	owner: 'account-1',
 	engineSkill: 5,
 	playerColor: 'white',
 	moves: ['e2e4', 'e7e5', 'g1f3'],
@@ -16,16 +17,17 @@ const snapshot: Omit<SavedGame, 'version'> = {
 	lastFeedback: { ply: 1, san: 'e4', classification: 'best' },
 	currentEval: 25,
 	serverGameId: 12,
-	completedGameId: null
+	completedGameId: null,
+	completedGameNumber: null
 };
 
 function valid(): Record<string, unknown> {
-	return JSON.parse(JSON.stringify({ version: 1, ...snapshot }));
+	return JSON.parse(JSON.stringify({ version: 2, ...snapshot }));
 }
 
 describe('parseSavedGame', () => {
 	it('accepts a well-formed snapshot', () => {
-		expect(parseSavedGame(JSON.stringify(valid()))).toEqual({ version: 1, ...snapshot });
+		expect(parseSavedGame(JSON.stringify(valid()))).toEqual({ version: 2, ...snapshot });
 	});
 
 	it('rejects null, corrupt JSON, and non-objects', () => {
@@ -37,8 +39,17 @@ describe('parseSavedGame', () => {
 	});
 
 	it('rejects other schema versions', () => {
-		expect(parseSavedGame(JSON.stringify({ ...valid(), version: 2 }))).toBeNull();
+		// including version 1, which predates the owner field: there is no way
+		// to tell whose game it was, and guessing is the bug that field prevents
+		expect(parseSavedGame(JSON.stringify({ ...valid(), version: 1 }))).toBeNull();
+		expect(parseSavedGame(JSON.stringify({ ...valid(), version: 3 }))).toBeNull();
 		expect(parseSavedGame(JSON.stringify({ ...valid(), version: undefined }))).toBeNull();
+	});
+
+	it('rejects a snapshot with no owner on it', () => {
+		expect(parseSavedGame(JSON.stringify({ ...valid(), owner: undefined }))).toBeNull();
+		expect(parseSavedGame(JSON.stringify({ ...valid(), owner: '' }))).toBeNull();
+		expect(parseSavedGame(JSON.stringify({ ...valid(), owner: 7 }))).toBeNull();
 	});
 
 	it('rejects an empty or malformed move list', () => {
@@ -100,14 +111,25 @@ describe('localStorage wrappers', () => {
 	});
 
 	it('round-trips a snapshot through save/load', () => {
-		expect(loadActiveGame()).toBeNull();
+		expect(loadActiveGame(snapshot.owner)).toBeNull();
 		saveActiveGame(snapshot);
-		expect(loadActiveGame()).toEqual({ version: 1, ...snapshot });
+		expect(loadActiveGame(snapshot.owner)).toEqual({ version: 2, ...snapshot });
 	});
 
 	it('clear removes the saved game', () => {
 		saveActiveGame(snapshot);
 		clearActiveGame();
-		expect(loadActiveGame()).toBeNull();
+		expect(loadActiveGame(snapshot.owner)).toBeNull();
+	});
+
+	it('never hands a game to anyone but the player who saved it', () => {
+		// Signing up mid-game is the case: the anonymous game must not become
+		// the new account's, in the tab that created it or any later one.
+		saveActiveGame({ ...snapshot, owner: 'anonymous' });
+
+		expect(loadActiveGame('account-1')).toBeNull();
+		// and it is gone, not merely refused — nothing is kept from a session
+		// that keeps nothing
+		expect(loadActiveGame('anonymous')).toBeNull();
 	});
 });

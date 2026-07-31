@@ -1,7 +1,10 @@
 import type { Classification } from '$lib/classification';
 
 const STORAGE_KEY = 'leechess.activeGame';
-const VERSION = 1;
+// 2: games carry the owner they belong to (see below). A version-1 save is
+// discarded rather than adopted — there is no way to tell whose it was, and
+// guessing is the bug the field exists to prevent.
+const VERSION = 2;
 
 /** Snapshot of an in-progress (or naturally finished) game, saved after every
  * state change so a refresh or in-app navigation restores it. Moves are UCI
@@ -9,6 +12,13 @@ const VERSION = 1;
  * doubles as the integrity check on whatever was in storage. */
 export interface SavedGame {
 	version: number;
+	/** Who was playing: an account id, or `anonymous`. A saved game is only
+	 * ever handed back to the same one. Creating an account is a fresh start,
+	 * not an inheritance — the anonymous game on the board a moment ago was
+	 * played by nobody, and carrying it over would make the new account's
+	 * first game one it never played. Signing out is the same rule in the
+	 * other direction. */
+	owner: string;
 	engineSkill: number;
 	/** Side the user plays; saves from before color choice default to white. */
 	playerColor: 'white' | 'black';
@@ -19,6 +29,9 @@ export interface SavedGame {
 	currentEval: number | null;
 	serverGameId: number | null;
 	completedGameId: number | null;
+	/** The account's number for the completed game ("saved as game #3") —
+	 * null until the server has taken it, and for anonymous play always. */
+	completedGameNumber: number | null;
 }
 
 const CLASSIFICATIONS = new Set(['best', 'good', 'inaccuracy', 'mistake', 'blunder']);
@@ -41,6 +54,7 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 	if (typeof data !== 'object' || data === null) return null;
 	const saved = data as Record<string, unknown>;
 	if (saved.version !== VERSION) return null;
+	if (typeof saved.owner !== 'string' || saved.owner === '') return null;
 	if (typeof saved.engineSkill !== 'number') return null;
 	if (
 		saved.playerColor !== undefined &&
@@ -64,6 +78,7 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 	if (!isNumberOrNull(saved.currentEval)) return null;
 	if (!isNumberOrNull(saved.serverGameId)) return null;
 	if (!isNumberOrNull(saved.completedGameId)) return null;
+	if (!isNumberOrNull(saved.completedGameNumber)) return null;
 	const feedback = saved.lastFeedback as SavedGame['lastFeedback'];
 	if (feedback !== null) {
 		if (typeof feedback !== 'object') return null;
@@ -73,6 +88,7 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 	const moves = saved.moves as string[];
 	return {
 		version: VERSION,
+		owner: saved.owner,
 		engineSkill: saved.engineSkill,
 		playerColor: saved.playerColor === 'black' ? 'black' : 'white',
 		moves,
@@ -84,7 +100,8 @@ export function parseSavedGame(raw: string | null): SavedGame | null {
 		lastFeedback: feedback && feedback.ply <= moves.length ? feedback : null,
 		currentEval: saved.currentEval,
 		serverGameId: saved.serverGameId,
-		completedGameId: saved.completedGameId
+		completedGameId: saved.completedGameId,
+		completedGameNumber: saved.completedGameNumber
 	};
 }
 
@@ -94,8 +111,17 @@ function storage(): Storage | null {
 	return typeof localStorage === 'undefined' ? null : localStorage;
 }
 
-export function loadActiveGame(): SavedGame | null {
-	return parseSavedGame(storage()?.getItem(STORAGE_KEY) ?? null);
+/** The saved game, if there is one and it belongs to `owner`. Somebody else's
+ * is dropped on the spot rather than left to be found again later — "nothing
+ * is kept" has to be true of storage, not only of the screen. */
+export function loadActiveGame(owner: string): SavedGame | null {
+	const saved = parseSavedGame(storage()?.getItem(STORAGE_KEY) ?? null);
+	if (saved === null) return null;
+	if (saved.owner !== owner) {
+		clearActiveGame();
+		return null;
+	}
+	return saved;
 }
 
 export function saveActiveGame(saved: Omit<SavedGame, 'version'>): void {

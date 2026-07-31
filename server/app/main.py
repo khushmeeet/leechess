@@ -98,7 +98,42 @@ def _migrate_existing_tables(bind=None) -> None:
             conn.execute(text("ALTER TABLE users DROP COLUMN is_guest"))
             conn.commit()
 
+        # Games used to be shown by row id, which counts everybody's games at
+        # once. The per-account number replaces it; existing games are dealt
+        # their numbers here, once, in the order they were played.
+        if "number" not in columns_of("games"):
+            conn.execute(text("ALTER TABLE games ADD COLUMN number INTEGER"))
+            conn.commit()
+            _number_the_saved_games(conn)
+
         _move_schedules_off_the_content_rows(conn, columns_of)
+
+
+def _number_the_saved_games(conn) -> None:
+    """Backfill Game.number: 1..N per account, oldest first.
+
+    Unfinished games are skipped — they are numbered when they complete, and
+    most of them never will be. Rows with no owner are numbered as one
+    sequence of their own: pre-accounts data is all one person's, and
+    adopt_orphaned_rows is what eventually hands it over (it renumbers what it
+    adopts, so nothing here has to guess who that will be).
+    """
+    from sqlalchemy import text
+
+    rows = conn.execute(
+        text(
+            "SELECT id, user_id FROM games WHERE analysis_status != 'pending' "
+            "ORDER BY created_at, id"
+        )
+    ).all()
+    counters: dict[object, int] = {}
+    for game_id, user_id in rows:
+        counters[user_id] = counters.get(user_id, 0) + 1
+        conn.execute(
+            text("UPDATE games SET number = :number WHERE id = :id"),
+            {"number": counters[user_id], "id": game_id},
+        )
+    conn.commit()
 
 
 # (content table, state table, foreign key, attempts table, attempts FK)

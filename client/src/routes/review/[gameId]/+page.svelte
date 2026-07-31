@@ -302,7 +302,12 @@
 	<p class="text-muted">Loading game…</p>
 {:else}
 	<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-		<h1 class="font-display text-2xl">Game #{game.id}</h1>
+		<!-- Numbered per account, and only once it is finished — an unfinished
+		     game is not one of the account's games yet, so it has no number to
+		     go by. -->
+		<h1 class="font-display text-2xl">
+			{game.number === null ? 'Unfinished game' : `Game #${game.number}`}
+		</h1>
 		<p class="text-sm text-muted">
 			{game.white} vs {game.black} · {outcome ? OUTCOME_LABELS[outcome] : game.result} · {game.mode}
 		</p>

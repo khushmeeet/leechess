@@ -206,3 +206,44 @@ def test_discard_rejects_completed_game(client, no_analysis):
     game_id = _finished_game(client)
     assert client.delete(f"/games/{game_id}").status_code == 409
     assert client.get(f"/games/{game_id}").status_code == 200
+
+
+# --- the number a game is shown as (per account, not the row id) ---
+
+
+def test_the_first_game_an_account_saves_is_number_one(client, no_analysis):
+    """The bug this replaces: the number shown was the primary key, so on a
+    database with history a new account's first game came out as #189."""
+    assert client.get(f"/games/{_finished_game(client)}").json()["number"] == 1
+    assert client.get(f"/games/{_finished_game(client)}").json()["number"] == 2
+
+
+def test_numbers_count_saved_games_per_account(client, no_analysis, second_client):
+    """Two accounts on the same database, each counting from one — the whole
+    point of not showing the row id."""
+    mine = [_finished_game(client) for _ in range(3)]
+    theirs = _finished_game(second_client)
+
+    assert [g["number"] for g in client.get("/games").json()] == [3, 2, 1]
+    assert [g["id"] for g in client.get("/games").json()] == list(reversed(mine))
+    assert second_client.get("/games").json()[0]["number"] == 1
+    assert theirs not in mine
+
+
+def test_an_unfinished_game_has_no_number_until_it_is_saved(client, no_analysis):
+    """Abandoned games are deleted rather than kept, so numbering at creation
+    would leave holes — the review list would read #1, #3, #7."""
+    abandoned = client.post("/games", json={}).json()["id"]
+    client.post(f"/games/{abandoned}/moves", json={"san": "e4"})
+    assert client.get(f"/games/{abandoned}").json()["number"] is None
+    assert client.delete(f"/games/{abandoned}").status_code == 204
+
+    assert client.get(f"/games/{_finished_game(client)}").json()["number"] == 1
+
+
+def test_completing_twice_does_not_take_a_second_number(client, no_analysis):
+    game_id = _finished_game(client)
+    assert client.post(f"/games/{game_id}/complete", json={}).status_code == 409
+
+    assert client.get(f"/games/{game_id}").json()["number"] == 1
+    assert client.get(f"/games/{_finished_game(client)}").json()["number"] == 2

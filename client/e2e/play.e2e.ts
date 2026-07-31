@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { API, move, waitForEngineReady } from './helpers';
+import { API, move, restoreActiveGame, syncedGameId, waitForEngineReady } from './helpers';
 
 // Phase 1 acceptance criteria for the Play screen: live classification badge
 // within 500ms of a move, and every finished game auto-completing
@@ -114,10 +114,13 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	await expect(page.getByTestId('game-result-confetti')).toHaveCount(0);
 
 	// completion is automatic — no save button, no user action
-	const saved = page.getByText(/Saved as game #\d+, analysis queued/);
-	await expect(saved).toBeVisible();
-	const gameId = (await saved.textContent())!.match(/#(\d+)/)![1];
-	await expect(page.getByRole('link', { name: 'open review' })).toBeVisible();
+	// The account's own count of its saved games — its first, on a database
+	// emptied before this test. The row id is a different number, and only the
+	// link is addressed by it.
+	await expect(page.getByText('Saved as game #1, analysis queued')).toBeVisible();
+	const review = page.getByRole('link', { name: 'open review' });
+	await expect(review).toBeVisible();
+	const gameId = (await review.getAttribute('href'))!.match(/\/review\/(\d+)/)![1];
 
 	const response = await request.get(`${API}/games/${gameId}`);
 	expect(response.ok()).toBe(true);
@@ -132,21 +135,9 @@ test('winning shows a congratulatory overlay with confetti', async ({ page }) =>
 	// Restore a naturally completed Scholar's Mate. Replaying these UCI moves
 	// through GameStore derives the terminal result exactly as live play does;
 	// the completed id prevents this UI-only fixture from creating server data.
-	await page.addInitScript(() => {
-		localStorage.setItem(
-			'leechess.activeGame',
-			JSON.stringify({
-				version: 1,
-				engineSkill: 5,
-				moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6', 'h5f7'],
-				evals: [],
-				badges: [],
-				lastFeedback: null,
-				currentEval: null,
-				serverGameId: null,
-				completedGameId: 999
-			})
-		);
+	await restoreActiveGame(page, {
+		moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6', 'h5f7'],
+		completedGameId: 999
 	});
 
 	await page.goto('/');
@@ -166,9 +157,8 @@ test('abandoning a game discards it instead of saving it for review', async ({ p
 	await waitForEngineReady(page);
 
 	await move(page, 'e2', 'e4');
-	const syncing = page.getByText(/syncing to server as game #\d+/);
-	await expect(syncing).toBeVisible();
-	const gameId = (await syncing.textContent())!.match(/#(\d+)/)![1];
+	await expect(page.getByText('syncing to server')).toBeVisible();
+	const gameId = await syncedGameId(page);
 
 	// starting a new game abandons the unfinished one — its server record
 	// is deleted, so it can never show up on the review page
@@ -186,9 +176,8 @@ test('game survives a refresh and stays in sync with the server', async ({ page,
 	// stale text from before the move's render flush
 	await expect(page.getByTestId('move-list')).toContainText('e4');
 	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
-	const syncing = page.getByText(/syncing to server as game #\d+/);
-	await expect(syncing).toBeVisible();
-	const gameId = (await syncing.textContent())!.match(/#(\d+)/)![1];
+	await expect(page.getByText('syncing to server')).toBeVisible();
+	const gameId = await syncedGameId(page);
 
 	await page.reload();
 	// restored: the move pair is back (board + list + badge), the strength is
@@ -197,7 +186,8 @@ test('game survives a refresh and stays in sync with the server', async ({ page,
 	await expect(page.getByTestId('move-list').locator('li')).toHaveCount(1);
 	await expect(page.getByTestId('move-badge')).toBeVisible();
 	await expect(page.locator('#strength')).toBeDisabled();
-	await expect(page.getByText(`syncing to server as game #${gameId}`)).toBeVisible();
+	await expect(page.getByText('syncing to server')).toBeVisible();
+	expect(await syncedGameId(page)).toBe(gameId); // the same record, not a new one
 	await waitForEngineReady(page);
 
 	// the game continues where it left off; after it ends, the server record
@@ -264,22 +254,8 @@ test('playing as Black flips the board, the engine opens, and it survives a refr
 
 test('promoting a pawn opens the piece picker instead of auto-queening', async ({ page }) => {
 	// Restore a position where 5.bxa8 promotes (white pawn on b7, rook on a8).
-	await page.addInitScript(() => {
-		localStorage.setItem(
-			'leechess.activeGame',
-			JSON.stringify({
-				version: 1,
-				engineSkill: 5,
-				playerColor: 'white',
-				moves: ['a2a4', 'h7h6', 'a4a5', 'h6h5', 'a5a6', 'h5h4', 'a6b7', 'h4h3'],
-				evals: [],
-				badges: [],
-				lastFeedback: null,
-				currentEval: null,
-				serverGameId: null,
-				completedGameId: null
-			})
-		);
+	await restoreActiveGame(page, {
+		moves: ['a2a4', 'h7h6', 'a4a5', 'h6h5', 'a5a6', 'h5h4', 'a6b7', 'h4h3']
 	});
 	await page.goto('/');
 	await waitForEngineReady(page);
@@ -317,23 +293,7 @@ test('engine replies and the game stays in sync', async ({ page }) => {
  * blundered the queen with ...Qh4 — Nf3xh4 wins it for free, so the engine's
  * best line executes a `hanging_piece` tactic the client detector recognizes. */
 async function restoreHangingQueen(page: import('@playwright/test').Page) {
-	await page.addInitScript(() => {
-		localStorage.setItem(
-			'leechess.activeGame',
-			JSON.stringify({
-				version: 1,
-				engineSkill: 5,
-				playerColor: 'white',
-				moves: ['e2e4', 'e7e5', 'g1f3', 'd8h4'],
-				evals: [],
-				badges: [],
-				lastFeedback: null,
-				currentEval: null,
-				serverGameId: null,
-				completedGameId: null
-			})
-		);
-	});
+	await restoreActiveGame(page, { moves: ['e2e4', 'e7e5', 'g1f3', 'd8h4'] });
 }
 
 test('Off shows no in-game help at all', async ({ page }) => {

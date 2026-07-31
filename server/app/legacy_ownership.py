@@ -28,6 +28,7 @@ from app.models import (
     Puzzle,
     PuzzleAttempt,
     PuzzleState,
+    UserId,
 )
 
 # Module-level alias, patched by tests/conftest.py the same way analysis,
@@ -70,8 +71,27 @@ def adopt_orphaned_rows(db: Session) -> bool:
     adopted += result.rowcount or 0
 
     if adopted:
+        _renumber_games(db, owner)
         db.commit()
     return adopted > 0
+
+
+def _renumber_games(db: Session, owner: UserId) -> None:
+    """Redeal this account's game numbers, 1..N oldest first.
+
+    Adoption merges two sets of games into one account, and both may already
+    count from 1 — the account's own games and the pre-accounts ones. Left
+    alone that shows up as two games called #1. Renumbering the lot is the
+    only answer that keeps the sequence meaning "how many games you have
+    saved", and it only ever runs on the one account there is.
+    """
+    games = db.scalars(
+        select(Game)
+        .where(Game.user_id == owner, Game.analysis_status != "pending")
+        .order_by(Game.created_at, Game.id)
+    )
+    for number, game in enumerate(games, start=1):
+        game.number = number
 
 
 def claim_legacy_rows() -> bool:
