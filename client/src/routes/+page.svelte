@@ -456,17 +456,7 @@
 					New game
 				</button>
 
-				{#if account.anonymous}
-					<!-- Said on the screen the game is played on rather than
-					     discovered afterwards on an empty Review page. -->
-					<p class="text-xs text-muted" data-testid="anonymous-not-saved">
-						Not saved — you're playing as {account.name}.
-						<a class="text-accent underline" href="{resolve('/welcome')}?mode=signup">
-							Create an account
-						</a>
-						to keep your games and have them reviewed.
-					</p>
-				{:else if session.completedGameId !== null}
+				{#if session.completedGameId !== null}
 					<p class="text-sm text-ok">
 						Saved as game #{session.completedGameId}, analysis queued —
 						<a
