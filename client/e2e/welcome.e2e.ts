@@ -94,3 +94,33 @@ test('signing in with the wrong password is reported', async ({ page, request })
 
 	await expect(page.getByTestId('auth-error')).toContainText("don't match");
 });
+
+test('nothing on the welcome screen is behind a scroll on a desktop viewport', async ({ page }) => {
+	// It is the first thing anyone sees; a landing page that opens mid-scroll
+	// reads as broken. Both entry states are checked because the form is the
+	// taller of the two. 1366x768 is the smallest desktop worth supporting.
+	await page.setViewportSize({ width: 1366, height: 768 });
+	await page.goto('/welcome');
+	await expect(page.getByTestId('welcome')).toBeVisible();
+
+	const overflow = () =>
+		page.evaluate(() => ({
+			down: document.documentElement.scrollHeight - window.innerHeight,
+			across: document.documentElement.scrollWidth - document.documentElement.clientWidth
+		}));
+
+	expect(await overflow()).toEqual({ down: 0, across: 0 });
+
+	await page.getByTestId('welcome-signup').click();
+	await expect(page.getByTestId('no-recovery-warning')).toBeVisible();
+	expect(await overflow()).toEqual({ down: 0, across: 0 });
+});
+
+test('the nav bar is not repeated above the welcome screen', async ({ page }) => {
+	await page.goto('/welcome');
+
+	// The page carries its own wordmark, and signed out there is nowhere to
+	// navigate to — so the bar would duplicate the page beneath it.
+	await expect(page.locator('nav')).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'leechess' })).toBeVisible();
+});

@@ -73,130 +73,140 @@
 
 <svelte:head><title>leechess — learn from your own mistakes</title></svelte:head>
 
-<div class="mx-auto max-w-3xl" data-testid="welcome">
-	<header class="mb-8 text-center">
-		<img src={logo} alt="" class="mx-auto mb-3 h-12 w-12" />
-		<h1 class="mb-3 font-display text-3xl">leechess</h1>
-		<p class="mx-auto max-w-xl text-body">
-			A chess coach, not a chess server. Play a game, find out which pattern you missed and why,
-			then drill that exact pattern until it stops costing you games.
-		</p>
-	</header>
-
-	{#if mode === 'choose'}
-		<div class="mb-8 flex flex-col items-center gap-3" data-testid="welcome-actions">
-			<button
-				type="button"
-				onclick={() => open('guest')}
-				data-testid="welcome-guest"
-				class="w-64 rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-			>
-				Start playing
-			</button>
-			<div class="flex items-center gap-2 text-sm">
-				<button
-					type="button"
-					onclick={() => open('signup')}
-					data-testid="welcome-signup"
-					class="rounded-xs border border-line bg-card px-3 py-2 hover:bg-paper"
-				>
-					Create an account
-				</button>
-				<button
-					type="button"
-					onclick={() => open('signin')}
-					data-testid="welcome-signin"
-					class="rounded-xs border border-line bg-card px-3 py-2 hover:bg-paper"
-				>
-					Sign in
-				</button>
-			</div>
-			<p class="max-w-sm text-center text-xs text-muted">
-				Starting to play makes a guest account straight away, so your games are saved. You can set a
-				password later without losing anything.
+<!-- Sized to the viewport rather than to the content: this is the first thing
+     anyone sees, and a landing page that opens mid-scroll reads as broken. The
+     primer sits beside the sign-in at lg rather than below it, which is what
+     keeps both halves on screen. Narrow screens stack and scroll as usual.
+     3rem is the padding <main> adds; there is no nav on this route. -->
+<div class="flex min-h-[calc(100svh-3rem)] flex-col justify-center" data-testid="welcome">
+	<div class="grid items-center gap-8 lg:grid-cols-[20rem_1fr] lg:gap-12">
+		<!-- identity, thesis, and the way in -->
+		<div class="flex flex-col items-center text-center lg:items-start lg:text-left">
+			<img src={logo} alt="" class="mb-3 h-12 w-12" />
+			<h1 class="mb-3 font-display text-3xl">leechess</h1>
+			<p class="mb-6 text-sm text-body">
+				A chess coach, not a chess server. Play a game, find out which pattern you missed and why,
+				then drill that exact pattern until it stops costing you games.
 			</p>
-		</div>
-	{:else}
-		<div class="mx-auto mb-8 max-w-sm rounded-xs border border-line bg-card p-4">
-			<h2 class="mb-3 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-				{heading}
-			</h2>
-			<form class="flex flex-col gap-3" onsubmit={submit}>
-				<label class="flex flex-col gap-1 text-sm">
-					<span class="text-muted">Username</span>
-					<input
-						type="text"
-						bind:value={username}
-						autocomplete="username"
-						maxlength="24"
-						required
-						data-testid="auth-username"
-						class="rounded-xs border border-line bg-card px-2 py-1 text-sm text-ink"
-					/>
-				</label>
 
-				{#if mode !== 'guest'}
-					<label class="flex flex-col gap-1 text-sm">
-						<span class="text-muted">Password</span>
-						<input
-							type="password"
-							bind:value={password}
-							autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
-							required
-							data-testid="auth-password"
-							class="rounded-xs border border-line bg-card px-2 py-1 text-sm text-ink"
-						/>
-					</label>
-				{/if}
-
-				{#if mode === 'signup'}
-					<!-- Said plainly, next to the field, because it is true and
-					     because there is no second chance to mention it. -->
-					<p class="text-xs text-muted" data-testid="no-recovery-warning">
-						There's no password reset — leechess has no email address for you. Save it in a password
-						manager.
-					</p>
-				{/if}
-
-				{#if error}
-					<p class="text-xs text-err" role="alert" data-testid="auth-error">{error}</p>
-				{/if}
-
-				<div class="flex items-center gap-2">
-					<button
-						type="submit"
-						disabled={busy}
-						data-testid="auth-submit"
-						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft disabled:opacity-50"
-					>
-						{mode === 'guest' ? 'Start playing' : heading}
-					</button>
+			{#if mode === 'choose'}
+				<div class="flex w-full flex-col gap-2" data-testid="welcome-actions">
 					<button
 						type="button"
-						onclick={() => open('choose')}
-						data-testid="auth-back"
-						class="rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
+						onclick={() => open('guest')}
+						data-testid="welcome-guest"
+						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 					>
-						Back
+						Start playing
 					</button>
+					<div class="flex gap-2 text-sm">
+						<button
+							type="button"
+							onclick={() => open('signup')}
+							data-testid="welcome-signup"
+							class="flex-1 rounded-xs border border-line bg-card px-3 py-2 hover:bg-paper"
+						>
+							Create account
+						</button>
+						<button
+							type="button"
+							onclick={() => open('signin')}
+							data-testid="welcome-signin"
+							class="flex-1 rounded-xs border border-line bg-card px-3 py-2 hover:bg-paper"
+						>
+							Sign in
+						</button>
+					</div>
+					<p class="text-xs text-muted">
+						Starting to play makes a guest account straight away, so your games are saved. You can
+						set a password later without losing anything.
+					</p>
 				</div>
-			</form>
+			{:else}
+				<div class="w-full rounded-xs border border-line bg-card p-4 text-left">
+					<h2 class="mb-3 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+						{heading}
+					</h2>
+					<form class="flex flex-col gap-3" onsubmit={submit}>
+						<label class="flex flex-col gap-1 text-sm">
+							<span class="text-muted">Username</span>
+							<input
+								type="text"
+								bind:value={username}
+								autocomplete="username"
+								maxlength="24"
+								required
+								data-testid="auth-username"
+								class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+							/>
+						</label>
+
+						{#if mode !== 'guest'}
+							<label class="flex flex-col gap-1 text-sm">
+								<span class="text-muted">Password</span>
+								<input
+									type="password"
+									bind:value={password}
+									autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
+									required
+									data-testid="auth-password"
+									class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+								/>
+							</label>
+						{/if}
+
+						{#if mode === 'signup'}
+							<!-- Said plainly, next to the field, because it is true and
+							     because there is no second chance to mention it. -->
+							<p class="text-xs text-muted" data-testid="no-recovery-warning">
+								There's no password reset — leechess has no email address for you. Save it in a
+								password manager.
+							</p>
+						{/if}
+
+						{#if error}
+							<p class="text-xs text-err" role="alert" data-testid="auth-error">{error}</p>
+						{/if}
+
+						<div class="flex items-center gap-2">
+							<button
+								type="submit"
+								disabled={busy}
+								data-testid="auth-submit"
+								class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft disabled:opacity-50"
+							>
+								{mode === 'guest' ? 'Start playing' : heading}
+							</button>
+							<button
+								type="button"
+								onclick={() => open('choose')}
+								data-testid="auth-back"
+								class="rounded-xs border border-line bg-paper px-3 py-2 text-sm hover:bg-accent-soft"
+							>
+								Back
+							</button>
+						</div>
+					</form>
+				</div>
+			{/if}
 		</div>
-	{/if}
 
-	<h2 class="mb-3 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-		What you get
-	</h2>
-	<div class="grid gap-3 sm:grid-cols-2">
-		{#each loop as step (step.title)}
-			<section class="rounded-xs border border-line bg-card p-3">
-				<h3 class="mb-1 font-display text-lg">{step.title}</h3>
-				<p class="text-sm text-body">{step.body}</p>
-			</section>
-		{/each}
+		<!-- the primer -->
+		<div>
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				What you get
+			</h2>
+			<div class="grid gap-2 sm:grid-cols-2">
+				{#each loop as step (step.title)}
+					<section class="rounded-xs border border-line bg-card p-3">
+						<h3 class="mb-0.5 font-display text-base">{step.title}</h3>
+						<p class="text-[13px] leading-snug text-body">{step.body}</p>
+					</section>
+				{/each}
+			</div>
+			<p class="mt-3 text-xs text-muted">
+				Single player. No matchmaking, no rating ladder, nothing shared with anyone.
+			</p>
+		</div>
 	</div>
-
-	<p class="mt-6 text-center text-xs text-muted">
-		Single player. No matchmaking, no rating ladder, nothing shared with anyone.
-	</p>
 </div>

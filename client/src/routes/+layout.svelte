@@ -45,13 +45,16 @@
 <svelte:head><link rel="icon" href={logo} /></svelte:head>
 
 <div class="min-h-screen bg-paper text-ink">
-	<nav class="border-b border-line bg-card">
-		<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-			<a href={resolve('/')} class="flex items-center gap-2">
-				<img src={logo} alt="" class="h-6 w-6" />
-				<span class="font-display text-lg font-bold tracking-tight">leechess</span>
-			</a>
-			{#if session.authenticated}
+	<!-- Signed out there is nowhere to navigate to and nothing to configure,
+	     and the welcome screen carries its own wordmark — so the bar would be
+	     an empty duplicate of the page beneath it. -->
+	{#if session.authenticated}
+		<nav class="border-b border-line bg-card">
+			<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+				<a href={resolve('/')} class="flex items-center gap-2">
+					<img src={logo} alt="" class="h-6 w-6" />
+					<span class="font-display text-lg font-bold tracking-tight">leechess</span>
+				</a>
 				{#each links as link (link.href)}
 					<a
 						href={link.href}
@@ -62,19 +65,17 @@
 						{link.label}
 					</a>
 				{/each}
-			{/if}
-			<div class="ml-auto flex items-center gap-3">
-				{#if session.name}
-					<span class="text-sm text-muted" data-testid="nav-username">
-						Playing as <span class="font-semibold text-ink">{session.name}</span>
-					</span>
-				{/if}
-				{#if session.authenticated}
+				<div class="ml-auto flex items-center gap-3">
+					{#if session.name}
+						<span class="text-sm text-muted" data-testid="nav-username">
+							Playing as <span class="font-semibold text-ink">{session.name}</span>
+						</span>
+					{/if}
 					<SettingsMenu />
-				{/if}
+				</div>
 			</div>
-		</div>
-	</nav>
+		</nav>
+	{/if}
 	<main class="mx-auto max-w-5xl px-4 py-6">
 		{#if session.ready}
 			<UpgradePrompt />
