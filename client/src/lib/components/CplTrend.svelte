@@ -311,7 +311,7 @@
 				role="button"
 				tabindex="0"
 				aria-label={hoveredPoint
-					? `Game ${hoveredPoint.game_id}, ${hoveredPoint.avg_cpl.toFixed(0)} average centipawn loss`
+					? `Game ${hoveredPoint.number}, ${hoveredPoint.avg_cpl.toFixed(0)} average centipawn loss`
 					: 'Browse games with the arrow keys'}
 				onpointermove={(e) => (hovered = nearest(e))}
 				onfocus={() => (hovered ??= trend.length - 1)}
@@ -328,7 +328,7 @@
 				data-testid="cpl-tooltip"
 			>
 				<p class="font-semibold text-ink">
-					Game #{hoveredPoint.game_id}
+					Game #{hoveredPoint.number}
 					<span class="font-normal text-muted">· {formatDate(hoveredPoint.created_at)}</span>
 				</p>
 				{#each series as s (s.key)}
@@ -360,7 +360,7 @@
 			<tbody>
 				{#each trend as point (point.game_id)}
 					<tr class="border-t border-line text-body">
-						<td class="py-0.5">#{point.game_id}</td>
+						<td class="py-0.5">#{point.number}</td>
 						<td class="py-0.5">{formatDate(point.created_at)}</td>
 						{#each activeSeries as s (s.key)}
 							<td class="py-0.5 font-mono">{point[s.key]?.toFixed(0) ?? '—'}</td>

@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { API, seedGame, scholarsMateSans } from './helpers';
+import { API, gameNumber, move, seedGame, scholarsMateSans, waitForEngineReady } from './helpers';
 
 test.use({ signedIn: false });
 
@@ -109,7 +109,35 @@ test('an account keeps its games, and signing back in finds them', async ({ page
 	await expect(page).toHaveURL(/\/$/);
 
 	await page.goto('/review');
-	await expect(page.getByTestId('games-list')).toContainText(String(gameId));
+	const number = await gameNumber(context.request, gameId);
+	await expect(
+		page.getByTestId('games-list').getByRole('link', { name: String(number) })
+	).toBeVisible();
+});
+
+test('creating an account starts a fresh board, not the anonymous game', async ({ page }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-play').click();
+	await waitForEngineReady(page);
+	await move(page, 'e2', 'e4');
+	await expect(page.getByTestId('move-list')).toContainText('e4');
+
+	await page.getByTestId('nav-sign-up').click();
+	await page.getByTestId('auth-username').fill('newcomer');
+	await page.getByTestId('auth-password').fill('correct-horse');
+	await page.getByTestId('auth-submit').click();
+	await expect(page).toHaveURL(/\/$/);
+
+	// Nothing played without an account carries into one. An account's first
+	// game has to be a game it played, and the offer was that nothing anonymous
+	// is kept — including from the tab that is still open.
+	await expect(page.getByTestId('moves-panel')).toContainText('No moves yet');
+	await page.reload();
+	await expect(page.getByTestId('moves-panel')).toContainText('No moves yet');
+
+	// and it was never written to the new account behind the screen either
+	const games = await (await page.request.get(`${API}/games`)).json();
+	expect(games).toEqual([]);
 });
 
 test('settings offers an anonymous player the account, not a rename', async ({ page }) => {

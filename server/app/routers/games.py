@@ -4,14 +4,14 @@ from datetime import datetime, timezone
 import chess
 import chess.pgn
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analysis import run_game_analysis
 from app.auth.backend import current_active_user
 from app.auth.models import User
 from app.db import get_db
-from app.models import Game, Move, utcnow
+from app.models import Game, Move, UserId, utcnow
 from app.puzzle_generation import create_puzzles_for_game
 from app.schemas import (
     GameComplete,
@@ -37,6 +37,18 @@ def _get_game_or_404(game_id: int, db: Session, user: User) -> Game:
     if game is None or game.user_id != user.id:
         raise HTTPException(status_code=404, detail="Game not found")
     return game
+
+
+def next_game_number(db: Session, user_id: UserId) -> int:
+    """The number the account's next saved game takes.
+
+    Counted at completion rather than at creation, so the sequence has no
+    holes: a game started and abandoned (New game, a closed tab) is deleted
+    rather than kept, and burning a number on it would leave the review list
+    reading #1, #3, #7.
+    """
+    highest = db.scalar(select(func.max(Game.number)).where(Game.user_id == user_id))
+    return (highest or 0) + 1
 
 
 def _current_board(game: Game) -> chess.Board:
@@ -124,7 +136,10 @@ def list_games(
         db.scalars(
             select(Game)
             .where(Game.user_id == user.id, Game.analysis_status != "pending")
-            .order_by(Game.id.desc())
+            # Newest first, by the number the list actually shows — ordering by
+            # row id instead would read out of sequence for anyone whose games
+            # were not completed in the order they were started.
+            .order_by(Game.number.desc(), Game.id.desc())
             .limit(100)
         )
     )
@@ -234,6 +249,10 @@ def complete_game(
     if not game.pgn:  # imported games keep their original PGN
         game.pgn = _rebuild_pgn(game)
     game.analysis_status = "analyzing"
+    # This is where a game becomes one of the account's — number it now, so
+    # the number counts saved games rather than attempts at one.
+    if game.number is None:
+        game.number = next_game_number(db, user.id)
     db.commit()
     background.add_task(run_game_analysis, game.id)
     return game

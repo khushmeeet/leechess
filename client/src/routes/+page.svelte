@@ -458,7 +458,11 @@
 
 				{#if session.completedGameId !== null}
 					<p class="text-sm text-ok">
-						Saved as game #{session.completedGameId}, analysis queued —
+						<!-- The account's own count of its saved games, which is what
+						     Review lists it under. -->
+						Saved{session.completedGameNumber === null
+							? ''
+							: ` as game #${session.completedGameNumber}`}, analysis queued —
 						<a
 							class="underline"
 							href={resolve('/review/[gameId]', { gameId: String(session.completedGameId) })}
@@ -467,7 +471,10 @@
 						</a>
 					</p>
 				{:else if session.serverGameId !== null && !session.serverError}
-					<p class="text-xs text-faint">syncing to server as game #{session.serverGameId}</p>
+					<!-- No number yet: a game in progress has not been saved, and the
+					     row id it is being written under is not one anybody has a use
+					     for. -->
+					<p class="text-xs text-faint">syncing to server</p>
 				{/if}
 				{#if session.serverError}
 					<p class="text-sm break-all text-err">

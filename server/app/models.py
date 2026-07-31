@@ -37,6 +37,13 @@ class Game(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UserId | None] = _owner_column()
+    # What the app calls this game — "game #3" — counted per account, in the
+    # order games were saved. The primary key can't do this job: it is one
+    # global sequence over everybody's rows, so a new account's first game
+    # came out as #189. Assigned on completion (see routers/games.py), which
+    # is when a game becomes something to look back at; NULL until then, and
+    # on games abandoned before they got there.
+    number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pgn: Mapped[str] = mapped_column(Text)
     white: Mapped[str] = mapped_column(String, default="?")
     black: Mapped[str] = mapped_column(String, default="?")

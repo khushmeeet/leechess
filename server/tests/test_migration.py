@@ -9,6 +9,7 @@ pre-existing database failed.
 """
 
 import sqlite3
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -16,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from app.legacy_ownership import adopt_orphaned_rows
 from app.main import _migrate_existing_tables
+from app.routers.games import next_game_number
 from app.auth.models import User
 from app.db import Base
-from app.models import EndgameDrillState, Puzzle, PuzzleState
+from app.models import EndgameDrillState, Game, Puzzle, PuzzleState
 
 pytestmark = pytest.mark.unit
 
@@ -60,6 +62,9 @@ CREATE TABLE endgame_drill_attempts (
 );
 
 INSERT INTO games VALUES (1, '', 'me', 'Stockfish', '1-0', 'engine', '2026-01-01', 'complete');
+INSERT INTO games VALUES (2, '', 'me', 'Stockfish', '0-1', 'engine', '2026-01-02', 'complete');
+-- started, never finished: deleted rather than kept, so it takes no number
+INSERT INTO games VALUES (3, '', 'me', 'Stockfish', '*', 'engine', '2026-01-03', 'pending');
 INSERT INTO moves VALUES (1, 1, 1, 'e4', '8/8/8/8/8/8/8/K6k w - - 0 1', '8/8/8/8/8/8/8/K6k b - - 0 1');
 
 -- one drilled personal puzzle (box 4), one untouched generic import
@@ -137,6 +142,55 @@ def test_untouched_puzzles_get_no_state_row(legacy_engine):
     — carrying 6000 default rows across would just be noise."""
     with Session(legacy_engine) as db:
         assert [s.puzzle_id for s in db.scalars(select(PuzzleState))] == [1]
+
+
+def test_existing_games_are_dealt_their_numbers(legacy_engine):
+    """They were shown by row id until now, which is one sequence over
+    everybody's games — hence a first game called #189."""
+    with Session(legacy_engine) as db:
+        numbered = db.scalars(select(Game).order_by(Game.id)).all()
+        assert [(g.id, g.number) for g in numbered] == [(1, 1), (2, 2), (3, None)]
+
+
+def test_adoption_leaves_no_two_games_called_number_one(legacy_engine):
+    """Adoption merges two sets of games into one account, and both count
+    from one — so the numbers are redealt over the lot."""
+    with Session(legacy_engine) as db:
+        owner = User(username="owner", hashed_password="x", is_verified=True)
+        db.add(owner)
+        db.commit()
+        db.add(
+            Game(
+                pgn="",
+                user_id=owner.id,
+                number=1,
+                analysis_status="complete",
+                created_at=datetime(2026, 1, 4),
+            )
+        )
+        db.commit()
+
+        assert adopt_orphaned_rows(db) is True
+
+        db.expire_all()
+        saved = db.scalars(
+            select(Game)
+            .where(Game.analysis_status != "pending")
+            .order_by(Game.created_at)
+        ).all()
+        assert [g.number for g in saved] == [1, 2, 3]
+
+
+def test_a_game_finished_after_the_migration_carries_on_counting(legacy_engine):
+    """The backfill and the live path have to agree on where the sequence is
+    up to, or the first game played after a deploy repeats a number."""
+    with Session(legacy_engine) as db:
+        owner = User(username="owner", hashed_password="x", is_verified=True)
+        db.add(owner)
+        db.commit()
+        adopt_orphaned_rows(db)
+
+        assert next_game_number(db, owner.id) == 3
 
 
 def test_the_first_account_adopts_the_carried_schedule(legacy_engine):

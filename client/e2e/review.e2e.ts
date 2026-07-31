@@ -1,6 +1,6 @@
 import { type APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { API, scholarsMateSans } from './helpers';
+import { API, gameNumber, scholarsMateSans } from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end
 // (real Stockfish, low depth via LEECHESS_ANALYSIS_DEPTH in the e2e server),
@@ -25,7 +25,8 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	const gameId = await seedCompletedGame(request);
 
 	await page.goto(`/review/${gameId}`);
-	await expect(page.getByText(`Game #${gameId}`)).toBeVisible();
+	// the account's first saved game, whatever row id it landed on
+	await expect(page.getByText(`Game #${await gameNumber(request, gameId)}`)).toBeVisible();
 
 	// the page polls while the job runs; wait for the analysis to land
 	await expect
@@ -127,7 +128,9 @@ test('review shows analyzing state while the job is pending', async ({ page, req
 	await request.post(`${API}/games/${gameId}/moves`, { data: { san: 'e4' } });
 
 	await page.goto(`/review/${gameId}`);
-	await expect(page.getByText(`Game #${gameId}`)).toBeVisible();
+	// Unfinished, so it is not one of the account's games yet and has no
+	// number to be shown under.
+	await expect(page.getByRole('heading', { name: 'Unfinished game' })).toBeVisible();
 	await expect(page.getByTestId('analysis-status')).toBeVisible();
 	await expect(page.getByTestId('move-list')).toContainText('e4');
 });

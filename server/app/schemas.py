@@ -97,6 +97,11 @@ class GameOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # The account's own count of its saved games — what the app shows as
+    # "game #3". None while the game is still in progress: it is not one of
+    # them until it is finished. `id` stays the identifier every route and
+    # link uses.
+    number: int | None
     white: str
     black: str
     result: str
@@ -299,6 +304,9 @@ class GameCplPoint(BaseModel):
     """
 
     game_id: int
+    # The account's game number, for the tooltip and table — the trend only
+    # covers analyzed games, so every point has one.
+    number: int | None
     created_at: datetime
     mode: str
     avg_cpl: float

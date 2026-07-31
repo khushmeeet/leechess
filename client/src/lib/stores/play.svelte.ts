@@ -94,6 +94,9 @@ export class PlaySession {
 	/** Set when the finished game has been completed server-side and its
 	 * analysis job is queued — the review link becomes meaningful. */
 	completedGameId = $state<number | null>(null);
+	/** The account's own number for that game ("saved as game #3"), which is
+	 * what the server hands back on completion — never the row id. */
+	completedGameNumber = $state<number | null>(null);
 
 	get started(): boolean {
 		return this.game.moves.length > 0;
@@ -116,9 +119,15 @@ export class PlaySession {
 	/** Set on unmount: kills queued and future jobs (generation only covers
 	 * jobs whose capture happened before the suspend). */
 	private suspended = false;
+	/** Who this session's game belongs to, fixed for its lifetime. Captured
+	 * rather than read live so late work (an eval that lands after a sign-out)
+	 * can only ever write under the owner it started as — and so a game is
+	 * never handed to whoever happens to be signed in when it is read back.
+	 * Null means nobody is playing, and nothing is kept at all. */
+	private readonly owner = account.owner;
 
 	constructor() {
-		const saved = loadActiveGame();
+		const saved = this.owner === null ? null : loadActiveGame(this.owner);
 		if (!saved) return;
 		if (!this.game.loadMoves(saved.moves)) {
 			clearActiveGame(); // storage didn't replay to a legal game — start fresh
@@ -136,6 +145,7 @@ export class PlaySession {
 		this.baselineEval = saved.currentEval ?? 0;
 		this.serverGameId = saved.serverGameId;
 		this.completedGameId = saved.completedGameId;
+		this.completedGameNumber = saved.completedGameNumber;
 		// queue the server resync before any user input can queue a postMove,
 		// so replayed moves and new moves can never arrive out of order
 		this.resyncServer(saved.moves);
@@ -179,8 +189,9 @@ export class PlaySession {
 	}
 
 	private save(): void {
-		if (!this.persistable || !this.started) return;
+		if (this.owner === null || !this.persistable || !this.started) return;
 		saveActiveGame({
+			owner: this.owner,
 			engineSkill: this.engineSkill,
 			playerColor: this.playerColor,
 			moves: this.game.moves.map((move) => move.uci),
@@ -189,7 +200,8 @@ export class PlaySession {
 			lastFeedback: this.lastFeedback,
 			currentEval: this.currentEval,
 			serverGameId: this.serverGameId,
-			completedGameId: this.completedGameId
+			completedGameId: this.completedGameId,
+			completedGameNumber: this.completedGameNumber
 		});
 	}
 
@@ -243,14 +255,18 @@ export class PlaySession {
 			if (generation !== this.generation) return;
 			this.save();
 			if (this.game.isGameOver && this.completedGameId === null) {
+				let saved;
 				try {
-					await completeGame(this.serverGameId, this.game.result);
+					saved = await completeGame(this.serverGameId, this.game.result);
 				} catch (error) {
-					// 409: completed right before the refresh — same review id
+					// 409: completed right before the refresh — same review id, and
+					// the number it was given is on the record already
 					if (!(error instanceof ApiError && error.status === 409)) throw error;
+					saved = await getGame(this.serverGameId);
 				}
 				if (generation !== this.generation) return;
 				this.completedGameId = this.serverGameId;
+				this.completedGameNumber = saved.number;
 				this.save();
 			}
 		});
@@ -502,8 +518,9 @@ export class PlaySession {
 		this.inSync(async () => {
 			// completedGameId set: a restore resync already completed the game
 			if (this.serverGameId === null || this.completedGameId !== null) return;
-			await completeGame(this.serverGameId, result);
+			const saved = await completeGame(this.serverGameId, result);
 			this.completedGameId = this.serverGameId;
+			this.completedGameNumber = saved.number;
 			this.save();
 		});
 	}
@@ -600,6 +617,7 @@ export class PlaySession {
 		this.serverGameId = null;
 		this.serverError = null;
 		this.completedGameId = null;
+		this.completedGameNumber = null;
 		this.engineThinking = false;
 		this.engineError = null;
 		this.opening = null;

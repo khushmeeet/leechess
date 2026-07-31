@@ -187,6 +187,17 @@ export async function seedGame(
 	return gameId;
 }
 
+/** The number the app shows a saved game under — the account's own count of
+ * the games it has saved, which is what every screen labels it with. Read back
+ * from the API rather than assumed to equal the row id: they only coincide
+ * while one account has played every game in the database, which is exactly
+ * the coincidence that hid the bug this replaced. */
+export async function gameNumber(request: APIRequestContext, gameId: number): Promise<number> {
+	const response = await request.get(`${API}/games/${gameId}`);
+	expect(response.ok()).toBe(true);
+	return (await response.json()).number;
+}
+
 /** Poll until the server-side analysis job finishes for a game. */
 export async function waitForAnalysis(request: APIRequestContext, gameId: number) {
 	await expect

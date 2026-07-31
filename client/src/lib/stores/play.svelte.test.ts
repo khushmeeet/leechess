@@ -27,9 +27,14 @@ const persistence = vi.hoisted(() => ({
 }));
 
 /** The account store, as far as PlaySession is concerned: a name for the PGN
- * header, and whether there is anywhere to sync to at all. Mutable so the
- * anonymous case can be driven from a test rather than a second module mock. */
-const account = vi.hoisted(() => ({ name: null as string | null, authenticated: true }));
+ * header, whether there is anywhere to sync to at all, and who anything kept
+ * in this browser belongs to. Mutable so the anonymous case can be driven from
+ * a test rather than a second module mock. */
+const account = vi.hoisted(() => ({
+	name: null as string | null,
+	authenticated: true,
+	owner: 'account-1' as string | null
+}));
 
 vi.mock('$lib/stores/stockfish', () => ({ stockfish: engine }));
 vi.mock('$lib/stores/gamePersistence', () => persistence);
@@ -91,13 +96,14 @@ beforeEach(() => {
 	vi.resetAllMocks();
 	account.name = null;
 	account.authenticated = true;
+	account.owner = 'account-1';
 	persistence.loadActiveGame.mockReturnValue(null);
 	engine.warmup.mockResolvedValue(undefined);
 	engine.evaluate.mockResolvedValue(evalResult(30));
 	engine.play.mockResolvedValue(evalResult(0, 'e7e5'));
 	api.startGame.mockResolvedValue({ id: 42 });
 	api.postMove.mockResolvedValue({});
-	api.completeGame.mockResolvedValue({});
+	api.completeGame.mockResolvedValue({ id: 42, number: 1 });
 	api.discardGame.mockResolvedValue(undefined);
 	api.getGame.mockResolvedValue({ moves: [] });
 	api.takeBackMoves.mockResolvedValue({ ply: 0, fen: START_FEN });
@@ -175,12 +181,13 @@ describe('server sync chain', () => {
 		expect(session.game.moves.length).toBe(2);
 	});
 
-	it('resyncs a restored game once there is an account to sync it to', async () => {
-		// Signing up mid-game goes through the welcome screen, so the play
-		// screen is remounted on the way back and the constructor resyncs.
-		// Anything already played has to arrive then, not just what follows.
+	it('creates the record on restore when the game never reached the server', async () => {
+		// A refresh (or a spell offline) can land before the record was ever
+		// created; the moves already played have to arrive then, not just the
+		// ones that follow.
 		persistence.loadActiveGame.mockReturnValue({
-			version: 1,
+			version: 2,
+			owner: 'account-1',
 			engineSkill: 5,
 			playerColor: 'white',
 			moves: ['e2e4', 'e7e5'],
@@ -189,7 +196,8 @@ describe('server sync chain', () => {
 			lastFeedback: null,
 			currentEval: 30,
 			serverGameId: null,
-			completedGameId: null
+			completedGameId: null,
+			completedGameNumber: null
 		});
 
 		new PlaySession();
@@ -200,6 +208,44 @@ describe('server sync chain', () => {
 			[42, 'e2e4'],
 			[42, 'e7e5']
 		]);
+	});
+});
+
+describe('whose game is on the board', () => {
+	it('only ever asks storage for the current player’s game', async () => {
+		account.owner = 'account-2';
+		new PlaySession();
+
+		// Storage is asked by owner, so an anonymous game cannot come back as
+		// an account's: creating an account leaves this screen showing a fresh
+		// board, and nothing of what was played without one.
+		expect(persistence.loadActiveGame).toHaveBeenCalledExactlyOnceWith('account-2');
+	});
+
+	it('saves under the owner it started as, not whoever is signed in later', async () => {
+		account.owner = 'anonymous';
+		const session = await startedSession();
+		account.owner = 'account-1'; // they signed up while the eval was running
+
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		expect(persistence.saveActiveGame).toHaveBeenCalledWith(
+			expect.objectContaining({ owner: 'anonymous' })
+		);
+		expect(persistence.saveActiveGame).not.toHaveBeenCalledWith(
+			expect.objectContaining({ owner: 'account-1' })
+		);
+	});
+
+	it('keeps nothing at all when nobody is playing', async () => {
+		account.owner = null;
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		expect(persistence.loadActiveGame).not.toHaveBeenCalled();
+		expect(persistence.saveActiveGame).not.toHaveBeenCalled();
 	});
 });
 
@@ -385,7 +431,8 @@ describe('take back and think again', () => {
 
 	it('trims a server record left longer than the restored game', async () => {
 		persistence.loadActiveGame.mockReturnValue({
-			version: 1,
+			version: 2,
+			owner: 'account-1',
 			engineSkill: 5,
 			playerColor: 'white' as const,
 			moves: ['e2e4', 'e7e5'], // a takeback shortened the local game…
@@ -394,7 +441,8 @@ describe('take back and think again', () => {
 			lastFeedback: null,
 			currentEval: 30,
 			serverGameId: 7,
-			completedGameId: null
+			completedGameId: null,
+			completedGameNumber: null
 		});
 		api.getGame.mockResolvedValue({ moves: [{}, {}, {}, {}] }); // …but never reached the server
 		const session = new PlaySession();
@@ -450,7 +498,8 @@ describe('playing as Black', () => {
 
 	it('restoring a black game on the engine turn resumes with its reply', async () => {
 		persistence.loadActiveGame.mockReturnValue({
-			version: 1,
+			version: 2,
+			owner: 'account-1',
 			engineSkill: 5,
 			playerColor: 'black' as const,
 			moves: ['e2e4', 'e7e5'], // engine (White) to move
@@ -459,7 +508,8 @@ describe('playing as Black', () => {
 			lastFeedback: null,
 			currentEval: 15,
 			serverGameId: 7,
-			completedGameId: null
+			completedGameId: null,
+			completedGameNumber: null
 		});
 		api.getGame.mockResolvedValue({ moves: [{}, {}] });
 		engine.play.mockResolvedValue(evalResult(20, 'g1f3'));
@@ -475,7 +525,8 @@ describe('promotion', () => {
 	it('plays the picker-chosen piece instead of auto-queening', async () => {
 		// white pawn on b7 with the black rook on a8 — bxa8 must underpromote
 		persistence.loadActiveGame.mockReturnValue({
-			version: 1,
+			version: 2,
+			owner: 'account-1',
 			engineSkill: 5,
 			playerColor: 'white' as const,
 			moves: ['a2a4', 'h7h6', 'a4a5', 'h6h5', 'a5a6', 'h5h4', 'a6b7', 'h4h3'],
@@ -484,7 +535,8 @@ describe('promotion', () => {
 			lastFeedback: null,
 			currentEval: null,
 			serverGameId: null,
-			completedGameId: null
+			completedGameId: null,
+			completedGameNumber: null
 		});
 		const session = new PlaySession();
 		await session.start();
@@ -526,6 +578,9 @@ describe('finishing games', () => {
 		await vi.waitFor(() => expect(session.completedGameId).toBe(42));
 		expect(session.game.result).toBe('1-0');
 		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '1-0');
+		// "Saved as game #1" — the account's own count, taken from the server's
+		// answer rather than from the record's id
+		expect(session.completedGameNumber).toBe(1);
 	});
 
 	it('resign completes the game server-side and ends persistence', async () => {
@@ -544,7 +599,8 @@ describe('finishing games', () => {
 
 describe('restore resync', () => {
 	const saved = {
-		version: 1,
+		version: 2,
+		owner: 'account-1',
 		engineSkill: 5,
 		playerColor: 'white' as const,
 		moves: ['e2e4', 'e7e5'],
@@ -553,7 +609,8 @@ describe('restore resync', () => {
 		lastFeedback: null,
 		currentEval: 15,
 		serverGameId: 7,
-		completedGameId: null
+		completedGameId: null,
+		completedGameNumber: null
 	};
 
 	it('posts only the moves the server record is missing', async () => {
@@ -587,11 +644,14 @@ describe('restore resync', () => {
 			evals: mate.map(() => 0),
 			badges: mate.map(() => null)
 		});
-		api.getGame.mockResolvedValue({ moves: mate.map(() => ({})) }); // fully synced
+		api.getGame.mockResolvedValue({ moves: mate.map(() => ({})), number: 4 }); // fully synced
 		api.completeGame.mockRejectedValue(new ApiError(409, 'already completed'));
 		const session = new PlaySession();
 		await settle();
 		expect(session.completedGameId).toBe(7); // 409 = completed right before refresh
+		// the number it was given on that first completion is on the record,
+		// so the screen can still say which game it was saved as
+		expect(session.completedGameNumber).toBe(4);
 		expect(api.postMove).not.toHaveBeenCalled();
 	});
 });

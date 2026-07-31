@@ -4,6 +4,11 @@ const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://loca
 
 export interface GameSummary {
 	id: number;
+	/** What the app calls this game — "game #3" — counted per account, in the
+	 * order games were saved. Null while a game is still in progress: `id` is
+	 * a row id over every account's games, and showing it is what made a new
+	 * account's first game #189. Links and requests still use `id`. */
+	number: number | null;
 	white: string;
 	black: string;
 	result: string;
@@ -335,6 +340,8 @@ export interface MotifProgress {
  * phase. */
 export interface GameCplPoint {
 	game_id: number;
+	/** The account's game number — what the chart labels the point. */
+	number: number | null;
 	created_at: string;
 	mode: string;
 	avg_cpl: number;
