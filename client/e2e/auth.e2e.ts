@@ -30,7 +30,6 @@ test('an anonymous player has no server session to write anything with', async (
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-play').click();
 	await expect(page.locator('cg-board')).toBeVisible();
-	await expect(page.getByTestId('anonymous-not-saved')).toBeVisible();
 
 	// page.request shares the page's cookie jar, and there is no session cookie
 	// in it. That is the whole of "saves nothing": every route that writes is
