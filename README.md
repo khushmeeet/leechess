@@ -67,11 +67,20 @@ password is a lost account, which the sign-up form says out loud.
 
 A guest is an ordinary user row with no password (`users.is_guest`). It owns
 games and survives a reload like any other account, and `POST /auth/upgrade`
-sets a password on that same row — so signing up later moves no data.
+sets a password on that same row — so signing up later moves no data. Settings
+offers a guest **Sign up** where a registered account gets Sign out: there is
+nothing to sign back in with yet, so leaving would mean losing the account.
 
 The username is the login identifier, so `users.username_canonical` holds the
 lowercased form under a unique index and every lookup goes through it;
 `users.username` keeps the casing you typed for display.
+
+A guest's name is exempt from all of that except the index. They cannot sign in
+with it, so it is a label rather than a credential: `POST /auth/guest` (and a
+guest's own rename) takes whatever was typed, cleans it, and — if somebody
+already holds it — numbers it `drifter-2` instead of refusing. The 3–24
+character shape and the taken check apply to registration, and come back the
+moment a guest takes a password.
 
 Two environment variables:
 

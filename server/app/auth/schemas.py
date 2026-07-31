@@ -16,7 +16,11 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    username: str | None = Field(default=None, pattern=USERNAME_PATTERN)
+    # No pattern: this is the one rename route, and a guest's name is not held
+    # to the registered shape (app/auth/manager.py::UserManager._update, which
+    # is where the two paths part). A registered user with a badly shaped name
+    # gets USERNAME_INVALID from there instead of a 422 from here.
+    username: str | None = None
     # This app has no mail sender and no email column worth setting, so the
     # only accepted value is null. Sending an address is a 422 rather than a
     # silently ignored field.
@@ -33,7 +37,12 @@ class UserCreate(BaseModel):
 
 
 class GuestCreate(BaseModel):
-    username: str = Field(pattern=USERNAME_PATTERN)
+    """Body of /auth/guest. Unconstrained on purpose: a guest's name is a
+    label, not a login identifier, so whatever they typed is cleaned and kept
+    rather than checked and refused — see
+    app/auth/models.py::sanitize_guest_username."""
+
+    username: str
 
 
 class PasswordSet(BaseModel):
