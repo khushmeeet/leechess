@@ -71,6 +71,33 @@ test('a taken username is reported instead of failing silently', async ({ page, 
 	await expect(page).toHaveURL(/\/welcome$/);
 });
 
+test('a guest is never turned away over the name they picked', async ({ page, request }) => {
+	await request.post('http://localhost:8123/auth/guest', { data: { username: 'taken' } });
+
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-guest').click();
+	// Somebody else's name, and shorter than a registered one is allowed to
+	// be: neither is a reason to keep somebody off the board.
+	await page.getByTestId('auth-username').fill('taken');
+	await page.getByTestId('auth-submit').click();
+
+	await expect(page).toHaveURL(/\/$/);
+	// Numbered rather than refused, and the nav bar says so straight away.
+	await expect(page.getByTestId('nav-username')).toContainText('taken-2');
+	await expect(page.getByTestId('auth-error')).toHaveCount(0);
+});
+
+test('a guest name shorter than a registered one is allowed', async ({ page }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-guest').click();
+	await expect(page.getByTestId('guest-name-hint')).toBeVisible();
+	await page.getByTestId('auth-username').fill('kh');
+	await page.getByTestId('auth-submit').click();
+
+	await expect(page).toHaveURL(/\/$/);
+	await expect(page.getByTestId('nav-username')).toContainText('kh');
+});
+
 test('a short password is reported', async ({ page }) => {
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-signup').click();

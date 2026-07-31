@@ -65,9 +65,16 @@ def test_a_name_differing_only_in_case_is_a_conflict(anon_client):
 
 @pytest.mark.parametrize("username", ["ab", "has space", "way-too-long-a-name-for-here"])
 def test_a_badly_shaped_name_is_rejected(anon_client, username):
+    """400 rather than 422: the shape check moved off the schema and into the
+    manager when guests stopped being held to it, so a registered user's bad
+    name now comes back as a code the client already has wording for."""
     anon_client.post("/auth/register", json=CREDENTIALS)
 
-    assert anon_client.patch("/users/me", json={"username": username}).status_code == 422
+    response = anon_client.patch("/users/me", json={"username": username})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "USERNAME_INVALID"
+    assert anon_client.get("/auth/session").json()["user"]["username"] == "alice"
 
 
 def test_renaming_requires_a_session(anon_client):

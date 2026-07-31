@@ -18,6 +18,11 @@
 	let open = $state(false);
 	let root = $state<HTMLElement>();
 	let renameError = $state<string | null>(null);
+	let signingUp = $state(false);
+	let password = $state('');
+	let signUpError = $state<string | null>(null);
+	let busy = $state(false);
+	let signedUp = $state(false);
 
 	/** The username is the login identifier now, so a rename can be refused —
 	 * taken, or the wrong shape. Reverts the field to the server's answer so
@@ -39,11 +44,44 @@
 		}
 	}
 
+	/** Guest takes a password, from the one menu that is always reachable.
+	 * Same call as UpgradePrompt's, which only appears once a game exists —
+	 * this is the way in for somebody who came looking for it. */
+	async function signUp(event: SubmitEvent) {
+		event.preventDefault();
+		if (busy) return;
+		busy = true;
+		signUpError = null;
+		try {
+			await session.upgrade(password);
+			// session.isGuest is false from here, so the button below is a real
+			// Sign out now — this flag is only what says so.
+			signedUp = true;
+			signingUp = false;
+			password = '';
+		} catch (err) {
+			signUpError = authErrorMessage(err);
+		} finally {
+			busy = false;
+		}
+	}
+
+	/** Closing drops the sign-up form with it: the half-typed password, the
+	 * error that went with it, and the confirmation — which belongs to the
+	 * moment it happened, not to every later visit to this menu. */
+	function close() {
+		open = false;
+		signingUp = false;
+		password = '';
+		signUpError = null;
+		signedUp = false;
+	}
+
 	function onWindowClick(event: MouseEvent) {
-		if (open && root && !root.contains(event.target as Node)) open = false;
+		if (open && root && !root.contains(event.target as Node)) close();
 	}
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
+		if (event.key === 'Escape') close();
 	}
 </script>
 
@@ -54,7 +92,7 @@
 		aria-label="Settings"
 		aria-expanded={open}
 		data-testid="settings-button"
-		onclick={() => (open = !open)}
+		onclick={() => (open ? close() : (open = true))}
 		class="rounded-xs p-1.5 text-muted hover:bg-accent-soft hover:text-ink"
 	>
 		<svg
@@ -94,14 +132,67 @@
 					{renameError}
 				</p>
 			{/if}
-			<button
-				type="button"
-				onclick={() => session.signOut()}
-				data-testid="sign-out"
-				class="mt-2 w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-muted hover:bg-accent-soft hover:text-ink"
-			>
-				Sign out
-			</button>
+			{#if session.isGuest}
+				<!-- A guest has never signed in and has nothing to sign back in
+				     with, so "Sign out" here is a way to lose an account rather
+				     than to leave one. What they actually want at this point is to
+				     keep it — the accent is the only coloured thing in this menu,
+				     which is about as much as a settings panel should insist. -->
+				<button
+					type="button"
+					onclick={() => (signingUp = !signingUp)}
+					aria-expanded={signingUp}
+					data-testid="sign-up"
+					class="mt-2 w-full rounded-xs border border-accent-line bg-paper px-2 py-1 text-sm text-accent hover:bg-accent-soft"
+				>
+					Sign up
+				</button>
+				{#if signingUp}
+					<form class="mt-2 flex flex-col gap-1.5" onsubmit={signUp}>
+						<input
+							type="password"
+							bind:value={password}
+							autocomplete="new-password"
+							placeholder="New password"
+							required
+							aria-label="New password"
+							data-testid="sign-up-password"
+							class="w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+						/>
+						<button
+							type="submit"
+							disabled={busy}
+							data-testid="sign-up-submit"
+							class="w-full rounded-xs border border-accent-line px-2 py-1 text-sm text-accent hover:bg-accent-soft disabled:opacity-50"
+						>
+							Save
+						</button>
+						<p class="text-[11px] text-muted">
+							Keeps this account and everything under it, on any browser. There's no password reset
+							— leechess has no email address for you.
+						</p>
+						{#if signUpError}
+							<p class="text-[11px] text-err" role="alert" data-testid="sign-up-error">
+								{signUpError}
+							</p>
+						{/if}
+					</form>
+				{/if}
+			{:else}
+				{#if signedUp}
+					<p class="mt-2 text-[11px] text-ok" data-testid="sign-up-done">
+						Password set. Sign in as <span class="font-semibold">{session.name}</span> from any browser.
+					</p>
+				{/if}
+				<button
+					type="button"
+					onclick={() => session.signOut()}
+					data-testid="sign-out"
+					class="mt-2 w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-muted hover:bg-accent-soft hover:text-ink"
+				>
+					Sign out
+				</button>
+			{/if}
 
 			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
 				Theme
