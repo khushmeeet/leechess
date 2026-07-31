@@ -88,6 +88,39 @@ def _migrate_existing_tables(bind=None) -> None:
                 conn.commit()
 
         _move_schedules_off_the_content_rows(conn, columns_of)
+        _leave_guests_out_of_the_username_index(conn)
+
+
+_USERNAME_INDEX = "ix_users_username_canonical"
+
+
+def _leave_guests_out_of_the_username_index(conn) -> None:
+    """The unique index on username_canonical used to cover every row. Guest
+    names are labels now — several browsers can be playing as `guest1` — so it
+    covers only the accounts that can be signed in to.
+
+    create_all builds the partial index on a fresh database and ignores a
+    users table that already exists, so a database with history is the only
+    one that reaches the rewrite below. Existing rows cannot conflict with the
+    narrower index: they were unique under the wider one.
+    """
+    from sqlalchemy import text
+
+    existing = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+        {"name": _USERNAME_INDEX},
+    ).scalar()
+    if existing is not None and "is_guest" in existing:
+        return  # already narrowed
+    if existing is not None:
+        conn.execute(text(f"DROP INDEX {_USERNAME_INDEX}"))
+    conn.execute(
+        text(
+            f"CREATE UNIQUE INDEX {_USERNAME_INDEX} "
+            "ON users (username_canonical) WHERE is_guest = 0"
+        )
+    )
+    conn.commit()
 
 
 # (content table, state table, foreign key, attempts table, attempts FK)

@@ -72,10 +72,12 @@ class Session {
 		this.user = await startAsGuest(username);
 	}
 
-	/** Guest chooses a password. Same account, same id, same games — the
-	 * server upgrades the row in place, so there is nothing to re-fetch. */
-	async upgrade(password: string) {
-		this.user = await upgradeAccount(password);
+	/** Guest chooses a username and a password. Same account, same id, same
+	 * games — the server upgrades the row in place, so there is nothing to
+	 * re-fetch. The username can be refused here even though it was fine to
+	 * play under: it is a credential from this call onwards. */
+	async upgrade(username: string, password: string) {
+		this.user = await upgradeAccount(username, password);
 	}
 
 	async rename(username: string) {

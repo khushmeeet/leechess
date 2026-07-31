@@ -16,6 +16,7 @@
 	 * arriving with games already behind them (a reload, or a deep link). */
 	let first = true;
 	let expanded = $state(false);
+	let wantedName = $state('');
 	let password = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
@@ -43,13 +44,21 @@
 			.catch(() => {});
 	});
 
+	/** Prefilled with the name they have been playing under: it is nearly
+	 * always the one they want, and it is only from here that it has to be
+	 * free — a guest name identifies nobody. */
+	function expand() {
+		expanded = !expanded;
+		if (expanded) wantedName = session.name ?? '';
+	}
+
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy) return;
 		busy = true;
 		error = null;
 		try {
-			await session.upgrade(password);
+			await session.upgrade(wantedName.trim(), password);
 			done = true;
 		} catch (err) {
 			error = authErrorMessage(err);
@@ -80,7 +89,7 @@
 			<div class="ml-auto flex items-center gap-2">
 				<button
 					type="button"
-					onclick={() => (expanded = !expanded)}
+					onclick={expand}
 					data-testid="upgrade-open"
 					class="rounded-xs border border-accent-line px-3 py-1 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-card"
 				>
@@ -101,6 +110,17 @@
 		{#if expanded}
 			<form class="mt-3 flex flex-wrap items-center gap-2" onsubmit={save}>
 				<input
+					type="text"
+					bind:value={wantedName}
+					autocomplete="username"
+					placeholder="Username"
+					maxlength="24"
+					required
+					aria-label="Username"
+					data-testid="upgrade-username"
+					class="w-40 rounded-xs border border-line bg-card px-2 py-1 text-sm text-ink"
+				/>
+				<input
 					type="password"
 					bind:value={password}
 					autocomplete="new-password"
@@ -119,8 +139,9 @@
 					Save
 				</button>
 				<p class="w-full text-xs text-muted">
-					Your username stays <span class="font-semibold text-ink">{session.name}</span>. There's no
-					password reset — leechess has no email address for you, so save it in a password manager.
+					This is the name you'll sign in with, so it has to be free and shaped like one: 3–24
+					characters, letters, numbers, underscores and hyphens. There's no password reset —
+					leechess has no email address for you, so save it in a password manager.
 				</p>
 				{#if error}
 					<p class="w-full text-xs text-err" role="alert" data-testid="upgrade-error">{error}</p>

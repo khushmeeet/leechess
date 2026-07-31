@@ -397,13 +397,23 @@ export function login(username: string, password: string): Promise<AccountUser> 
 
 /** A guest is a real account without a password: it owns games and survives a
  * reload, and upgradeAccount() later turns this same row into a registered one
- * without moving any data. */
+ * without moving any data.
+ *
+ * Nothing about the name is checked — it identifies no one. Asking for the
+ * name this browser is already playing under resumes that session instead of
+ * opening a second account. */
 export function startAsGuest(username: string): Promise<AccountUser> {
 	return request('/auth/guest', { method: 'POST', body: JSON.stringify({ username }) });
 }
 
-export function upgradeAccount(password: string): Promise<AccountUser> {
-	return request('/auth/upgrade', { method: 'POST', body: JSON.stringify({ password }) });
+/** Guest -> registered, same row. The username is sent along because this is
+ * where it becomes a login identifier and gets checked as one — it can come
+ * back USERNAME_TAKEN even though playing under it never did. */
+export function upgradeAccount(username: string, password: string): Promise<AccountUser> {
+	return request('/auth/upgrade', {
+		method: 'POST',
+		body: JSON.stringify({ username, password })
+	});
 }
 
 export function logout(): Promise<void> {

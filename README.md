@@ -75,12 +75,24 @@ The username is the login identifier, so `users.username_canonical` holds the
 lowercased form under a unique index and every lookup goes through it;
 `users.username` keeps the casing you typed for display.
 
-A guest's name is exempt from all of that except the index. They cannot sign in
-with it, so it is a label rather than a credential: `POST /auth/guest` (and a
-guest's own rename) takes whatever was typed, cleans it, and — if somebody
-already holds it — numbers it `drifter-2` instead of refusing. The 3–24
-character shape and the taken check apply to registration, and come back the
-moment a guest takes a password.
+A guest's name is exempt from all of that, index included — the unique index has
+a `WHERE is_guest = 0` clause, so guest rows are simply not in it. They cannot
+sign in with the name, so it identifies nobody: `POST /auth/guest` (and a
+guest's own rename) takes whatever was typed, cleans it, and keeps it, even if
+another browser is already playing under the same one. They are two accounts
+with one label.
+
+Asking `/auth/guest` for the name this browser is *already* playing under
+resumes that session instead of opening a second account. The resumption is
+from the session cookie and never from the name — with no password behind a
+guest account, honouring it by name would hand somebody's games to whoever
+guessed what they were called. A browser that has lost its cookie starts fresh.
+
+The checks are not gone, they land at sign-up. `/auth/register` and
+`/auth/upgrade` both take a username and a password, and both hold that username
+to the 3–24 shape and to being unregistered — `/auth/upgrade` prefills it with
+whatever the guest has been playing as, which is where a `USERNAME_TAKEN` can
+first appear for a name that was fine to play under.
 
 Two environment variables:
 

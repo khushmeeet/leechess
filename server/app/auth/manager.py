@@ -1,5 +1,4 @@
 import re
-import secrets
 import uuid
 from collections.abc import Iterator
 
@@ -12,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth.config import auth_secret
 from app.auth.db import SyncUserDatabase, get_user_db
-from app.auth.models import USERNAME_PATTERN, User, numbered, sanitize_guest_username
+from app.auth.models import USERNAME_PATTERN, User, sanitize_guest_username
 from app.legacy_ownership import adopt_orphaned_rows
 
 # No complexity rules. There is no password reset here — leechess holds no
@@ -22,17 +21,6 @@ from app.legacy_ownership import adopt_orphaned_rows
 MIN_PASSWORD_LENGTH = 8
 
 _USERNAME_RE = re.compile(USERNAME_PATTERN)
-
-# How far a guest's name is numbered upwards before giving up on a readable
-# variant: `drifter`, `drifter-2`, … `drifter-20`. Twenty lookups is already
-# more than this ever costs in practice, and past that a random number is
-# both cheaper and likelier to land.
-_NUMBERED_LIMIT = 20
-
-# Attempts at the insert itself. Only a guest gets more than one: the unique
-# index is what actually decides who holds a name, so losing that race is
-# answered by picking another name rather than by a 409 they cannot act on.
-_GUEST_INSERT_ATTEMPTS = 5
 
 
 class InvalidUsername(FastAPIUsersException):
@@ -82,35 +70,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         ):
             raise UsernameTaken(username)
 
-    async def _free_guest_name(
-        self, wanted: str, *, current_user: User | None = None
-    ) -> str:
-        """`wanted`, or the first numbered variant of it nobody holds.
-
-        The guest counterpart to validate_username's availability half: a
-        guest is never told their name is taken, they are quietly moved along
-        to `drifter-2`, which the nav bar shows them straight away. Advisory
-        only, like the check it replaces — two guests can still race onto the
-        same name, which is why _insert retries around the unique index.
-        """
-
-        async def free(name: str) -> bool:
-            holder = await self.user_db.get_by_username(name)
-            if holder is None:
-                return True
-            # A guest renaming themselves to the name they already have.
-            return current_user is not None and holder.id == current_user.id
-
-        if await free(wanted):
-            return wanted
-        for n in range(2, _NUMBERED_LIMIT + 1):
-            candidate = numbered(wanted, n)
-            if await free(candidate):
-                return candidate
-        # Twenty variants deep is not a name anyone chose on purpose. Stop
-        # scanning; _insert's retry covers the chance this one is taken too.
-        return numbered(wanted, secrets.randbelow(9000) + 1000)
-
     async def create_user(
         self,
         username: str,
@@ -128,8 +87,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         the post-register hook — is done explicitly below.
 
         The one asymmetry is the name. A registered username is a credential
-        and is validated; a guest's is a label, so it is sanitized and, if
-        somebody already holds it, numbered — see sanitize_guest_username.
+        and is validated; a guest's is a label, so it is only cleaned — see
+        sanitize_guest_username. Nothing stops two guests sharing one.
         """
         if is_guest:
             username = sanitize_guest_username(username)
@@ -155,48 +114,60 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     async def _insert(
         self, username: str, hashed_password: str | None, *, is_guest: bool
     ) -> User:
-        """Write the row. Once for a registered user, whose name was already
-        checked and who can be told it went; up to _GUEST_INSERT_ATTEMPTS
-        times for a guest, who is renumbered around whoever won the race."""
-        lost: IntegrityError | None = None
-        for _ in range(_GUEST_INSERT_ATTEMPTS if is_guest else 1):
-            name = await self._free_guest_name(username) if is_guest else username
-            try:
-                return await self.user_db.create(
-                    {
-                        "username": name,
-                        "hashed_password": hashed_password,
-                        "email": None,
-                        "is_active": True,
-                        # Nothing to verify without an email address; leaving
-                        # this False would make every account look
-                        # half-finished to fastapi-users' verified-user
-                        # dependencies.
-                        "is_verified": True,
-                        "is_guest": is_guest,
-                    }
-                )
-            except IntegrityError as exc:
-                # Lost the race against a concurrent signup on the same name.
-                lost = exc
-        raise UsernameTaken(username) from lost
+        """Write the row. A guest cannot collide with anybody — the unique
+        index skips guest rows — so the only integrity failure reachable here
+        is a registered signup that lost a race on the same name."""
+        try:
+            return await self.user_db.create(
+                {
+                    "username": username,
+                    "hashed_password": hashed_password,
+                    "email": None,
+                    "is_active": True,
+                    # Nothing to verify without an email address; leaving this
+                    # False would make every account look half-finished to
+                    # fastapi-users' verified-user dependencies.
+                    "is_verified": True,
+                    "is_guest": is_guest,
+                }
+            )
+        except IntegrityError as exc:
+            raise UsernameTaken(username) from exc
 
-    async def set_password(
-        self, user: User, password: str, request: Request | None = None
+    async def register_guest(
+        self,
+        user: User,
+        username: str,
+        password: str,
+        request: Request | None = None,
     ) -> User:
         """Guest -> registered, in place. The row keeps its id, so every game,
         attempt and puzzle it already owns stays owned by it: there is nothing
-        to migrate at the moment somebody decides to sign up."""
+        to migrate at the moment somebody decides to sign up.
+
+        The username comes along because this is the moment it stops being a
+        label and becomes the thing they sign in with — so this is the first
+        point at which it has to be shaped like one and has to be theirs
+        alone. It arrives prefilled with whatever they have been playing as,
+        which is usually already fine.
+        """
         if not user.is_guest:
             raise NotAGuest()
+        await self.validate_username(username, current_user=user)
         await self.validate_password(password, user)
-        return await self.user_db.update(
-            user,
-            {
-                "hashed_password": self.password_helper.hash(password),
-                "is_guest": False,
-            },
-        )
+        try:
+            return await self.user_db.update(
+                user,
+                {
+                    "username": username,
+                    "hashed_password": self.password_helper.hash(password),
+                    "is_guest": False,
+                },
+            )
+        except IntegrityError as exc:
+            # Two guests signing up on the same name at once — the index only
+            # starts covering this row as is_guest goes false.
+            raise UsernameTaken(username) from exc
 
     async def authenticate_username(self, username: str, password: str) -> User | None:
         """Resolve a login by username instead of email.
@@ -239,9 +210,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         none. The schema deliberately carries no pattern for that reason."""
         if "username" in update_dict:
             if user.is_guest:
-                update_dict["username"] = await self._free_guest_name(
-                    sanitize_guest_username(update_dict["username"]),
-                    current_user=user,
+                update_dict["username"] = sanitize_guest_username(
+                    update_dict["username"]
                 )
             else:
                 await self.validate_username(update_dict["username"], current_user=user)

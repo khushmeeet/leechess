@@ -45,10 +45,18 @@ class GuestCreate(BaseModel):
     username: str
 
 
-class PasswordSet(BaseModel):
-    """Body of /auth/upgrade — the password a guest chooses to keep their
-    progress reachable from another browser."""
+class AccountUpgrade(BaseModel):
+    """Body of /auth/upgrade — what a guest picks to keep their progress
+    reachable from another browser.
 
+    The username is here because a guest's was never checked for anything:
+    this is where it turns into a login identifier, so this is where it has to
+    be shaped like one and has to be free. No pattern on it for that reason —
+    the manager answers with USERNAME_INVALID or USERNAME_TAKEN, which the
+    client has wording for and a 422 would bypass.
+    """
+
+    username: str
     password: str
 
 

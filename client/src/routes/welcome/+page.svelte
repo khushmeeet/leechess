@@ -160,12 +160,12 @@
 
 						{#if mode === 'guest'}
 							<!-- Nothing here is checked: a guest name is a label, not a
-							     login, so the server takes whatever this is and only
-							     numbers it if somebody already has it. Said here so the
+							     login. Two people can be playing under the same one, and
+							     the real username is chosen at sign-up. Said here so the
 							     field does not read like one that can turn you away. -->
 							<p class="text-xs text-muted" data-testid="guest-name-hint">
-								Anything you like — it's what the app calls you, not a login, and you can change it
-								later.
+								Anything you like — it's what the app calls you, not a login. You'll pick the
+								username you sign in with if you set a password later.
 							</p>
 						{/if}
 

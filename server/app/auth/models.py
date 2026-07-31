@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.db import Base
@@ -41,9 +41,8 @@ def sanitize_guest_username(raw: object) -> str:
     Taking `object` for the same reason validate_username does: PATCH
     /users/me can deliver an explicit null here.
 
-    Uniqueness is still the database's to enforce — see
-    UserManager._free_guest_name, which numbers a collision rather than
-    rejecting it.
+    Nothing here is checked for availability, because a guest name has none
+    to check: two browsers can both be `guest1` and be two different players.
     """
     text = raw if isinstance(raw, str) else ""
     # str.split() splits on every kind of whitespace, so this also flattens
@@ -53,15 +52,22 @@ def sanitize_guest_username(raw: object) -> str:
     return printable[:USERNAME_MAX_LENGTH].strip() or GUEST_FALLBACK_NAME
 
 
-def numbered(username: str, n: int) -> str:
-    """`drifter` -> `drifter-2`, still inside the column's width: a long name
-    loses its tail rather than the number that makes it free."""
-    suffix = f"-{n}"
-    return username[: USERNAME_MAX_LENGTH - len(suffix)].rstrip() + suffix
-
-
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # Unique among the accounts that can be signed in to, and only those.
+        # A guest name is a label — two browsers may both be playing as
+        # `guest1` — so guest rows are left out of the index rather than
+        # renamed around each other. app/main.py::_migrate_existing_tables
+        # moves a database that predates the WHERE clause; SQLite is the only
+        # backend this app has, hence the dialect-specific keyword.
+        Index(
+            "ix_users_username_canonical",
+            "username_canonical",
+            unique=True,
+            sqlite_where=text("is_guest = 0"),
+        ),
+    )
 
     # fastapi-users treats email as the login identifier and requires it.
     # leechess signs in by username and has no way to send mail, so nothing
@@ -80,13 +86,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
     # As the user typed it — this is what the nav bar and PGN headers show.
     username: Mapped[str] = mapped_column(String(USERNAME_MAX_LENGTH))
-    # Lowercased. Since the username *is* the login identifier, uniqueness has
-    # to be case-insensitive and enforced by the database rather than by a
-    # check that a concurrent signup can slip past. Every lookup goes through
+    # Lowercased. For a registered account the username *is* the login
+    # identifier, so uniqueness has to be case-insensitive and enforced by the
+    # database rather than by a check that a concurrent signup can slip past —
+    # that is the partial index in __table_args__. Every lookup goes through
     # this column; the validator below keeps it from drifting.
-    username_canonical: Mapped[str] = mapped_column(
-        String(USERNAME_MAX_LENGTH), unique=True, index=True
-    )
+    username_canonical: Mapped[str] = mapped_column(String(USERNAME_MAX_LENGTH))
 
     # A guest is a real account with no password: it owns rows and survives a
     # reload like any other. Setting a password later upgrades this same row in
@@ -113,6 +118,5 @@ __all__ = [
     "USERNAME_PATTERN",
     "User",
     "canonical",
-    "numbered",
     "sanitize_guest_username",
 ]

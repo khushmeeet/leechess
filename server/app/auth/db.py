@@ -43,11 +43,18 @@ class SyncUserDatabase(BaseUserDatabase[User, uuid.UUID]):
         )
 
     async def get_by_username(self, username: str) -> User | None:
-        """The lookup that actually matters here — usernames are the login
-        identifier, so this is what UserManager.authenticate resolves through.
-        Matching on the canonical column makes it case-insensitive using the
-        same unique index that enforces it."""
-        statement = select(User).where(User.username_canonical == canonical(username))
+        """The account this name signs you in to, if there is one.
+
+        Guests are excluded, which is what makes "is this name taken?" a
+        question with one answer: a guest name is a label several browsers can
+        share, and none of them can be signed in to anyway. Matching on the
+        canonical column makes this case-insensitive through the same partial
+        unique index that keeps registered names apart.
+        """
+        statement = select(User).where(
+            User.username_canonical == canonical(username),
+            User.is_guest.is_(False),
+        )
         return await run_in_threadpool(
             lambda: self.session.scalars(statement).one_or_none()
         )

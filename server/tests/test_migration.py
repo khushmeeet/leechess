@@ -12,6 +12,7 @@ import sqlite3
 
 import pytest
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.legacy_ownership import adopt_orphaned_rows
@@ -158,3 +159,89 @@ def test_running_the_migration_twice_is_a_no_op(legacy_engine):
     with Session(legacy_engine) as db:
         # not duplicated, and nothing blew up on the second pass
         assert len(db.scalars(select(PuzzleState)).all()) == 1
+
+
+# --- the username index, when guest names stopped being identifiers ---------
+
+
+@pytest.fixture()
+def wide_index_engine(tmp_path):
+    """A database from before guests dropped out of the username index: the
+    unique index covers every row, guests included.
+
+    Built by create_all and then put back the old way, rather than by hand —
+    the users table has a dozen columns from the fastapi-users mixin, and a
+    transcribed copy of them would only ever test the transcription.
+    """
+    path = tmp_path / "wide.db"
+    engine = create_engine(
+        f"sqlite:///{path}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        conn.execute(text("DROP INDEX ix_users_username_canonical"))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX ix_users_username_canonical "
+                "ON users (username_canonical)"
+            )
+        )
+        conn.commit()
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+def _add_user(engine, username: str, *, guest: bool) -> None:
+    with Session(engine) as db:
+        db.add(
+            User(
+                username=username,
+                hashed_password=None if guest else "x",
+                is_guest=guest,
+                is_verified=True,
+            )
+        )
+        db.commit()
+
+
+def test_two_guests_could_not_share_a_name_before(wide_index_engine):
+    """The fixture really is the old world — otherwise the test below proves
+    nothing about the migration."""
+    _add_user(wide_index_engine, "guest1", guest=True)
+
+    with pytest.raises(IntegrityError):
+        _add_user(wide_index_engine, "guest1", guest=True)
+
+
+def test_two_guests_can_share_a_name_after_migrating(wide_index_engine):
+    _migrate_existing_tables(bind=wide_index_engine)
+
+    _add_user(wide_index_engine, "guest1", guest=True)
+    _add_user(wide_index_engine, "guest1", guest=True)
+
+    with Session(wide_index_engine) as db:
+        assert len(db.scalars(select(User)).all()) == 2
+
+
+def test_registered_names_are_still_kept_apart(wide_index_engine):
+    _migrate_existing_tables(bind=wide_index_engine)
+    _add_user(wide_index_engine, "ada", guest=False)
+
+    with pytest.raises(IntegrityError):
+        _add_user(wide_index_engine, "ADA", guest=False)
+
+
+def test_narrowing_the_index_twice_is_a_no_op(wide_index_engine):
+    _migrate_existing_tables(bind=wide_index_engine)
+    _migrate_existing_tables(bind=wide_index_engine)
+
+    with wide_index_engine.connect() as conn:
+        sql = conn.execute(
+            text(
+                "SELECT sql FROM sqlite_master WHERE type='index' "
+                "AND name='ix_users_username_canonical'"
+            )
+        ).scalar()
+    assert "is_guest" in sql

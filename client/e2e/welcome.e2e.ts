@@ -59,7 +59,11 @@ test('signing up warns that there is no password reset', async ({ page }) => {
 });
 
 test('a taken username is reported instead of failing silently', async ({ page, request }) => {
-	await request.post('http://localhost:8123/auth/guest', { data: { username: 'taken' } });
+	// A registered account, not a guest: only a name with a password behind it
+	// is a login somebody else can be turned away from.
+	await request.post('http://localhost:8123/auth/register', {
+		data: { username: 'taken', password: 'correct-horse' }
+	});
 
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-signup').click();
@@ -72,18 +76,19 @@ test('a taken username is reported instead of failing silently', async ({ page, 
 });
 
 test('a guest is never turned away over the name they picked', async ({ page, request }) => {
+	// Another browser already playing under this name — a separate cookie jar,
+	// so a separate account.
 	await request.post('http://localhost:8123/auth/guest', { data: { username: 'taken' } });
 
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-guest').click();
-	// Somebody else's name, and shorter than a registered one is allowed to
-	// be: neither is a reason to keep somebody off the board.
 	await page.getByTestId('auth-username').fill('taken');
 	await page.getByTestId('auth-submit').click();
 
 	await expect(page).toHaveURL(/\/$/);
-	// Numbered rather than refused, and the nav bar says so straight away.
-	await expect(page.getByTestId('nav-username')).toContainText('taken-2');
+	// Kept as typed, not renamed around anybody: a guest name identifies
+	// nobody, so there is nothing to collide with.
+	await expect(page.getByTestId('nav-username')).toContainText('taken');
 	await expect(page.getByTestId('auth-error')).toHaveCount(0);
 });
 

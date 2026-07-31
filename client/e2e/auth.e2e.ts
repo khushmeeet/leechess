@@ -49,6 +49,9 @@ test('a guest with a game is offered a password, and keeps everything on taking 
 	await expect(page.getByTestId('upgrade-prompt')).toBeVisible();
 
 	await page.getByTestId('upgrade-open').click();
+	// The username comes prefilled with the name they have been playing under —
+	// it is a login from here, but it does not have to change to become one.
+	await expect(page.getByTestId('upgrade-username')).toHaveValue('drifter');
 	await page.getByTestId('upgrade-password').fill('correct-horse');
 	await page.getByTestId('upgrade-submit').click();
 
@@ -86,6 +89,7 @@ test('the password set as a guest signs the same account back in', async ({ page
 	// looking for it takes, and the one that turns Sign up back into Sign out.
 	await page.getByTestId('settings-button').click();
 	await page.getByTestId('sign-up').click();
+	await expect(page.getByTestId('sign-up-username')).toHaveValue('drifter');
 	await page.getByTestId('sign-up-password').fill('correct-horse');
 	await page.getByTestId('sign-up-submit').click();
 
@@ -122,7 +126,11 @@ test('a rename onto a taken name is refused and the field snaps back', async ({
 	page,
 	request
 }) => {
-	await request.post(`${API}/auth/guest`, { data: { username: 'taken' } });
+	// Registered, so the name is a login worth protecting — a guest holding it
+	// would not be (see the guest rename spec below).
+	await request.post(`${API}/auth/register`, {
+		data: { username: 'taken', password: 'correct-horse' }
+	});
 
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-signup').click();
@@ -142,10 +150,7 @@ test('a rename onto a taken name is refused and the field snaps back', async ({
 	await expect(page.getByTestId('nav-username')).toContainText('ada');
 });
 
-test('a guest renaming onto a taken name is numbered rather than refused', async ({
-	page,
-	request
-}) => {
+test('a guest can rename onto a name somebody else is using', async ({ page, request }) => {
 	await request.post(`${API}/auth/guest`, { data: { username: 'taken' } });
 
 	await page.goto('/welcome');
@@ -159,9 +164,35 @@ test('a guest renaming onto a taken name is numbered rather than refused', async
 	await field.fill('taken');
 	await field.blur();
 
-	// The other half of the same rule the welcome screen follows, and the
-	// field has to show what was actually stored rather than what was typed.
-	await expect(page.getByTestId('nav-username')).toContainText('taken-2');
-	await expect(field).toHaveValue('taken-2');
+	// Two guests may answer to one name; neither of them can be signed in to,
+	// so there is nothing for the other to take.
+	await expect(page.getByTestId('nav-username')).toContainText('taken');
 	await expect(page.getByTestId('username-setting-error')).toHaveCount(0);
+});
+
+test('signing up is where the username is finally checked', async ({ page, request }) => {
+	// A registered account holding the name this guest has been playing under.
+	await request.post(`${API}/auth/register`, {
+		data: { username: 'taken', password: 'correct-horse' }
+	});
+
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-guest').click();
+	await page.getByTestId('auth-username').fill('taken');
+	await page.getByTestId('auth-submit').click();
+	// Playing under it was never a problem.
+	await expect(page.getByTestId('nav-username')).toContainText('taken');
+
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('sign-up').click();
+	await page.getByTestId('sign-up-password').fill('another-one');
+	await page.getByTestId('sign-up-submit').click();
+
+	// Turning it into a login is. The field is right there to change.
+	await expect(page.getByTestId('sign-up-error')).toContainText('already taken');
+	await page.getByTestId('sign-up-username').fill('settled');
+	await page.getByTestId('sign-up-submit').click();
+
+	await expect(page.getByTestId('sign-up-done')).toBeVisible();
+	await expect(page.getByTestId('nav-username')).toContainText('settled');
 });

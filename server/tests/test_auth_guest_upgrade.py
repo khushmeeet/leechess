@@ -42,7 +42,10 @@ def test_a_guest_cannot_be_signed_in_to_with_a_password(anon_client):
     assert response.status_code == 400
 
 
-def test_a_guest_username_is_taken_like_any_other(anon_client):
+def test_a_guest_username_reserves_nothing(anon_client):
+    """A name nobody can sign in with is not holding a login. The rest of that
+    contract — including two guests sharing one name — is in
+    tests/test_guest_names.py."""
     anon_client.post("/auth/guest", json={"username": "drifter"})
     anon_client.post("/auth/logout")
 
@@ -50,7 +53,7 @@ def test_a_guest_username_is_taken_like_any_other(anon_client):
         "/auth/register", json={"username": "DRIFTER", "password": "correct-horse"}
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 200
 
 
 def test_upgrading_keeps_the_same_account_and_its_games(anon_client, db_session):
@@ -59,7 +62,7 @@ def test_upgrading_keeps_the_same_account_and_its_games(anon_client, db_session)
     guest = anon_client.post("/auth/guest", json={"username": "drifter"}).json()
     game_id = anon_client.post("/games", json={}).json()["id"]
 
-    response = anon_client.post("/auth/upgrade", json={"password": "correct-horse"})
+    response = anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "correct-horse"})
 
     assert response.status_code == 200
     upgraded = response.json()
@@ -72,7 +75,7 @@ def test_upgrading_keeps_the_same_account_and_its_games(anon_client, db_session)
 
 def test_after_upgrading_the_password_signs_you_back_in(anon_client):
     anon_client.post("/auth/guest", json={"username": "drifter"})
-    anon_client.post("/auth/upgrade", json={"password": "correct-horse"})
+    anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "correct-horse"})
     anon_client.post("/auth/logout")
 
     response = anon_client.post(
@@ -85,9 +88,9 @@ def test_after_upgrading_the_password_signs_you_back_in(anon_client):
 
 def test_upgrading_twice_is_a_conflict(anon_client):
     anon_client.post("/auth/guest", json={"username": "drifter"})
-    anon_client.post("/auth/upgrade", json={"password": "correct-horse"})
+    anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "correct-horse"})
 
-    response = anon_client.post("/auth/upgrade", json={"password": "something-else"})
+    response = anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "something-else"})
 
     assert response.status_code == 409
     assert response.json()["detail"] == "ALREADY_REGISTERED"
@@ -96,19 +99,19 @@ def test_upgrading_twice_is_a_conflict(anon_client):
 def test_a_registered_account_cannot_be_upgraded(anon_client):
     anon_client.post("/auth/register", json={"username": "alice", "password": "correct-horse"})
 
-    response = anon_client.post("/auth/upgrade", json={"password": "another-one"})
+    response = anon_client.post("/auth/upgrade", json={"username": "alice", "password": "another-one"})
 
     assert response.status_code == 409
 
 
 def test_upgrading_requires_a_session(anon_client):
-    assert anon_client.post("/auth/upgrade", json={"password": "correct-horse"}).status_code == 401
+    assert anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "correct-horse"}).status_code == 401
 
 
 def test_a_short_password_does_not_upgrade_the_account(anon_client, db_session):
     anon_client.post("/auth/guest", json={"username": "drifter"})
 
-    response = anon_client.post("/auth/upgrade", json={"password": "s"})
+    response = anon_client.post("/auth/upgrade", json={"username": "drifter", "password": "s"})
 
     assert response.status_code == 400
     still_a_guest = db_session.scalars(select(User)).one()

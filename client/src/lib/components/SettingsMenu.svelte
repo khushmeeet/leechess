@@ -19,14 +19,16 @@
 	let root = $state<HTMLElement>();
 	let renameError = $state<string | null>(null);
 	let signingUp = $state(false);
+	let wantedName = $state('');
 	let password = $state('');
 	let signUpError = $state<string | null>(null);
 	let busy = $state(false);
 	let signedUp = $state(false);
 
-	/** The username is the login identifier now, so a rename can be refused —
-	 * taken, or the wrong shape. Reverts the field to the server's answer so
-	 * what's shown is never a name that wasn't accepted. */
+	/** A registered rename can be refused — taken, or the wrong shape — because
+	 * the username is that account's login identifier. A guest's is a label and
+	 * is never refused. Either way the field is reverted to the server's answer,
+	 * so what's shown is never a name that wasn't accepted. */
 	async function rename(event: Event & { currentTarget: HTMLInputElement }) {
 		// Captured before the await: currentTarget is only set while the event is
 		// being dispatched, and is null by the time the request comes back.
@@ -44,16 +46,24 @@
 		}
 	}
 
-	/** Guest takes a password, from the one menu that is always reachable.
-	 * Same call as UpgradePrompt's, which only appears once a game exists —
-	 * this is the way in for somebody who came looking for it. */
+	/** Opening the sign-up form starts it from the name they have been playing
+	 * under — usually the right answer, and the one field they may have to
+	 * change if somebody registered it first. */
+	function toggleSignUp() {
+		signingUp = !signingUp;
+		if (signingUp) wantedName = session.name ?? '';
+	}
+
+	/** Guest takes a username and a password, from the one menu that is always
+	 * reachable. Same call as UpgradePrompt's, which only appears once a game
+	 * exists — this is the way in for somebody who came looking for it. */
 	async function signUp(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy) return;
 		busy = true;
 		signUpError = null;
 		try {
-			await session.upgrade(password);
+			await session.upgrade(wantedName.trim(), password);
 			// session.isGuest is false from here, so the button below is a real
 			// Sign out now — this flag is only what says so.
 			signedUp = true;
@@ -140,7 +150,7 @@
 				     which is about as much as a settings panel should insist. -->
 				<button
 					type="button"
-					onclick={() => (signingUp = !signingUp)}
+					onclick={toggleSignUp}
 					aria-expanded={signingUp}
 					data-testid="sign-up"
 					class="mt-2 w-full rounded-xs border border-accent-line bg-paper px-2 py-1 text-sm text-accent hover:bg-accent-soft"
@@ -149,6 +159,20 @@
 				</button>
 				{#if signingUp}
 					<form class="mt-2 flex flex-col gap-1.5" onsubmit={signUp}>
+						<!-- The name is asked for again rather than taken from above:
+						     it has been a label until now and becomes a login here, so
+						     it is the one field that can come back refused. -->
+						<input
+							type="text"
+							bind:value={wantedName}
+							autocomplete="username"
+							placeholder="Username"
+							maxlength="24"
+							required
+							aria-label="Username"
+							data-testid="sign-up-username"
+							class="w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+						/>
 						<input
 							type="password"
 							bind:value={password}
@@ -168,8 +192,9 @@
 							Save
 						</button>
 						<p class="text-[11px] text-muted">
-							Keeps this account and everything under it, on any browser. There's no password reset
-							— leechess has no email address for you.
+							Keeps this account and everything under it, on any browser. The name becomes your
+							login, so it has to be free. There's no password reset — leechess has no email address
+							for you.
 						</p>
 						{#if signUpError}
 							<p class="text-[11px] text-err" role="alert" data-testid="sign-up-error">

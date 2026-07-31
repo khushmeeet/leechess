@@ -19,10 +19,10 @@ from app.auth.manager import (
     UserManager,
     get_user_manager,
 )
-from app.auth.models import User, canonical
+from app.auth.models import User, canonical, sanitize_guest_username
 from app.auth.schemas import (
+    AccountUpgrade,
     GuestCreate,
-    PasswordSet,
     PasswordVerify,
     SessionOut,
     UserCreate,
@@ -58,16 +58,34 @@ async def register(
 async def start_as_guest(
     payload: GuestCreate,
     request: Request,
+    current: User | None = Depends(current_active_user_optional),
     user_manager: UserManager = Depends(get_user_manager),
     strategy: Strategy = Depends(auth_backend.get_strategy),
 ):
     """A guest is a real account without a password. It owns rows and survives
     a reload like any other, so nothing about playing has to know the
     difference — and POST /auth/upgrade later turns this same row into a
-    registered account without moving any data."""
-    user = await user_manager.create_user(
-        payload.username, None, is_guest=True, request=request
-    )
+    registered account without moving any data.
+
+    Asking for the name this browser is already playing under hands back the
+    session it already has: `guest1` twice from one browser is one player, not
+    two, and certainly not `guest1-2`. Any other name, or no session at all,
+    starts a fresh account — which may well share a name with somebody else's,
+    since a guest name identifies nothing.
+
+    That resumption is from the cookie and never from the name. There is no
+    password behind a guest account, so honouring "sign me in as guest1" from
+    a browser that never held it would be handing a stranger's games to
+    whoever guessed the name.
+    """
+    wanted = sanitize_guest_username(payload.username)
+    if (
+        current is not None
+        and current.is_guest
+        and canonical(current.username) == canonical(wanted)
+    ):
+        return await _signed_in(current, strategy)
+    user = await user_manager.create_user(wanted, None, is_guest=True, request=request)
     return await _signed_in(user, strategy)
 
 
@@ -93,14 +111,18 @@ async def login(
 
 @router.post("/upgrade", response_model=UserRead)
 async def upgrade(
-    payload: PasswordSet,
+    payload: AccountUpgrade,
     request: Request,
     user: User = Depends(current_active_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    """Guest chooses a password. The existing session cookie names this same
-    user id and stays valid, so no new token is issued."""
-    return await user_manager.set_password(user, payload.password, request=request)
+    """Guest picks a username and a password — the same two fields
+    /auth/register asks for, and checked the same way, because from here that
+    username is a credential. The existing session cookie names this same user
+    id and stays valid, so no new token is issued."""
+    return await user_manager.register_guest(
+        user, payload.username, payload.password, request=request
+    )
 
 
 @router.post("/logout", status_code=204)
