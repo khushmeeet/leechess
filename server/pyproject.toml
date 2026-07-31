@@ -7,6 +7,10 @@ requires-python = ">=3.14"
 dependencies = [
     "anthropic>=0.116.0",
     "fastapi>=0.139.0",
+    # Pinned to one major: app/auth/db.py implements the BaseUserDatabase
+    # protocol by hand (this backend is sync; the bundled adapter needs an
+    # AsyncSession), so a breaking change there is a breaking change here.
+    "fastapi-users[sqlalchemy]>=15.0.5,<16",
     "httpx>=0.28.1",
     "python-chess>=1.999",
     "sqlalchemy>=2.0.51",
@@ -22,6 +26,11 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# app/auth/db.py is the one async surface in this backend — it awaits work it
+# then runs on the ordinary sync Session. "auto" lets those tests be plain
+# coroutines instead of each carrying an @pytest.mark.asyncio that the
+# marker-split check in CI then has to reason about.
+asyncio_mode = "auto"
 markers = [
     "unit: fast tests, no Stockfish involved (run constantly: pytest -m 'not engine')",
     "engine: tests that shell out to the real Stockfish binary (slower)",

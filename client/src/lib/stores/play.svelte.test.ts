@@ -35,7 +35,7 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 vi.mock('$lib/stores/soundPrefs.svelte', () => ({
 	soundPrefs: { enabled: false, play: vi.fn(), move: vi.fn(), setEnabled: vi.fn() }
 }));
-vi.mock('$lib/stores/username.svelte', () => ({ usernamePrefs: { name: null } }));
+vi.mock('$lib/stores/session.svelte', () => ({ session: { name: null } }));
 vi.mock('$lib/openings', () => ({
 	loadOpenings: vi.fn(async () => false),
 	openingsReady: () => false,

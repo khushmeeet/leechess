@@ -170,7 +170,25 @@
 			events: { move: (orig, dest) => handleMove(orig, dest) }
 		});
 		api.setAutoShapes(autoShapes);
-		return () => api?.destroy();
+
+		// chessground memoizes the board's viewport rectangle and only discards
+		// it on document scroll, window resize, or its own element resizing
+		// (see its events.ts). Content appearing ABOVE the board — a banner, a
+		// status row — moves the board without any of those, and every click
+		// then resolves to the square it used to be over. Nothing about that
+		// fails visibly: the piece highlights, the move is quietly illegal.
+		//
+		// Watching the document's height catches it, because anything growing
+		// or vanishing above the board changes it. clear() alone is the whole
+		// fix — the rectangle is recomputed on next use, which is what
+		// chessground's own scroll handler relies on.
+		const layoutShifted = new ResizeObserver(() => api?.state.dom.bounds.clear());
+		layoutShifted.observe(document.body);
+
+		return () => {
+			layoutShifted.disconnect();
+			api?.destroy();
+		};
 	});
 
 	$effect(() => {

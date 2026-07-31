@@ -10,8 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.analysis import reset_stale_analyses, stockfish_binary
+from app.auth import router as auth_router
+from app.auth.backend import fastapi_users
+
+# Imported for its side effect: registering the users table on Base.metadata
+# before create_all runs below.
+from app.auth import models as auth_models  # noqa: F401
+from app.auth.schemas import UserRead, UserUpdate
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
+from app.legacy_ownership import claim_legacy_rows
 from app.routers import endgames, games, progress, puzzles, testing, wikibook
 from app.seeding import maybe_autoseed
 
@@ -28,6 +36,10 @@ async def lifespan(app: FastAPI):
     # The endgame-drill catalog is a fixed dozen rows — insert the ones this
     # database doesn't have yet, leaving the Leitner state of the rest alone.
     seed_catalog()
+    # Data written before accounts existed has no owner. If the sole account
+    # is already there (a restart after signing up), hand it over; otherwise
+    # the same call runs again when that account is created.
+    claim_legacy_rows()
     yield
 
 
@@ -36,15 +48,23 @@ app = FastAPI(title="leechess", lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
 
 
-def _migrate_existing_tables() -> None:
+def _migrate_existing_tables(bind=None) -> None:
     """create_all never alters tables that already exist, and there is no
     alembic here — columns added after a database was first created get a
-    hand-rolled ALTER, guarded so re-runs are no-ops."""
+    hand-rolled ALTER, guarded so re-runs are no-ops.
+
+    Takes a bind so tests can run it against a database built with an older
+    schema; the suite otherwise only ever sees a fresh create_all, where none
+    of this has anything to do.
+    """
     from sqlalchemy import text
 
-    with engine.connect() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(games)"))}
-        if "user_color" not in columns:
+    with (bind or engine).connect() as conn:
+
+        def columns_of(table: str) -> set[str]:
+            return {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+
+        if "user_color" not in columns_of("games"):
             conn.execute(
                 text(
                     "ALTER TABLE games ADD COLUMN user_color VARCHAR "
@@ -52,6 +72,67 @@ def _migrate_existing_tables() -> None:
                 )
             )
             conn.commit()
+
+        # Ownership. SQLite only allows ADD COLUMN with a NULL default when a
+        # REFERENCES clause is attached, which is what we want anyway: rows
+        # written before accounts existed have no owner, and the routers treat
+        # NULL as "not yours" — an un-adopted row is invisible, never public.
+        for table in ("games", "puzzles", "puzzle_attempts", "endgame_drill_attempts"):
+            if "user_id" not in columns_of(table):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ADD COLUMN user_id CHAR(36) "
+                        "REFERENCES users(id)"
+                    )
+                )
+                conn.commit()
+
+        _move_schedules_off_the_content_rows(conn, columns_of)
+
+
+# (content table, state table, foreign key, attempts table, attempts FK)
+_SCHEDULE_MOVES = (
+    ("puzzles", "puzzle_states", "puzzle_id", "puzzle_attempts", "puzzle_id"),
+    (
+        "endgame_drills",
+        "endgame_drill_states",
+        "drill_id",
+        "endgame_drill_attempts",
+        "drill_id",
+    ),
+)
+
+
+def _move_schedules_off_the_content_rows(conn, columns_of) -> None:
+    """Leitner state used to live on the puzzle and drill rows; it is per
+    account now, so those columns have to go.
+
+    Dropping them is not optional housekeeping. They are NOT NULL with only a
+    python-side default, so once the models stop mapping them SQLAlchemy sends
+    no value and *every* insert fails — which on a database with history means
+    no new puzzle can ever be generated again.
+
+    The existing schedule is real progress, so it is lifted into state rows
+    first, with no owner: there may well be no account yet at this point (a
+    deploy happens before anyone signs up), and adopt_orphaned_rows claims
+    these along with everything else. Only rows with attempt history are
+    carried — for the rest, "no state row" already means box 1, due now.
+    """
+    from sqlalchemy import text
+
+    for content, state, fk, attempts, attempts_fk in _SCHEDULE_MOVES:
+        if "box" not in columns_of(content):
+            continue  # already migrated, or a database created after this
+        conn.execute(
+            text(
+                f"INSERT INTO {state} (user_id, {fk}, box, due_at) "
+                f"SELECT NULL, c.id, c.box, c.due_at FROM {content} AS c "
+                f"WHERE c.id IN (SELECT DISTINCT {attempts_fk} FROM {attempts})"
+            )
+        )
+        for column in ("box", "due_at"):
+            conn.execute(text(f"ALTER TABLE {content} DROP COLUMN {column}"))
+        conn.commit()
 
 
 _migrate_existing_tables()
@@ -68,11 +149,32 @@ async def cross_origin_isolation_headers(request: Request, call_next):
     return response
 
 
+# Only the dev SPA and the preview server the browser suite builds. A deploy
+# serves the SPA from this same process (see the mount at the bottom), so it
+# has no cross-origin caller and gets an empty list: shipping localhost
+# origins alongside allow_credentials would leave a page on a developer's own
+# machine able to read a signed-in user's data, if SameSite ever loosened.
+_DEV_ORIGINS = ["http://localhost:5173", "http://localhost:4173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_origins=[] if os.environ.get("LEECHESS_STATIC_DIR") else _DEV_ORIGINS,
+    # The session cookie: in dev the SPA is a different origin to this API, so
+    # without this the browser sends no credentials and every request looks
+    # signed out. Safe alongside an explicit origin list — Starlette echoes the
+    # matching origin and never pairs credentials with a wildcard.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+auth_router.register_error_handlers(app)
+app.include_router(auth_router.router)
+# PATCH /users/me, which is how a username gets changed. The register, reset
+# and verify routers are deliberately not mounted: all three are built around
+# an email address, and this app has neither the column nor a way to send mail.
+app.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]
 )
 
 app.include_router(games.router)

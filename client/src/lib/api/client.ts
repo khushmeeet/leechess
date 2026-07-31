@@ -72,30 +72,75 @@ export interface GameDetail extends GameSummary {
 export class ApiError extends Error {
 	constructor(
 		public readonly status: number,
-		message: string
+		message: string,
+		/** FastAPI's `detail`, when the body carried one as a string — the
+		 * backend uses it for machine-readable codes like USERNAME_TAKEN, which
+		 * is what lets a form say something more useful than "400". */
+		public readonly detail: string | null = null
 	) {
 		super(message);
+	}
+}
+
+/** Notified when the backend rejects the session — see onUnauthorized. */
+let unauthorized: (() => void) | null = null;
+
+/** Register what to do when a request comes back 401: the cookie expired, or
+ * the account behind it is gone.
+ *
+ * A callback rather than an import of the session store, which would be a
+ * cycle — the store is built on the functions in this file. The store
+ * registers itself on creation.
+ */
+export function onUnauthorized(handler: () => void) {
+	unauthorized = handler;
+}
+
+/** Endpoints where a 401 is an answer rather than a failure: asking who you
+ * are, or signing out when the session already lapsed. Reacting to those
+ * would clear a session mid-boot, or recurse. */
+const EXPECTS_401 = ['/auth/session', '/auth/logout'];
+
+function detailFrom(body: string): string | null {
+	try {
+		const parsed = JSON.parse(body);
+		return typeof parsed?.detail === 'string' ? parsed.detail : null;
+	} catch {
+		return null;
 	}
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`${BASE}${path}`, {
 		headers: { 'Content-Type': 'application/json' },
+		// The session lives in an httpOnly cookie, which the browser withholds
+		// by default when the API is a different origin — as it is in dev
+		// (:5173 -> :8000). Without this every request looks signed out there
+		// and works in production, which is the worst way round to find out.
+		credentials: 'include',
 		...init
 	});
 	if (!response.ok) {
 		const body = await response.text();
+		if (response.status === 401 && !EXPECTS_401.some((prefix) => path.startsWith(prefix))) {
+			// Otherwise the app keeps rendering as though it were signed in
+			// while every request fails — the nav shows a name, the board
+			// refuses to save, and nothing says why.
+			unauthorized?.();
+		}
 		throw new ApiError(
 			response.status,
-			`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`
+			`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`,
+			detailFrom(body)
 		);
 	}
 	if (response.status === 204) return undefined as T;
 	return response.json();
 }
 
-/** `name` is the human player's display name (usernamePrefs); omitted while
- * unset, which leaves the server's "player" default in place. `userColor` is
+/** `name` is the human player's display name, which is the signed-in
+ * username (the session store). Omitted while unset, which leaves the
+ * server's "player" default in place. `userColor` is
  * the side the human plays — the engine takes the other seat, and the server
  * attributes progress/summary stats by it. `engineName` labels that engine
  * seat (e.g. "Stockfish (Club)") so a review row reads "<player> vs <engine>". */
@@ -311,4 +356,60 @@ export interface ProgressSummary {
 export function getProgress(days?: number | null): Promise<ProgressSummary> {
 	const suffix = days ? `?days=${days}` : '';
 	return request(`/progress${suffix}`);
+}
+
+// ---- accounts ----
+
+export interface AccountUser {
+	id: string;
+	username: string;
+	is_guest: boolean;
+	email: string | null;
+	is_active: boolean;
+	is_superuser: boolean;
+	is_verified: boolean;
+}
+
+export interface SessionState {
+	authenticated: boolean;
+	user: AccountUser | null;
+}
+
+/** Always 200, including when signed out — the SPA calls this on boot and
+ * "signed out" is an ordinary answer, not an error. */
+export function getSession(): Promise<SessionState> {
+	return request('/auth/session');
+}
+
+export function register(username: string, password: string): Promise<AccountUser> {
+	return request('/auth/register', {
+		method: 'POST',
+		body: JSON.stringify({ username, password })
+	});
+}
+
+export function login(username: string, password: string): Promise<AccountUser> {
+	return request('/auth/login', {
+		method: 'POST',
+		body: JSON.stringify({ username, password })
+	});
+}
+
+/** A guest is a real account without a password: it owns games and survives a
+ * reload, and upgradeAccount() later turns this same row into a registered one
+ * without moving any data. */
+export function startAsGuest(username: string): Promise<AccountUser> {
+	return request('/auth/guest', { method: 'POST', body: JSON.stringify({ username }) });
+}
+
+export function upgradeAccount(password: string): Promise<AccountUser> {
+	return request('/auth/upgrade', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+export function logout(): Promise<void> {
+	return request('/auth/logout', { method: 'POST' });
+}
+
+export function setUsername(username: string): Promise<AccountUser> {
+	return request('/users/me', { method: 'PATCH', body: JSON.stringify({ username }) });
 }

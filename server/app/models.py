@@ -1,9 +1,31 @@
+import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from fastapi_users_db_sqlalchemy.generics import GUID
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+# Nullable everywhere it appears, and deliberately so: rows written before
+# accounts existed have no owner, and SQLite can only ADD COLUMN with a NULL
+# default anyway. The migration in app/main.py adopts them when there is
+# exactly one account to adopt them into; the routers treat NULL as "not
+# yours" either way, so an unowned row is invisible rather than public.
+UserId = uuid.UUID
+
+
+def _owner_column() -> Mapped[UserId | None]:
+    return mapped_column(GUID, ForeignKey("users.id"), nullable=True, index=True)
 
 
 def utcnow() -> datetime:
@@ -14,6 +36,7 @@ class Game(Base):
     __tablename__ = "games"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
     pgn: Mapped[str] = mapped_column(Text)
     white: Mapped[str] = mapped_column(String, default="?")
     black: Mapped[str] = mapped_column(String, default="?")
@@ -131,13 +154,20 @@ class PuzzleSeedRun(Base):
 
 class Puzzle(Base):
     """One drillable position. Personal puzzles point back at the game move
-    they came from via source_move_id; generic Lichess imports have NULL
-    there (spec §5). Leitner scheduling state (box, due_at) lives on the row
-    — new puzzles start in box 1, due immediately."""
+    they came from via source_move_id and are owned by whoever played that
+    game; generic Lichess imports have NULL for both (spec §5) and are one
+    shared pool every account drills from.
+
+    Scheduling state is NOT here — it is per account, in PuzzleState, because
+    the generic pool is shared and two people cannot share a due date."""
 
     __tablename__ = "puzzles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # NULL for the shared generic pool; set for personal puzzles, denormalized
+    # from the game the source move belongs to so the queue can filter without
+    # joining three tables.
+    user_id: Mapped[UserId | None] = _owner_column()
     source_move_id: Mapped[int | None] = mapped_column(
         ForeignKey("moves.id"), nullable=True, index=True
     )
@@ -148,8 +178,6 @@ class Puzzle(Base):
     motif: Mapped[str] = mapped_column(String, index=True)
     # Lichess rating for imported puzzles; personal ones have no difficulty.
     difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    box: Mapped[int] = mapped_column(Integer, default=1)
-    due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     source_move: Mapped[Move | None] = relationship(back_populates="puzzles")
@@ -158,12 +186,47 @@ class Puzzle(Base):
         cascade="all, delete-orphan",
         order_by="PuzzleAttempt.id",
     )
+    states: Mapped[list["PuzzleState"]] = relationship(
+        back_populates="puzzle", cascade="all, delete-orphan"
+    )
+
+
+class PuzzleState(Base):
+    """One account's Leitner position on one puzzle.
+
+    Split out from Puzzle because the generic Lichess pool is a single shared
+    set of rows: two accounts drilling the same imported puzzle need their own
+    box and due date. Rows are created lazily on the first attempt, so a new
+    account has the whole catalog due immediately without anything being
+    written for it — see app/scheduling.py, and the "no row means due now"
+    join in the puzzle queue."""
+
+    __tablename__ = "puzzle_states"
+    __table_args__ = (UniqueConstraint("user_id", "puzzle_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Nullable for one reason only: the pre-accounts schedule. The migration
+    # lifts box/due_at off the puzzle rows before dropping those columns, and
+    # there may be no account yet to attribute them to — so they land here
+    # unowned and adopt_orphaned_rows claims them alongside everything else.
+    # Nothing writes NULL after that, and the queues join on user_id, so an
+    # unadopted row is invisible rather than shared.
+    user_id: Mapped[UserId | None] = _owner_column()
+    puzzle_id: Mapped[int] = mapped_column(ForeignKey("puzzles.id"), index=True)
+    box: Mapped[int] = mapped_column(Integer, default=1)
+    due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    puzzle: Mapped[Puzzle] = relationship(back_populates="states")
 
 
 class PuzzleAttempt(Base):
     __tablename__ = "puzzle_attempts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # On the attempt, not only on the puzzle: an attempt at a shared generic
+    # puzzle belongs to whoever made it, and motif success rates would
+    # otherwise pool everyone's answers together.
+    user_id: Mapped[UserId | None] = _owner_column()
     puzzle_id: Mapped[int] = mapped_column(ForeignKey("puzzles.id"), index=True)
     correct: Mapped[bool] = mapped_column(Boolean)
     hint_level_used: Mapped[int] = mapped_column(Integer, default=0)
@@ -178,8 +241,9 @@ class EndgameDrill(Base):
     from). `goal` is "win" or "draw" — the whole grading rule, since a drill
     is scored on the result it reaches, not on a stored move sequence.
 
-    Leitner state (box, due_at) works exactly as it does on Puzzle: new drills
-    start in box 1, due immediately."""
+    This catalog is shared by every account — twelve rows, seeded once — so
+    Leitner state lives per account in EndgameDrillState, exactly as it does
+    for puzzles."""
 
     __tablename__ = "endgame_drills"
 
@@ -195,8 +259,6 @@ class EndgameDrill(Base):
     player_color: Mapped[str] = mapped_column(String)
     goal: Mapped[str] = mapped_column(String)
     technique: Mapped[str] = mapped_column(Text)
-    box: Mapped[int] = mapped_column(Integer, default=1)
-    due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     attempts: Mapped[list["EndgameDrillAttempt"]] = relationship(
@@ -204,12 +266,34 @@ class EndgameDrill(Base):
         cascade="all, delete-orphan",
         order_by="EndgameDrillAttempt.id",
     )
+    states: Mapped[list["EndgameDrillState"]] = relationship(
+        back_populates="drill", cascade="all, delete-orphan"
+    )
+
+
+class EndgameDrillState(Base):
+    """One account's Leitner position on one catalog drill — the drill-side
+    twin of PuzzleState, and lazily created the same way."""
+
+    __tablename__ = "endgame_drill_states"
+    __table_args__ = (UniqueConstraint("user_id", "drill_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Nullable for the same reason as PuzzleState.user_id — the carried-over
+    # pre-accounts schedule, waiting to be adopted.
+    user_id: Mapped[UserId | None] = _owner_column()
+    drill_id: Mapped[int] = mapped_column(ForeignKey("endgame_drills.id"), index=True)
+    box: Mapped[int] = mapped_column(Integer, default=1)
+    due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    drill: Mapped[EndgameDrill] = relationship(back_populates="states")
 
 
 class EndgameDrillAttempt(Base):
     __tablename__ = "endgame_drill_attempts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
     drill_id: Mapped[int] = mapped_column(ForeignKey("endgame_drills.id"), index=True)
     # Did the play-out reach the drill's goal (converted the win / held the draw)?
     success: Mapped[bool] = mapped_column(Boolean)

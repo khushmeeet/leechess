@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 # Point the application database at a throwaway file BEFORE anything imports
@@ -17,7 +18,7 @@ os.environ["LEECHESS_DB_URL"] = f"sqlite:///{Path(_TEST_DB_DIR) / 'import-time.d
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.db import Base, get_db  # noqa: E402
@@ -35,6 +36,7 @@ LIFESPAN_SESSION_FACTORIES = (
     "app.analysis.session_factory",
     "app.seeding.session_factory",
     "app.endgame_drills.session_factory",
+    "app.legacy_ownership.session_factory",
 )
 
 
@@ -103,6 +105,27 @@ def _no_real_llm(monkeypatch):
     monkeypatch.setenv("LEECHESS_AUTO_SEED", "off")
 
 
+@pytest.fixture(autouse=True)
+def _session_cookie_survives_http(monkeypatch):
+    """TestClient speaks plain http to `testserver`, and a Secure cookie is
+    never sent back over that — every request after a sign-in would look
+    anonymous. `make dev` and the browser suite turn the flag off for the same
+    reason; a deploy leaves it on."""
+    monkeypatch.setenv("LEECHESS_AUTH_COOKIE_SECURE", "off")
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """The failed-sign-in counter is module state, so it outlives any one app
+    instance — without this, a test that trips the limit locks the same
+    username out of every test that follows it."""
+    from app.auth import throttle
+
+    throttle.reset()
+    yield
+    throttle.reset()
+
+
 @pytest.fixture()
 def db_engine(tmp_path):
     """Throwaway SQLite database per test — never touches the dev database."""
@@ -137,12 +160,11 @@ def lifespan_sessions(db_engine, monkeypatch):
     return TestSession
 
 
-@pytest.fixture()
-def client(db_engine, lifespan_sessions):
+@contextmanager
+def _test_client(TestSession):
     """Each request gets its own session, exactly like production get_db —
     sharing one session across requests leaks stale identity-map state
     (a cached Game can mask the analysis job's committed writes)."""
-    TestSession = lifespan_sessions
 
     def override_get_db():
         db = TestSession()
@@ -157,6 +179,59 @@ def client(db_engine, lifespan_sessions):
             yield test_client
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def anon_client(db_engine, lifespan_sessions):
+    """A client with no session. For the auth routes themselves, and for
+    asserting that everything else refuses an anonymous caller."""
+    with _test_client(lifespan_sessions) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def client(anon_client):
+    """Signed in as a guest, because every route outside /auth now requires an
+    account — an anonymous client would only ever prove that 401 works.
+
+    A real sign-in through the API rather than a dependency override: the
+    cookie, the token and the ownership columns are the thing under test in
+    most of these files, and an override would quietly skip all three.
+    """
+    response = anon_client.post("/auth/guest", json={"username": "tester"})
+    assert response.status_code == 200, response.text
+    return anon_client
+
+
+GUEST_USERNAME = "tester"
+OTHER_USERNAME = "somebody-else"
+
+
+@pytest.fixture()
+def signed_in_user(client, db_session):
+    """The account the `client` fixture is signed in as — for tests that write
+    rows directly and have to stamp them with an owner."""
+    from app.auth.models import User
+
+    # By name rather than "the only row": ownership tests add a second account.
+    return db_session.scalars(
+        select(User).where(User.username == GUEST_USERNAME)
+    ).one()
+
+
+@pytest.fixture()
+def second_client(client):
+    """A second account, with a cookie jar of its own.
+
+    A separate TestClient, not a second sign-in on the same one: cookies live
+    on the client, so reusing it would just swap which account the single
+    browser is. `client` has already installed the get_db override and run the
+    lifespan, so this needs neither.
+    """
+    other = TestClient(app)
+    response = other.post("/auth/guest", json={"username": OTHER_USERNAME})
+    assert response.status_code == 200, response.text
+    return other
 
 
 @pytest.fixture(scope="session")

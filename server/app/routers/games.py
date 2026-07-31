@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analysis import run_game_analysis
+from app.auth.backend import current_active_user
+from app.auth.models import User
 from app.db import get_db
 from app.models import Game, Move, utcnow
 from app.puzzle_generation import create_puzzles_for_game
@@ -23,13 +25,16 @@ from app.schemas import (
     TakebackIn,
     TakebackResult,
 )
+from app.scheduling import puzzle_state
 
 router = APIRouter(prefix="/games", tags=["games"])
 
 
-def _get_game_or_404(game_id: int, db: Session) -> Game:
+def _get_game_or_404(game_id: int, db: Session, user: User) -> Game:
+    """404 rather than 403 for someone else's game: whether a given id exists
+    is not information this app owes a caller."""
     game = db.get(Game, game_id)
-    if game is None:
+    if game is None or game.user_id != user.id:
         raise HTTPException(status_code=404, detail="Game not found")
     return game
 
@@ -55,7 +60,11 @@ def _rebuild_pgn(game: Game) -> str:
 
 
 @router.post("", response_model=GameCreated, status_code=201)
-def create_game(payload: GameCreate, db: Session = Depends(get_db)) -> dict:
+def create_game(
+    payload: GameCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> dict:
     if payload.pgn is not None:
         game = _import_pgn(payload)
     else:
@@ -66,6 +75,7 @@ def create_game(payload: GameCreate, db: Session = Depends(get_db)) -> dict:
             mode=payload.mode,
             user_color=payload.user_color,
         )
+    game.user_id = user.id
     db.add(game)
     db.commit()
     fen = _current_board(game).fen()
@@ -104,13 +114,16 @@ def _import_pgn(payload: GameCreate) -> Game:
 
 
 @router.get("", response_model=list[GameOut])
-def list_games(db: Session = Depends(get_db)) -> list[Game]:
+def list_games(
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> list[Game]:
     """Finished games only — in-progress and abandoned games ("pending")
     never appear in the review list."""
     return list(
         db.scalars(
             select(Game)
-            .where(Game.analysis_status != "pending")
+            .where(Game.user_id == user.id, Game.analysis_status != "pending")
             .order_by(Game.id.desc())
             .limit(100)
         )
@@ -118,15 +131,22 @@ def list_games(db: Session = Depends(get_db)) -> list[Game]:
 
 
 @router.get("/{game_id}", response_model=GameDetail)
-def get_game(game_id: int, db: Session = Depends(get_db)) -> Game:
-    return _get_game_or_404(game_id, db)
+def get_game(
+    game_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> Game:
+    return _get_game_or_404(game_id, db, user)
 
 
 @router.post("/{game_id}/moves", response_model=MoveAccepted, status_code=201)
 def submit_move(
-    game_id: int, payload: MoveIn, db: Session = Depends(get_db)
+    game_id: int,
+    payload: MoveIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> MoveAccepted:
-    game = _get_game_or_404(game_id, db)
+    game = _get_game_or_404(game_id, db, user)
     if game.analysis_status != "pending":
         raise HTTPException(status_code=409, detail="Game is already completed")
 
@@ -166,13 +186,16 @@ def submit_move(
 
 @router.post("/{game_id}/takeback", response_model=TakebackResult)
 def take_back(
-    game_id: int, payload: TakebackIn, db: Session = Depends(get_db)
+    game_id: int,
+    payload: TakebackIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> TakebackResult:
     """Play's "take back and think again": drop the trailing plies so the
     record matches the board the player is now looking at. Pending games only
     — a completed game's moves own analysis rows (and the puzzles generated
     from them), and its PGN is already written."""
-    game = _get_game_or_404(game_id, db)
+    game = _get_game_or_404(game_id, db, user)
     if game.analysis_status != "pending":
         raise HTTPException(status_code=409, detail="Game is already completed")
     if payload.to_ply > len(game.moves):
@@ -192,8 +215,9 @@ def complete_game(
     payload: GameComplete,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> Game:
-    game = _get_game_or_404(game_id, db)
+    game = _get_game_or_404(game_id, db, user)
     if game.analysis_status != "pending":
         raise HTTPException(status_code=409, detail="Game is already completed")
     if not game.moves:
@@ -216,10 +240,14 @@ def complete_game(
 
 
 @router.delete("/{game_id}", status_code=204)
-def discard_game(game_id: int, db: Session = Depends(get_db)) -> None:
+def discard_game(
+    game_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> None:
     """Abandoned mid-game (new game started, page closed): the unfinished
     game is discarded, not kept for review. Completed games are permanent."""
-    game = _get_game_or_404(game_id, db)
+    game = _get_game_or_404(game_id, db, user)
     if game.analysis_status != "pending":
         raise HTTPException(status_code=409, detail="Game is already completed")
     db.delete(game)
@@ -227,18 +255,26 @@ def discard_game(game_id: int, db: Session = Depends(get_db)) -> None:
 
 
 @router.get("/{game_id}/review", response_model=GameDetail)
-def get_review(game_id: int, db: Session = Depends(get_db)) -> Game:
+def get_review(
+    game_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> Game:
     """Full move list with evals/classifications once analysis is done;
     the client shows an "analyzing…" state while analysis_status says so."""
-    return _get_game_or_404(game_id, db)
+    return _get_game_or_404(game_id, db, user)
 
 
 @router.post("/{game_id}/practice", response_model=PracticeQueued)
-def practice_game(game_id: int, db: Session = Depends(get_db)) -> PracticeQueued:
+def practice_game(
+    game_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> PracticeQueued:
     """Review's "practice these misses": the analysis job already created
     puzzles for this game's flagged moves — this makes them all due right
     now (and fills any gaps, e.g. games analyzed before Phase 3)."""
-    game = _get_game_or_404(game_id, db)
+    game = _get_game_or_404(game_id, db, user)
     if game.analysis_status != "complete":
         raise HTTPException(status_code=409, detail="Game is not analyzed yet")
 
@@ -247,7 +283,13 @@ def practice_game(game_id: int, db: Session = Depends(get_db)) -> PracticeQueued
     queued = 0
     for move in game.moves:
         for puzzle in move.puzzles:
-            puzzle.due_at = now
+            # Bring the due date forward without touching the box: this is
+            # "drill these again now", not "forget what I knew about them".
+            # A puzzle with no state row has never been answered and is
+            # already due, so there is nothing to bring forward.
+            state = puzzle_state(db, user.id, puzzle.id)
+            if state is not None:
+                state.due_at = now
             queued += 1
     db.commit()
     return PracticeQueued(game_id=game.id, queued=queued)

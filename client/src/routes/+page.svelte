@@ -13,7 +13,8 @@
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
-	import { usernamePrefs } from '$lib/stores/username.svelte';
+	// Aliased: `session` on this page already means the play session.
+	import { session as account } from '$lib/stores/session.svelte';
 	import { resolve } from '$app/paths';
 	import type { DrawShape } from 'chessground/draw';
 	import type { Key } from 'chessground/types';
@@ -348,8 +349,8 @@
 					<span data-testid="engine-status" class="font-mono">
 						{session.engineReady ? 'ready' : 'warming up…'}
 					</span>
-					· you play {session.playerColor === 'white' ? 'White' : 'Black'}{usernamePrefs.name
-						? ` as ${usernamePrefs.name}`
+					· you play {session.playerColor === 'white' ? 'White' : 'Black'}{account.name
+						? ` as ${account.name}`
 						: ''}
 					{#if session.preferredColor !== session.playerColor}
 						· {session.preferredColor === 'white' ? 'White' : 'Black'} from the next game

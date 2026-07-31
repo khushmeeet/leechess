@@ -6,7 +6,8 @@
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { soundPrefs } from '$lib/stores/soundPrefs.svelte';
 	import { themePrefs, type ThemeMode } from '$lib/stores/themePrefs.svelte';
-	import { usernamePrefs } from '$lib/stores/username.svelte';
+	import { authErrorMessage } from '$lib/auth/messages';
+	import { session } from '$lib/stores/session.svelte';
 
 	const THEME_MODES: { mode: ThemeMode; label: string }[] = [
 		{ mode: 'light', label: 'Light' },
@@ -16,6 +17,27 @@
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
+	let renameError = $state<string | null>(null);
+
+	/** The username is the login identifier now, so a rename can be refused —
+	 * taken, or the wrong shape. Reverts the field to the server's answer so
+	 * what's shown is never a name that wasn't accepted. */
+	async function rename(event: Event & { currentTarget: HTMLInputElement }) {
+		// Captured before the await: currentTarget is only set while the event is
+		// being dispatched, and is null by the time the request comes back.
+		const input = event.currentTarget;
+		const wanted = input.value.trim();
+		if (!wanted || wanted === session.name) return;
+		renameError = null;
+		try {
+			await session.rename(wanted);
+		} catch (err) {
+			renameError = authErrorMessage(err);
+			// session.name never changed, so Svelte has no reason to re-render the
+			// value attribute — the field has to be put back by hand.
+			input.value = session.name ?? '';
+		}
+	}
 
 	function onWindowClick(event: MouseEvent) {
 		if (open && root && !root.contains(event.target as Node)) open = false;
@@ -60,13 +82,26 @@
 			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Player</h2>
 			<input
 				type="text"
-				value={usernamePrefs.name ?? ''}
+				value={session.name ?? ''}
 				placeholder="Your name"
-				maxlength="40"
+				maxlength="24"
 				data-testid="username-setting-input"
-				onchange={(event) => usernamePrefs.set(event.currentTarget.value)}
+				onchange={rename}
 				class="w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
 			/>
+			{#if renameError}
+				<p class="mt-1 text-[11px] text-err" role="alert" data-testid="username-setting-error">
+					{renameError}
+				</p>
+			{/if}
+			<button
+				type="button"
+				onclick={() => session.signOut()}
+				data-testid="sign-out"
+				class="mt-2 w-full rounded-xs border border-line bg-paper px-2 py-1 text-sm text-muted hover:bg-accent-soft hover:text-ink"
+			>
+				Sign out
+			</button>
 
 			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
 				Theme

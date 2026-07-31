@@ -232,7 +232,7 @@
 		citedShape = citedShape?.orig === shape.orig && citedShape?.dest === shape.dest ? null : shape;
 	}
 
-	// The layout mounts SettingsMenu and UsernamePrompt on every page, so a text
+	// The layout mounts SettingsMenu and UpgradePrompt on every page, so a text
 	// field can hold focus while this page is up. Arrows belong to the caret
 	// there, not to the board.
 	function isTyping(target: EventTarget | null): boolean {

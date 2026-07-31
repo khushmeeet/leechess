@@ -12,7 +12,7 @@ import chess
 import pytest
 
 from app.endgame_drills import CATALOG, FAMILY_NAMES, seed_drills
-from app.models import EndgameDrill, utcnow
+from app.models import EndgameDrill, EndgameDrillState, utcnow
 from app.spaced_repetition import BOX_INTERVALS
 
 pytestmark = pytest.mark.unit
@@ -66,21 +66,26 @@ def test_seed_inserts_the_catalog_once(db_session):
     assert db_session.query(EndgameDrill).count() == len(CATALOG)
 
 
-def test_seed_preserves_leitner_state_of_existing_rows(db_session):
+def test_seed_preserves_leitner_state_of_existing_rows(db_session, signed_in_user):
+    """Re-seeding must not disturb the per-account scheduling that hangs off a
+    catalog row — the state lives in endgame_drill_states now, keyed on the
+    drill id, so it only survives if seeding leaves the row itself alone."""
     seed_drills(db_session)
     drill = db_session.query(EndgameDrill).first()
-    drill.box = 4
     later = utcnow() + timedelta(days=7)
-    drill.due_at = later
+    state = EndgameDrillState(
+        user_id=signed_in_user.id, drill_id=drill.id, box=4, due_at=later
+    )
+    db_session.add(state)
     db_session.commit()
 
     seed_drills(db_session)
 
-    db_session.refresh(drill)
-    assert drill.box == 4
+    db_session.refresh(state)
+    assert state.box == 4
     # SQLite's DateTime column drops the tzinfo utcnow() attaches, so compare
     # against the naive value that actually round-trips.
-    assert drill.due_at == later.replace(tzinfo=None)
+    assert state.due_at == later.replace(tzinfo=None)
 
 
 def test_startup_seeds_the_catalog(client):

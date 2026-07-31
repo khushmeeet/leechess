@@ -3,7 +3,7 @@ import { API } from './helpers';
 
 /** Every spec imports `test` from here instead of '@playwright/test'.
  *
- * Two guarantees the raw Playwright `test` cannot give:
+ * Three guarantees the raw Playwright `test` cannot give:
  *
  * 1. The backend is the one playwright.config.ts started. The reset endpoint
  *    only exists when LEECHESS_TEST_RESET=on, which the config sets and a
@@ -18,12 +18,18 @@ import { API } from './helpers';
  *    left behind. Each test now starts from the same state: no games, no
  *    puzzles, no attempts, and a freshly seeded endgame catalog.
  *
+ * 3. A signed-in account. Every screen but /welcome now needs one. Specs that
+ *    are about being signed out opt back out with `test.use({ signedIn:
+ *    false })`.
+ *
  * Browser state needs no equivalent hook — Playwright already gives each test
  * its own context, so localStorage starts empty.
  */
-export const test = base.extend<{ cleanDatabase: void }>({
+export const test = base.extend<{ signedIn: boolean; cleanDatabase: void }>({
+	signedIn: [true, { option: true }],
+
 	cleanDatabase: [
-		async ({ request }, use) => {
+		async ({ request, context, signedIn }, use) => {
 			const response = await request.post(`${API}/testing/reset`);
 			if (response.status() === 404) {
 				throw new Error(
@@ -36,6 +42,26 @@ export const test = base.extend<{ cleanDatabase: void }>({
 			// The catalog is startup state the endgame specs need; an empty
 			// reseed would mean the endpoint cleared it without putting it back.
 			expect((await response.json()).drills_seeded).toBeGreaterThan(0);
+
+			if (signedIn) {
+				// After the reset, never before: the truncate above clears `users`
+				// too, so signing in first would leave the browser holding a
+				// perfectly valid cookie whose subject no longer exists — and
+				// every request in the spec would 401 for no visible reason.
+				const guest = await request.post(`${API}/auth/guest`, {
+					data: { username: 'e2e-player' }
+				});
+				expect(guest.ok()).toBe(true);
+
+				// `request` and the browser context are separate cookie jars, and
+				// specs use both — seeding games through `request`, then asserting
+				// on them in the page. Copying the session across makes them the
+				// same account, without which the seeded rows belong to nobody the
+				// page is signed in as. Cookies ignore ports, so one set by the
+				// API on :8123 is sent by the SPA on :4173.
+				await context.addCookies((await request.storageState()).cookies);
+			}
+
 			await use();
 		},
 		{ auto: true }

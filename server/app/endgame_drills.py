@@ -203,8 +203,9 @@ CATALOG: list[DrillDefinition] = [
 def seed_drills(db: Session) -> int:
     """Insert catalog entries the table doesn't have yet, keyed on `key`.
 
-    Existing rows are left alone so a restart never resets the box or due date
-    of a drill the user has been practising. Returns how many were added.
+    Existing rows are left alone, so a restart never disturbs the per-account
+    scheduling state that hangs off them (endgame_drill_states, keyed on the
+    drill id). Returns how many were added.
     """
     known = set(db.scalars(select(EndgameDrill.key)))
     added = 0

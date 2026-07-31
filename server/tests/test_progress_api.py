@@ -27,12 +27,17 @@ def days_ago(n: int) -> datetime:
 
 
 @pytest.fixture()
-def seed(db_session):
-    """Factories for attempt history and analyzed games with hand-set evals."""
+def seed(db_session, signed_in_user):
+    """Factories for attempt history and analyzed games with hand-set evals.
+
+    Everything is stamped with the account the `client` fixture is signed in
+    as: /progress reports one person's history, so a row with no owner (or
+    somebody else's) is deliberately invisible to it."""
+    owner = signed_in_user.id
 
     class Seed:
         def puzzle(self, motif: str) -> Puzzle:
-            puzzle = Puzzle(fen=FEN, solution="e2e4", motif=motif)
+            puzzle = Puzzle(fen=FEN, solution="e2e4", motif=motif, user_id=owner)
             db_session.add(puzzle)
             db_session.commit()
             return puzzle
@@ -42,7 +47,9 @@ def seed(db_session):
         ) -> None:
             for correct in results:
                 puzzle.attempts.append(
-                    PuzzleAttempt(correct=correct, attempted_at=at or days_ago(0))
+                    PuzzleAttempt(
+                        correct=correct, attempted_at=at or days_ago(0), user_id=owner
+                    )
                 )
             db_session.commit()
 
@@ -62,8 +69,9 @@ def seed(db_session):
             for success in results:
                 drill.attempts.append(
                     EndgameDrillAttempt(
-                        success=success, outcome="held", attempted_at=at or days_ago(0)
-                    )
+                        success=success, outcome="held",
+                        attempted_at=at or days_ago(0), user_id=owner,
+                    )  # fmt: skip
                 )
             db_session.commit()
 
@@ -79,6 +87,7 @@ def seed(db_session):
             game = Game(
                 pgn="", mode=mode, analysis_status=status,
                 created_at=created_at or days_ago(0), user_color=user_color,
+                user_id=owner,
             )  # fmt: skip
             for ply, (before, after) in enumerate(evals, start=1):
                 game.moves.append(

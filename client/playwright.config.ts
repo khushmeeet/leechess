@@ -65,6 +65,12 @@ export default defineConfig({
 				// mounts POST /testing/reset, which e2e/fixtures.ts calls before
 				// every test so no spec inherits another's data
 				LEECHESS_TEST_RESET: 'on',
+				// preview and API are both plain http, and a browser will not send
+				// a Secure cookie back over that — every request after sign-in
+				// would look anonymous
+				LEECHESS_AUTH_COOKIE_SECURE: 'off',
+				// >=32 bytes, or PyJWT warns on every token it signs and verifies
+				LEECHESS_AUTH_SECRET: 'e2e-secret-not-for-deployment-0123456789',
 				PATH: (process.env.PATH ?? '')
 					.split(':')
 					.filter((dir) => !dir.includes('node_modules'))
