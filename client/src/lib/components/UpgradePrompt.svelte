@@ -5,12 +5,16 @@
 	// and dismissing is in-memory so it asks again next visit rather than
 	// nagging within one.
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import { listGames } from '$lib/api/client';
 	import { authErrorMessage } from '$lib/auth/messages';
 	import { session } from '$lib/stores/session.svelte';
 
 	let hasPlayed = $state(false);
 	let dismissed = $state(false);
+	/** The one check that isn't triggered by leaving the play screen: a guest
+	 * arriving with games already behind them (a reload, or a deep link). */
+	let first = true;
 	let expanded = $state(false);
 	let password = $state('');
 	let error = $state<string | null>(null);
@@ -19,12 +23,21 @@
 
 	const showing = $derived(session.isGuest && hasPlayed && !dismissed);
 
-	// Re-checked on navigation because the layout does not remount between
-	// routes — a guest who finishes their first game would otherwise not see
-	// this until a full reload. Stops asking as soon as the answer is yes.
+	// A game can only have appeared since the last check if they were just on
+	// the play screen, so that is the only departure worth a request. Checking
+	// on every navigation instead meant one /games call per click for exactly
+	// the guests who have played nothing — the answer is [] every time.
+	const play = resolve('/');
+	let previous = page.url.pathname;
+
 	$effect(() => {
-		void page.url.pathname;
+		const current = page.url.pathname;
+		const cameFromPlay = previous === play;
+		previous = current;
+
 		if (!session.isGuest || hasPlayed || dismissed) return;
+		if (!cameFromPlay && !first) return;
+		first = false;
 		listGames()
 			.then((games) => (hasPlayed = games.length > 0))
 			.catch(() => {});

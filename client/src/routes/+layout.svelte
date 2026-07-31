@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import logo from '$lib/assets/logo.svg';
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -22,11 +23,18 @@
 	const welcome = resolve('/welcome');
 	const onWelcome = $derived(page.url.pathname === welcome);
 
-	session.load();
+	// onMount rather than the component body, matching how the play screen
+	// starts its engine — a side effect that only makes sense in a browser
+	// belongs after mount, not during initialization.
+	onMount(() => {
+		session.load();
+	});
 
 	// Signed out anywhere but /welcome, or signed in and still sitting on it.
 	// Gated on `ready` so the first paint after a reload doesn't bounce a
 	// signed-in visitor through the welcome screen before /auth/session lands.
+	// This is also what a 401 mid-session lands on: the client clears the
+	// store, and the redirect follows from that.
 	$effect(() => {
 		if (!session.ready) return;
 		if (!session.authenticated && !onWelcome) goto(welcome, { replaceState: true });

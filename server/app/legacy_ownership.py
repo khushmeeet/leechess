@@ -21,7 +21,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.db import SessionLocal
-from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt
+from app.models import (
+    EndgameDrillAttempt,
+    EndgameDrillState,
+    Game,
+    Puzzle,
+    PuzzleAttempt,
+    PuzzleState,
+)
 
 # Module-level alias, patched by tests/conftest.py the same way analysis,
 # seeding and endgame_drills are — anything that opens its own session outside
@@ -37,7 +44,17 @@ def adopt_orphaned_rows(db: Session) -> bool:
     owner = db.scalars(select(User.id)).one()
 
     adopted = 0
-    for model in (Game, PuzzleAttempt, EndgameDrillAttempt):
+    # PuzzleState/EndgameDrillState are in here because of the schedule the
+    # migration lifted off the old puzzle and drill rows — see
+    # app/main.py::_move_schedules_off_the_content_rows. Nothing else ever
+    # writes a state row without an owner.
+    for model in (
+        Game,
+        PuzzleAttempt,
+        EndgameDrillAttempt,
+        PuzzleState,
+        EndgameDrillState,
+    ):
         result = db.execute(
             update(model).where(model.user_id.is_(None)).values(user_id=owner)
         )

@@ -3,6 +3,7 @@ import {
 	getSession,
 	login,
 	logout,
+	onUnauthorized,
 	register,
 	setUsername,
 	startAsGuest,
@@ -90,10 +91,14 @@ class Session {
 	}
 
 	/** Called when a request comes back 401 — the cookie expired or the account
-	 * is gone, and the app should stop pretending otherwise. */
+	 * is gone, and the app should stop pretending otherwise. The layout guard
+	 * watches `user`, so clearing it is what sends them to /welcome. */
 	clear() {
 		this.user = null;
 	}
 }
 
 export const session = new Session();
+
+// Registered here rather than imported by the client, which would be a cycle.
+onUnauthorized(() => session.clear());

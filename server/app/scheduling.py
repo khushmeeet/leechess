@@ -18,10 +18,31 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import EndgameDrillState, PuzzleState
 from app.spaced_repetition import MIN_BOX, schedule_attempt
+
+
+def _first_attempt_row(db: Session, row, reread):
+    """Insert a state row, conceding to whoever got there first.
+
+    Two attempts on a never-seen item race: both find no state and both
+    insert, and the (user, item) unique index turns the loser into a 500. The
+    savepoint keeps the failed insert from taking the surrounding transaction
+    with it, so the loser can just re-read and carry on.
+    """
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+        return row
+    except IntegrityError:
+        existing = reread()
+        if existing is None:  # not the race, then — something else is wrong
+            raise
+        return existing
 
 
 def puzzle_state(db: Session, user_id: uuid.UUID, puzzle_id: int) -> PuzzleState | None:
@@ -56,8 +77,11 @@ def record_puzzle_attempt(
     row if this is the first time they have answered it."""
     state = puzzle_state(db, user_id, puzzle_id)
     if state is None:
-        state = PuzzleState(user_id=user_id, puzzle_id=puzzle_id, box=MIN_BOX)
-        db.add(state)
+        state = _first_attempt_row(
+            db,
+            PuzzleState(user_id=user_id, puzzle_id=puzzle_id, box=MIN_BOX),
+            lambda: puzzle_state(db, user_id, puzzle_id),
+        )
     state.box, state.due_at = schedule_attempt(
         state.box, correct, hint_level_used, now
     )
@@ -77,7 +101,10 @@ def record_drill_attempt(
     revealed cannot apply."""
     state = drill_state(db, user_id, drill_id)
     if state is None:
-        state = EndgameDrillState(user_id=user_id, drill_id=drill_id, box=MIN_BOX)
-        db.add(state)
+        state = _first_attempt_row(
+            db,
+            EndgameDrillState(user_id=user_id, drill_id=drill_id, box=MIN_BOX),
+            lambda: drill_state(db, user_id, drill_id),
+        )
     state.box, state.due_at = schedule_attempt(state.box, success, 0, now)
     return state

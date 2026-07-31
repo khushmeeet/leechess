@@ -50,13 +50,19 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             )
 
     async def validate_username(
-        self, username: str, *, current_user: User | None = None
+        self, username: object, *, current_user: User | None = None
     ) -> None:
         """Shape first, then availability. Both are re-checked by the database
         at write time — the unique index on username_canonical is what actually
         holds when two signups race — so this exists to give a useful error,
-        not to be the guarantee."""
-        if not _USERNAME_RE.fullmatch(username):
+        not to be the guarantee.
+
+        Takes `object` rather than `str` because it genuinely receives one:
+        PATCH /users/me goes through create_update_dict, which keeps a field
+        the caller set explicitly to null, so `{"username": null}` arrives here
+        as None. That used to reach the regex and 500.
+        """
+        if not isinstance(username, str) or not _USERNAME_RE.fullmatch(username):
             raise InvalidUsername(username)
         existing = await self.user_db.get_by_username(username)
         if existing is not None and (

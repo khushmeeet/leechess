@@ -82,6 +82,25 @@ export class ApiError extends Error {
 	}
 }
 
+/** Notified when the backend rejects the session — see onUnauthorized. */
+let unauthorized: (() => void) | null = null;
+
+/** Register what to do when a request comes back 401: the cookie expired, or
+ * the account behind it is gone.
+ *
+ * A callback rather than an import of the session store, which would be a
+ * cycle — the store is built on the functions in this file. The store
+ * registers itself on creation.
+ */
+export function onUnauthorized(handler: () => void) {
+	unauthorized = handler;
+}
+
+/** Endpoints where a 401 is an answer rather than a failure: asking who you
+ * are, or signing out when the session already lapsed. Reacting to those
+ * would clear a session mid-boot, or recurse. */
+const EXPECTS_401 = ['/auth/session', '/auth/logout'];
+
 function detailFrom(body: string): string | null {
 	try {
 		const parsed = JSON.parse(body);
@@ -103,6 +122,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	if (!response.ok) {
 		const body = await response.text();
+		if (response.status === 401 && !EXPECTS_401.some((prefix) => path.startsWith(prefix))) {
+			// Otherwise the app keeps rendering as though it were signed in
+			// while every request fails — the nav shows a name, the board
+			// refuses to save, and nothing says why.
+			unauthorized?.();
+		}
 		throw new ApiError(
 			response.status,
 			`${init?.method ?? 'GET'} ${path} failed (${response.status}): ${body}`,

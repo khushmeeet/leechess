@@ -3,8 +3,6 @@
 	// listed first and styled as the primary action — an account only makes
 	// progress reachable from another browser, and nothing here is worth
 	// putting a wall in front of.
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import logo from '$lib/assets/logo.svg';
 	import { authErrorMessage } from '$lib/auth/messages';
 	import { session } from '$lib/stores/session.svelte';
@@ -59,7 +57,8 @@
 			if (mode === 'guest') await session.startAsGuest(username.trim());
 			else if (mode === 'signup') await session.register(username.trim(), password);
 			else await session.login(username.trim(), password);
-			await goto(resolve('/'));
+			// No goto: the layout guard sends a signed-in visitor off /welcome,
+			// and doing it here as well raced it to the same URL.
 		} catch (err) {
 			error = authErrorMessage(err);
 		} finally {

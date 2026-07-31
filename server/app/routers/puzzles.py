@@ -18,7 +18,7 @@ puzzle with no state row for you has never been served to you, which is what
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import case, func, literal, select
 from sqlalchemy.orm import Session
 
 from app.auth.backend import current_active_user
@@ -52,11 +52,22 @@ def motif_success_rates(db: Session, user: User) -> dict[str, float]:
     }
 
 
+def _is_shared_pool(puzzle: Puzzle) -> bool:
+    """A generic Lichess import: no owner *and* no source move.
+
+    Both halves matter. user_id alone would also match a personal puzzle
+    written before accounts existed — those have no owner either, and treating
+    them as shared would serve one player's missed tactics to everybody else.
+    app/legacy_ownership.py draws the line in the same place.
+    """
+    return puzzle.user_id is None and puzzle.source_move_id is None
+
+
 def _get_puzzle_or_404(puzzle_id: int, db: Session, user: User) -> Puzzle:
     """404 rather than 403 for someone else's puzzle: whether a given id
     exists is not information this app owes a caller."""
     puzzle = db.get(Puzzle, puzzle_id)
-    if puzzle is None or (puzzle.user_id is not None and puzzle.user_id != user.id):
+    if puzzle is None or not (puzzle.user_id == user.id or _is_shared_pool(puzzle)):
         raise HTTPException(status_code=404, detail="Puzzle not found")
     return puzzle
 
@@ -77,6 +88,15 @@ def puzzle_out(puzzle: Puzzle, state: PuzzleState | None) -> PuzzleOut:
     )
 
 
+def _weakest_first(rates: dict[str, float]):
+    """Order key for "weakest motif first". A motif with no attempts counts as
+    0 — a personal puzzle only exists because you missed that tactic, so no
+    data means nothing proven yet."""
+    if not rates:
+        return literal(0.0)
+    return case(rates, value=Puzzle.motif, else_=0.0)
+
+
 @router.get("/next", response_model=PuzzleOut)
 def next_puzzle(
     motif: str | None = None,
@@ -86,10 +106,25 @@ def next_puzzle(
     """Read-only: repeated calls return the same puzzle until an attempt is
     recorded (which reschedules it out of the due set)."""
     now = utcnow()
-    rates = motif_success_rates(db, user)
+    weakness = _weakest_first(motif_success_rates(db, user))
 
-    def due(personal: bool) -> list[tuple[Puzzle, PuzzleState | None]]:
-        query = (
+    def first_due(personal: bool) -> tuple[Puzzle, PuzzleState | None] | None:
+        if personal:
+            owned = Puzzle.user_id == user.id
+            # Earliest due first; no state row means never served, and the
+            # puzzle has been waiting since it was created.
+            tiebreak = func.coalesce(PuzzleState.due_at, Puzzle.created_at)
+        else:
+            # Both halves: see _is_shared_pool. user_id alone would sweep in
+            # personal puzzles written before accounts existed.
+            owned = Puzzle.user_id.is_(None) & Puzzle.source_move_id.is_(None)
+            tiebreak = func.coalesce(Puzzle.difficulty, 0)  # easiest first
+
+        conditions = [owned, (PuzzleState.id.is_(None)) | (PuzzleState.due_at <= now)]
+        if motif is not None:
+            conditions.append(Puzzle.motif == motif)
+
+        row = db.execute(
             select(Puzzle, PuzzleState)
             # Outer join, so a puzzle this account has never answered comes
             # back with no state — which is exactly the "due now" case, and
@@ -99,40 +134,21 @@ def next_puzzle(
                 (PuzzleState.puzzle_id == Puzzle.id)
                 & (PuzzleState.user_id == user.id),
             )
-            .where(
-                Puzzle.user_id == user.id if personal else Puzzle.user_id.is_(None),
-                (PuzzleState.id.is_(None)) | (PuzzleState.due_at <= now),
-            )
-        )
-        if motif is not None:
-            query = query.where(Puzzle.motif == motif)
-        return [(row[0], row[1]) for row in db.execute(query).all()]
+            .where(*conditions)
+            # Ranked and limited in SQL rather than in python. The generic pool
+            # is every motif's 500 imports (app/seeding.py), and for a new
+            # account none of it has a state row yet — so "load the due set and
+            # min() it" meant materializing thousands of rows on every call,
+            # for the life of the account.
+            .order_by(weakness, tiebreak, Puzzle.id)
+            .limit(1)
+        ).first()
+        return (row[0], row[1]) if row is not None else None
 
-    def scheduled(pair: tuple[Puzzle, PuzzleState | None]):
-        puzzle, state = pair
-        return state.due_at if state is not None else puzzle.created_at
-
-    personal = due(personal=True)
-    if personal:
-        chosen = min(
-            personal,
-            key=lambda pair: (rates.get(pair[0].motif, 0.0), scheduled(pair), pair[0].id),
-        )
-        return puzzle_out(*chosen)
-
-    generic = due(personal=False)
-    if generic:
-        chosen = min(
-            generic,
-            key=lambda pair: (
-                rates.get(pair[0].motif, 0.0),
-                pair[0].difficulty or 0,
-                pair[0].id,
-            ),
-        )
-        return puzzle_out(*chosen)
-
-    raise HTTPException(status_code=404, detail="No puzzles due")
+    chosen = first_due(personal=True) or first_due(personal=False)
+    if chosen is None:
+        raise HTTPException(status_code=404, detail="No puzzles due")
+    return puzzle_out(*chosen)
 
 
 @router.get("/{puzzle_id}", response_model=PuzzleDetail)

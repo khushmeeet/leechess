@@ -89,3 +89,16 @@ def test_a_guest_can_choose_a_different_name_before_signing_up(anon_client):
 
     assert response.status_code == 200
     assert response.json()["is_guest"] is True
+
+
+def test_an_explicitly_null_username_is_rejected_not_a_crash(anon_client):
+    """create_update_dict keeps a field the caller set to null, so this reaches
+    the validator as None rather than being absent — which used to hit the
+    regex and 500."""
+    anon_client.post("/auth/register", json=CREDENTIALS)
+
+    response = anon_client.patch("/users/me", json={"username": None})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "USERNAME_INVALID"
+    assert anon_client.get("/auth/session").json()["user"]["username"] == "alice"

@@ -205,9 +205,13 @@ class PuzzleState(Base):
     __table_args__ = (UniqueConstraint("user_id", "puzzle_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[UserId] = mapped_column(
-        GUID, ForeignKey("users.id"), nullable=False, index=True
-    )
+    # Nullable for one reason only: the pre-accounts schedule. The migration
+    # lifts box/due_at off the puzzle rows before dropping those columns, and
+    # there may be no account yet to attribute them to — so they land here
+    # unowned and adopt_orphaned_rows claims them alongside everything else.
+    # Nothing writes NULL after that, and the queues join on user_id, so an
+    # unadopted row is invisible rather than shared.
+    user_id: Mapped[UserId | None] = _owner_column()
     puzzle_id: Mapped[int] = mapped_column(ForeignKey("puzzles.id"), index=True)
     box: Mapped[int] = mapped_column(Integer, default=1)
     due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -275,9 +279,9 @@ class EndgameDrillState(Base):
     __table_args__ = (UniqueConstraint("user_id", "drill_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[UserId] = mapped_column(
-        GUID, ForeignKey("users.id"), nullable=False, index=True
-    )
+    # Nullable for the same reason as PuzzleState.user_id — the carried-over
+    # pre-accounts schedule, waiting to be adopted.
+    user_id: Mapped[UserId | None] = _owner_column()
     drill_id: Mapped[int] = mapped_column(ForeignKey("endgame_drills.id"), index=True)
     box: Mapped[int] = mapped_column(Integer, default=1)
     due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

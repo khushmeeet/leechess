@@ -14,7 +14,14 @@ import chess
 import pytest
 from sqlalchemy import select
 
-from app.models import EndgameDrill, EndgameDrillState, Puzzle, PuzzleState
+from app.models import (
+    EndgameDrill,
+    EndgameDrillState,
+    Game,
+    Move,
+    Puzzle,
+    PuzzleState,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -203,3 +210,25 @@ def test_progress_reports_only_your_own_history(client, other_client, db_session
     assert theirs["motifs"] == []
     assert theirs["cpl_trend"] == []
     assert theirs["streak_days"] == 0
+
+
+def test_a_pre_accounts_personal_puzzle_is_not_treated_as_shared(
+    client, other_client, db_session
+):
+    """user_id NULL means "shared pool" for puzzles but "unowned" for games,
+    and a personal puzzle written before accounts existed satisfies both. It
+    must not be readable by, or served to, somebody else."""
+    game = Game(pgn="", analysis_status="complete")
+    move = Move(ply=1, san="e4", fen_before=FEN, fen_after=FEN)
+    game.moves.append(move)
+    db_session.add(game)
+    db_session.flush()
+    legacy = Puzzle(source_move=move, fen=FEN, solution="e2e4", motif="fork")
+    db_session.add(legacy)
+    db_session.commit()
+
+    assert other_client.get(f"/puzzles/{legacy.id}").status_code == 404
+    assert other_client.get("/puzzles/next").status_code == 404
+    # ...and not to the account that will eventually adopt it, either — until
+    # it is adopted it belongs to nobody.
+    assert client.get(f"/puzzles/{legacy.id}").status_code == 404
