@@ -1,15 +1,24 @@
 <script lang="ts">
-	// The signed-out landing page: what leechess is, then a way in. Guests are
-	// listed first and styled as the primary action — an account only makes
-	// progress reachable from another browser, and nothing here is worth
-	// putting a wall in front of.
+	// The signed-out landing page: what leechess is, then a way in. Playing is
+	// listed first and styled as the primary action — it asks for nothing at
+	// all, and nothing about a board is worth putting a wall in front of. The
+	// account is the second offer, and what it buys is stated rather than
+	// implied: everything that remembers you.
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import logo from '$lib/assets/logo.svg';
 	import { authErrorMessage } from '$lib/auth/messages';
-	import { session } from '$lib/stores/session.svelte';
+	import { ANONYMOUS_NAME, session } from '$lib/stores/session.svelte';
 
-	type Mode = 'choose' | 'guest' | 'signup' | 'signin';
+	type Mode = 'choose' | 'signup' | 'signin';
 
-	let mode = $state<Mode>('choose');
+	// ?mode=signup is how the app's own sign-up links arrive here — from the
+	// nav, from Settings, and from the four screens that need an account.
+	// Landing on the chooser and making them pick again would be a step they
+	// already took.
+	const requested = page.url.searchParams.get('mode');
+	let mode = $state<Mode>(requested === 'signup' || requested === 'signin' ? requested : 'choose');
 	let username = $state(session.suggestedName ?? '');
 	let password = $state('');
 	let error = $state<string | null>(null);
@@ -48,14 +57,21 @@
 		password = '';
 	}
 
+	/** Straight to the board. No account, so nothing to wait for and nothing to
+	 * fill in — and no layout guard to do the navigating, because anonymous is
+	 * not signed in and /welcome stays reachable from it. */
+	function startPlaying() {
+		session.playAnonymously();
+		goto(resolve('/'));
+	}
+
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy) return;
 		busy = true;
 		error = null;
 		try {
-			if (mode === 'guest') await session.startAsGuest(username.trim());
-			else if (mode === 'signup') await session.register(username.trim(), password);
+			if (mode === 'signup') await session.register(username.trim(), password);
 			else await session.login(username.trim(), password);
 			// No goto: the layout guard sends a signed-in visitor off /welcome,
 			// and doing it here as well raced it to the same URL.
@@ -66,9 +82,7 @@
 		}
 	}
 
-	const heading = $derived(
-		mode === 'guest' ? 'Pick a name' : mode === 'signup' ? 'Create an account' : 'Sign in'
-	);
+	const heading = $derived(mode === 'signup' ? 'Create an account' : 'Sign in');
 </script>
 
 <svelte:head><title>leechess — learn from your own mistakes</title></svelte:head>
@@ -96,11 +110,14 @@
 				<div class="flex w-full flex-col gap-2" data-testid="welcome-actions">
 					<button
 						type="button"
-						onclick={() => open('guest')}
-						data-testid="welcome-guest"
+						onclick={startPlaying}
+						data-testid="welcome-play"
 						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
 					>
-						Start playing
+						<!-- Signed out this screen is the way in; someone already
+						     playing anonymously got here from a sign-up link, and for
+						     them the same button is the way back out of it. -->
+						{session.anonymous ? 'Back to the board' : 'Play now'}
 					</button>
 					<div class="flex gap-2 text-sm">
 						<button
@@ -120,9 +137,10 @@
 							Sign in
 						</button>
 					</div>
-					<p class="text-xs text-muted">
-						Starting to play makes a guest account straight away, so your games are saved. You can
-						set a password later without losing anything.
+					<p class="text-xs text-muted" data-testid="play-now-terms">
+						Play now asks for nothing and keeps nothing — you're {ANONYMOUS_NAME}, and the game ends
+						when you close the tab. An account is what saves your games, so that Review, Puzzles,
+						Endgames and Progress have something to work from.
 					</p>
 				</div>
 			{:else}
@@ -144,30 +162,17 @@
 							/>
 						</label>
 
-						{#if mode !== 'guest'}
-							<label class="flex flex-col gap-1 text-sm">
-								<span class="text-muted">Password</span>
-								<input
-									type="password"
-									bind:value={password}
-									autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
-									required
-									data-testid="auth-password"
-									class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
-								/>
-							</label>
-						{/if}
-
-						{#if mode === 'guest'}
-							<!-- Nothing here is checked: a guest name is a label, not a
-							     login, so the server takes whatever this is and only
-							     numbers it if somebody already has it. Said here so the
-							     field does not read like one that can turn you away. -->
-							<p class="text-xs text-muted" data-testid="guest-name-hint">
-								Anything you like — it's what the app calls you, not a login, and you can change it
-								later.
-							</p>
-						{/if}
+						<label class="flex flex-col gap-1 text-sm">
+							<span class="text-muted">Password</span>
+							<input
+								type="password"
+								bind:value={password}
+								autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
+								required
+								data-testid="auth-password"
+								class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+							/>
+						</label>
 
 						{#if mode === 'signup'}
 							<!-- Said plainly, next to the field, because it is true and
@@ -189,7 +194,7 @@
 								data-testid="auth-submit"
 								class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft disabled:opacity-50"
 							>
-								{mode === 'guest' ? 'Start playing' : heading}
+								{heading}
 							</button>
 							<button
 								type="button"

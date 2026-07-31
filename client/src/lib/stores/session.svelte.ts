@@ -6,8 +6,6 @@ import {
 	onUnauthorized,
 	register,
 	setUsername,
-	startAsGuest,
-	upgradeAccount,
 	type AccountUser
 } from '$lib/api/client';
 
@@ -16,16 +14,37 @@ import {
  * welcome screen instead of being asked cold. Never written again. */
 const LEGACY_USERNAME_KEY = 'leechess.username';
 
-/** Who the browser is signed in as.
+/** Set while this browser is playing without an account. The one thing
+ * anonymous play writes down, and it says nothing about who is playing —
+ * without it a refresh would drop them back on the welcome screen mid-game. */
+const ANONYMOUS_KEY = 'leechess.anonymous';
+
+/** What the app calls a player who has no account. Not a name they chose and
+ * not one they can change: nothing is being kept, so there is nothing for a
+ * name to be attached to. */
+export const ANONYMOUS_NAME = 'Anonymous';
+
+function storedAnonymous(): boolean {
+	return browser && localStorage.getItem(ANONYMOUS_KEY) === '1';
+}
+
+/** Who the browser is playing as.
  *
- * One instance for the whole app, hydrated once from GET /auth/session — which
- * answers 200 whether or not there is a session, so being signed out is an
- * ordinary state here rather than a caught error. `ready` is what the layout
- * guard waits on: redirecting before the first answer arrives would bounce
- * every signed-in visitor through the welcome screen on each reload.
+ * Two states, and they are not the same thing. Signed in: an account on the
+ * server owns the games, puzzles and progress, hydrated once from GET
+ * /auth/session — which answers 200 whether or not there is a session, so
+ * being signed out is an ordinary state here rather than a caught error.
+ * Anonymous: no account, no request, nothing written server-side — the board
+ * and nothing else (see routes/welcome).
+ *
+ * `ready` is what the layout guard waits on: redirecting before the first
+ * answer arrives would bounce every signed-in visitor through the welcome
+ * screen on each reload.
  */
 class Session {
 	user = $state<AccountUser | null>(null);
+	/** Playing without an account. Never true at the same time as `user`. */
+	anonymous = $state(false);
 	/** False until the first /auth/session answer lands. */
 	ready = $state(false);
 
@@ -33,16 +52,19 @@ class Session {
 		return this.user !== null;
 	}
 
-	get isGuest() {
-		return this.user?.is_guest ?? false;
+	/** Signed in or playing anonymously — either way there is somewhere to be
+	 * other than the welcome screen. */
+	get admitted() {
+		return this.authenticated || this.anonymous;
 	}
 
 	get name() {
-		return this.user?.username ?? null;
+		if (this.user) return this.user.username;
+		return this.anonymous ? ANONYMOUS_NAME : null;
 	}
 
 	/** The name this browser used before accounts existed, if any — a
-	 * suggestion for the welcome screen, not an identity. */
+	 * suggestion for the sign-up form, not an identity. */
 	get suggestedName() {
 		if (!browser) return null;
 		return localStorage.getItem(LEGACY_USERNAME_KEY);
@@ -56,26 +78,34 @@ class Session {
 			// the honest thing to show, and it is where a retry starts anyway.
 			this.user = null;
 		} finally {
+			// A real session wins over the flag: signing in on a browser that
+			// played anonymously before is signing in, not both at once.
+			this.anonymous = this.user === null && storedAnonymous();
 			this.ready = true;
 		}
 	}
 
+	/** Start playing with no account. No request, nothing to fill in and
+	 * nothing kept — which is the whole offer, and why there is no name to
+	 * pick. */
+	playAnonymously() {
+		this.anonymous = true;
+		if (browser) localStorage.setItem(ANONYMOUS_KEY, '1');
+	}
+
+	private stopPlayingAnonymously() {
+		this.anonymous = false;
+		if (browser) localStorage.removeItem(ANONYMOUS_KEY);
+	}
+
 	async register(username: string, password: string) {
 		this.user = await register(username, password);
+		this.stopPlayingAnonymously();
 	}
 
 	async login(username: string, password: string) {
 		this.user = await login(username, password);
-	}
-
-	async startAsGuest(username: string) {
-		this.user = await startAsGuest(username);
-	}
-
-	/** Guest chooses a password. Same account, same id, same games — the
-	 * server upgrades the row in place, so there is nothing to re-fetch. */
-	async upgrade(password: string) {
-		this.user = await upgradeAccount(password);
+		this.stopPlayingAnonymously();
 	}
 
 	async rename(username: string) {
@@ -83,6 +113,11 @@ class Session {
 	}
 
 	async signOut() {
+		// Anonymous play has no server session to end, so there this is only
+		// the flag — but it has to go either way, or signing out of an account
+		// on a browser that played anonymously earlier would land back in it.
+		this.stopPlayingAnonymously();
+		if (!this.authenticated) return;
 		try {
 			await logout();
 		} finally {
@@ -92,7 +127,10 @@ class Session {
 
 	/** Called when a request comes back 401 — the cookie expired or the account
 	 * is gone, and the app should stop pretending otherwise. The layout guard
-	 * watches `user`, so clearing it is what sends them to /welcome. */
+	 * watches this, so clearing it is what sends them to /welcome. Deliberately
+	 * not a fall back to anonymous play: they had games a moment ago, and
+	 * quietly moving them somewhere those games do not exist is worse than
+	 * asking them to sign in again. */
 	clear() {
 		this.user = null;
 	}

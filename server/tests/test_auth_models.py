@@ -19,17 +19,16 @@ def test_create_all_makes_the_table(db_engine):
     assert "users" in inspect(db_engine).get_table_names()
 
 
-def test_a_guest_round_trips_without_an_email_or_password(db_session):
+def test_an_account_round_trips_without_an_email_or_password(db_session):
     """Both columns are NOT NULL on fastapi-users' mixin and redeclared
-    nullable on User. A guest exercises both at once: no password chosen yet,
-    and no email ever."""
-    db_session.add(User(username="drifter", is_guest=True))
+    nullable on User: no email ever, and no password on the rows left behind
+    by the guest accounts this app used to create."""
+    db_session.add(User(username="drifter"))
     db_session.commit()
 
     user = db_session.scalars(select(User)).one()
     assert user.email is None
     assert user.hashed_password is None
-    assert user.is_guest is True
     assert user.is_active is True
 
 

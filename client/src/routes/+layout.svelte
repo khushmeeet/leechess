@@ -6,7 +6,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import SettingsMenu from '$lib/components/SettingsMenu.svelte';
-	import UpgradePrompt from '$lib/components/UpgradePrompt.svelte';
 	import { session } from '$lib/stores/session.svelte';
 
 	let { children } = $props();
@@ -30,14 +29,19 @@
 		session.load();
 	});
 
-	// Signed out anywhere but /welcome, or signed in and still sitting on it.
-	// Gated on `ready` so the first paint after a reload doesn't bounce a
-	// signed-in visitor through the welcome screen before /auth/session lands.
-	// This is also what a 401 mid-session lands on: the client clears the
-	// store, and the redirect follows from that.
+	// Nowhere to be but /welcome without an account or an anonymous session, or
+	// signed in and still sitting on it. Gated on `ready` so the first paint
+	// after a reload doesn't bounce a signed-in visitor through the welcome
+	// screen before /auth/session lands. This is also what a 401 mid-session
+	// lands on: the client clears the store, and the redirect follows.
+	//
+	// Only an account is sent away from /welcome. An anonymous player has a
+	// reason to be there — it is where the sign-up form lives, and bouncing
+	// them off it would make every "save your progress" link in the app a dead
+	// end.
 	$effect(() => {
 		if (!session.ready) return;
-		if (!session.authenticated && !onWelcome) goto(welcome, { replaceState: true });
+		if (!session.admitted && !onWelcome) goto(welcome, { replaceState: true });
 		else if (session.authenticated && onWelcome) goto(resolve('/'), { replaceState: true });
 	});
 </script>
@@ -47,8 +51,10 @@
 <div class="min-h-screen bg-paper text-ink">
 	<!-- Signed out there is nowhere to navigate to and nothing to configure,
 	     and the welcome screen carries its own wordmark — so the bar would be
-	     an empty duplicate of the page beneath it. -->
-	{#if session.authenticated}
+	     an empty duplicate of the page beneath it. Excluded on /welcome rather
+	     than only while signed out: an anonymous player can be sitting on that
+	     screen, having followed a sign-up link out of the app. -->
+	{#if session.admitted && !onWelcome}
 		<nav class="border-b border-line bg-card">
 			<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
 				<a href={resolve('/')} class="flex items-center gap-2">
@@ -71,6 +77,17 @@
 							Playing as <span class="font-semibold text-ink">{session.name}</span>
 						</span>
 					{/if}
+					<!-- The one thing an anonymous player might want that is not on
+					     the screen they are looking at, so it is on every screen. -->
+					{#if session.anonymous}
+						<a
+							href="{welcome}?mode=signup"
+							data-testid="nav-sign-up"
+							class="rounded-xs border border-accent-line px-2 py-1 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+						>
+							Sign up
+						</a>
+					{/if}
 					<SettingsMenu />
 				</div>
 			</div>
@@ -78,7 +95,6 @@
 	{/if}
 	<main class="mx-auto max-w-5xl px-4 py-6">
 		{#if session.ready}
-			<UpgradePrompt />
 			{@render children()}
 		{/if}
 	</main>

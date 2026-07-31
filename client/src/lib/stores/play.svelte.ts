@@ -160,6 +160,12 @@ export class PlaySession {
 		const generation = this.generation;
 		this.sync = this.sync
 			.then(() => {
+				// No account, nowhere to sync to: an anonymous game lives in this
+				// tab and localStorage and nowhere else. Signing up mid-game does
+				// not strand it — the sign-up form is a different route, so
+				// coming back remounts the play screen and the constructor's
+				// resync posts the whole move list in one go.
+				if (!account.authenticated) return;
 				if (generation !== this.generation || this.suspended || this.serverError) return;
 				return job();
 			})

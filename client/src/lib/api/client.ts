@@ -363,7 +363,6 @@ export function getProgress(days?: number | null): Promise<ProgressSummary> {
 export interface AccountUser {
 	id: string;
 	username: string;
-	is_guest: boolean;
 	email: string | null;
 	is_active: boolean;
 	is_superuser: boolean;
@@ -393,17 +392,6 @@ export function login(username: string, password: string): Promise<AccountUser> 
 		method: 'POST',
 		body: JSON.stringify({ username, password })
 	});
-}
-
-/** A guest is a real account without a password: it owns games and survives a
- * reload, and upgradeAccount() later turns this same row into a registered one
- * without moving any data. */
-export function startAsGuest(username: string): Promise<AccountUser> {
-	return request('/auth/guest', { method: 'POST', body: JSON.stringify({ username }) });
-}
-
-export function upgradeAccount(password: string): Promise<AccountUser> {
-	return request('/auth/upgrade', { method: 'POST', body: JSON.stringify({ password }) });
 }
 
 export function logout(): Promise<void> {

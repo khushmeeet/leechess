@@ -45,7 +45,11 @@
 	});
 
 	const coachText = $derived.by(() => {
-		if (game.isGameOver) return 'Good game — open the review for the full analysis.';
+		if (game.isGameOver) {
+			return account.anonymous
+				? 'Good game. Nothing was saved — an account is what turns a finished game into a review.'
+				: 'Good game — open the review for the full analysis.';
+		}
 		if (!freshLines) return null;
 		return coachAdvice({
 			fen: game.fen,
@@ -452,7 +456,17 @@
 					New game
 				</button>
 
-				{#if session.completedGameId !== null}
+				{#if account.anonymous}
+					<!-- Said on the screen the game is played on rather than
+					     discovered afterwards on an empty Review page. -->
+					<p class="text-xs text-muted" data-testid="anonymous-not-saved">
+						Not saved — you're playing as {account.name}.
+						<a class="text-accent underline" href="{resolve('/welcome')}?mode=signup">
+							Create an account
+						</a>
+						to keep your games and have them reviewed.
+					</p>
+				{:else if session.completedGameId !== null}
 					<p class="text-sm text-ok">
 						Saved as game #{session.completedGameId}, analysis queued —
 						<a

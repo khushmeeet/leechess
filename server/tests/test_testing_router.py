@@ -79,7 +79,9 @@ def reset_client(db_engine, lifespan_sessions, monkeypatch):
 def _sign_in(client) -> None:
     """The reset endpoint is the bootstrap and stays anonymous, but everything
     it is used to set up and check needs an account."""
-    response = client.post("/auth/guest", json={"username": "resetter"})
+    response = client.post(
+        "/auth/register", json={"username": "resetter", "password": "correct-horse"}
+    )
     assert response.status_code == 200, response.text
 
 

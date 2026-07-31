@@ -87,6 +87,17 @@ def _migrate_existing_tables(bind=None) -> None:
                 )
                 conn.commit()
 
+        # Playing without an account is a browser-side mode now, so nothing
+        # creates the passwordless "guest" row this flag marked. Dropping it
+        # is not housekeeping: it is NOT NULL with only a python-side default,
+        # so once the model stops mapping it every insert into users fails —
+        # the same trap _move_schedules_off_the_content_rows exists for. The
+        # rows themselves are left alone; they are ordinary accounts that
+        # happen to have no password, and authenticate already refuses those.
+        if "is_guest" in columns_of("users"):
+            conn.execute(text("ALTER TABLE users DROP COLUMN is_guest"))
+            conn.commit()
+
         _move_schedules_off_the_content_rows(conn, columns_of)
 
 

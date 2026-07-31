@@ -65,22 +65,29 @@ Username and password, and nothing else — no email column, no mail sender, no
 third-party sign-in. That means **there is no password reset**: a forgotten
 password is a lost account, which the sign-up form says out loud.
 
-A guest is an ordinary user row with no password (`users.is_guest`). It owns
-games and survives a reload like any other account, and `POST /auth/upgrade`
-sets a password on that same row — so signing up later moves no data. Settings
-offers a guest **Sign up** where a registered account gets Sign out: there is
-nothing to sign back in with yet, so leaving would mean losing the account.
-
 The username is the login identifier, so `users.username_canonical` holds the
 lowercased form under a unique index and every lookup goes through it;
 `users.username` keeps the casing you typed for display.
 
-A guest's name is exempt from all of that except the index. They cannot sign in
-with it, so it is a label rather than a credential: `POST /auth/guest` (and a
-guest's own rename) takes whatever was typed, cleans it, and — if somebody
-already holds it — numbers it `drifter-2` instead of refusing. The 3–24
-character shape and the taken check apply to registration, and come back the
-moment a guest takes a password.
+**Playing needs no account at all.** "Play now" on the welcome screen goes
+straight to the board: no name to pick, no request, no row. That player is
+called Anonymous, the game is theirs alone — the engine, the badges and the
+hint ladder all run in the browser — and nothing about it is written to the
+server, because there is no session to write it with. The one thing stored is
+`leechess.anonymous` in localStorage, so a refresh does not drop them back on
+the welcome screen mid-game.
+
+An account is what makes anything persist, so Review, Puzzles, Endgames and
+Progress ask for one (`AccountGate`) instead of rendering an empty version of
+themselves — nothing played anonymously will ever arrive there. Signing up
+mid-game keeps the game on the board: the play screen is remounted on the way
+back from the welcome screen and syncs the whole move list at once.
+
+Guests used to be passwordless rows in `users` with an `is_guest` flag, upgraded
+in place by `POST /auth/upgrade`. Both endpoints and the column are gone; the
+migration in `app/main.py` drops it, and any rows left behind are ordinary
+accounts that happen to have no password (they cannot sign in — `authenticate`
+already refused a NULL hash).
 
 Two environment variables:
 

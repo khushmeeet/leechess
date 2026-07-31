@@ -158,3 +158,67 @@ def test_running_the_migration_twice_is_a_no_op(legacy_engine):
     with Session(legacy_engine) as db:
         # not duplicated, and nothing blew up on the second pass
         assert len(db.scalars(select(PuzzleState)).all()) == 1
+
+
+# The users table as it was while guests were accounts, with one of those
+# accounts in it. create_all leaves an existing table alone, so this is the
+# only way to see the column the current model no longer maps.
+GUEST_ERA_USERS = """
+CREATE TABLE users (
+    id CHAR(36) NOT NULL PRIMARY KEY,
+    email VARCHAR(320), hashed_password VARCHAR(1024),
+    is_active BOOLEAN NOT NULL, is_superuser BOOLEAN NOT NULL,
+    is_verified BOOLEAN NOT NULL, username VARCHAR(24) NOT NULL,
+    username_canonical VARCHAR(24) NOT NULL, is_guest BOOLEAN NOT NULL,
+    created_at DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX ix_users_username_canonical ON users (username_canonical);
+
+INSERT INTO users VALUES (
+    '2b0f7b4e-0000-4000-8000-000000000001', NULL, NULL, 1, 0, 1,
+    'drifter', 'drifter', 1, '2026-01-01'
+);
+"""
+
+
+@pytest.fixture()
+def guest_era_engine(tmp_path):
+    path = tmp_path / "guest-era.db"
+    con = sqlite3.connect(path)
+    con.executescript(GUEST_ERA_USERS)
+    con.commit()
+    con.close()
+
+    engine = create_engine(
+        f"sqlite:///{path}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(bind=engine)
+    _migrate_existing_tables(bind=engine)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+def test_the_guest_flag_is_dropped(guest_era_engine):
+    assert "is_guest" not in _columns(guest_era_engine, "users")
+
+
+def test_a_new_account_can_still_be_inserted(guest_era_engine):
+    """The box/due_at trap again: is_guest is NOT NULL with only a
+    python-side default, so leaving the column in place once the model stops
+    sending a value means nobody can ever register on this database again."""
+    with Session(guest_era_engine) as db:
+        db.add(User(username="ada", hashed_password="x", is_verified=True))
+        db.commit()
+
+        assert len(db.scalars(select(User)).all()) == 2
+
+
+def test_the_accounts_themselves_are_left_alone(guest_era_engine):
+    """A guest row is an ordinary account with no password now. Deleting it
+    would take its games with it, and those are somebody's."""
+    with Session(guest_era_engine) as db:
+        drifter = db.scalars(select(User).where(User.username == "drifter")).one()
+        assert drifter.hashed_password is None
+        assert drifter.is_active is True

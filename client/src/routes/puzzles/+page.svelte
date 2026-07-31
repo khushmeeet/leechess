@@ -2,10 +2,13 @@
 	import type { DrawShape } from 'chessground/draw';
 	import type { Key } from 'chessground/types';
 	import { page } from '$app/state';
+	import AccountGate from '$lib/components/AccountGate.svelte';
 	import Board from '$lib/components/Board.svelte';
 	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
 	import { humanizeMotif, motifReason } from '$lib/motifs';
 	import { PuzzleSession } from '$lib/stores/puzzle.svelte';
+	// Aliased: `session` on this page already means the puzzle session.
+	import { session as account } from '$lib/stores/session.svelte';
 
 	const session = new PuzzleSession();
 
@@ -18,6 +21,10 @@
 
 	$effect(() => {
 		void motifFilter;
+		// A puzzle is drawn from a queue that is scheduled per account, and
+		// attempting one writes to it. Without an account there is no queue to
+		// draw from, so nothing is asked for.
+		if (account.anonymous) return;
 		loadNext();
 	});
 
@@ -71,12 +78,18 @@
 			</span>
 		{/if}
 	</h1>
-	<span class="text-sm text-muted" data-testid="session-count">
-		{session.completedCount} completed this session
-	</span>
+	{#if !account.anonymous}
+		<span class="text-sm text-muted" data-testid="session-count">
+			{session.completedCount} completed this session
+		</span>
+	{/if}
 </div>
 
-{#if session.status === 'empty'}
+{#if account.anonymous}
+	<AccountGate
+		what="Your own blunders, turned into positions to drill and scheduled by Leitner box — ten minutes, a day, three days, a week, three weeks — plus the generic Lichess pool."
+	/>
+{:else if session.status === 'empty'}
 	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
 		<p class="font-semibold text-ink">
 			No puzzles due{motifFilter ? ' for this motif' : ''}.

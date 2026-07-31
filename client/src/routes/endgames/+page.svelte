@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import AccountGate from '$lib/components/AccountGate.svelte';
 	import Board from '$lib/components/Board.svelte';
 	import { listDrills, type DrillRecord } from '$lib/api/client';
 	import { describeOutcome, DrillSession, MOVE_CAP } from '$lib/stores/endgameDrill.svelte';
+	// Aliased: `session` on this page already means the drill session.
+	import { session as account } from '$lib/stores/session.svelte';
 	import { dueLabel, familyLabel, isDue } from '$lib/endgames';
 
 	const session = new DrillSession();
@@ -32,12 +35,16 @@
 
 	$effect(() => {
 		void familyFilter;
+		// The catalog is per account: which drill comes next, and when it comes
+		// back, is Leitner state an anonymous player has none of.
+		if (account.anonymous) return;
 		loadNext();
 	});
 
 	// Re-read after every finished attempt so the box and due date move in step.
 	$effect(() => {
 		void session.completedCount;
+		if (account.anonymous) return;
 		refreshCatalog();
 	});
 
@@ -62,9 +69,11 @@
 			</span>
 		{/if}
 	</h1>
-	<span class="text-sm text-muted" data-testid="drill-session-count">
-		{session.completedCount} drilled this session
-	</span>
+	{#if !account.anonymous}
+		<span class="text-sm text-muted" data-testid="drill-session-count">
+			{session.completedCount} drilled this session
+		</span>
+	{/if}
 </div>
 
 {#snippet drillTable()}
@@ -119,7 +128,11 @@
 	{/if}
 {/snippet}
 
-{#if session.status === 'empty'}
+{#if account.anonymous}
+	<AccountGate
+		what="Twelve curated positions — Lucena, Philidor, key squares, Vancura — played out against a full-strength engine, and scheduled to come back until the technique sticks."
+	/>
+{:else if session.status === 'empty'}
 	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
 		<p class="font-semibold text-ink">No drills due{familyFilter ? ' in this family' : ''}.</p>
 		<p class="mt-1">

@@ -12,14 +12,12 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     # get_users_router validates responses against this model.
     email: str | None = None
     username: str
-    is_guest: bool
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    # No pattern: this is the one rename route, and a guest's name is not held
-    # to the registered shape (app/auth/manager.py::UserManager._update, which
-    # is where the two paths part). A registered user with a badly shaped name
-    # gets USERNAME_INVALID from there instead of a 422 from here.
+    # No pattern: the shape is checked in app/auth/manager.py::_update, so a
+    # rename onto a badly shaped name answers USERNAME_INVALID like every
+    # other route rather than a 422 the SPA has to translate separately.
     username: str | None = None
     # This app has no mail sender and no email column worth setting, so the
     # only accepted value is null. Sending an address is a 422 rather than a
@@ -33,22 +31,6 @@ class UserCreate(BaseModel):
     library's create() path is bypassed entirely."""
 
     username: str = Field(pattern=USERNAME_PATTERN)
-    password: str
-
-
-class GuestCreate(BaseModel):
-    """Body of /auth/guest. Unconstrained on purpose: a guest's name is a
-    label, not a login identifier, so whatever they typed is cleaned and kept
-    rather than checked and refused — see
-    app/auth/models.py::sanitize_guest_username."""
-
-    username: str
-
-
-class PasswordSet(BaseModel):
-    """Body of /auth/upgrade — the password a guest chooses to keep their
-    progress reachable from another browser."""
-
     password: str
 
 
