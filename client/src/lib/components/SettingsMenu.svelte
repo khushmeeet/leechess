@@ -2,7 +2,7 @@
 	// Board look picker, opened from the gear in the nav. Palette and piece
 	// set apply to every Board live and persist via boardPrefs.
 	import { resolve } from '$app/paths';
-	import { BOARD_THEMES, PIECE_SETS } from '$lib/boardThemes';
+	import { BOARD_THEMES, PIECE_SETS, themeSwatch } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { soundPrefs } from '$lib/stores/soundPrefs.svelte';
@@ -163,7 +163,7 @@
 							class="h-8 w-full rounded-xs {boardPrefs.themeName === theme.name
 								? 'outline-2 outline-offset-2 outline-accent'
 								: 'outline-1 -outline-offset-1 outline-line'}"
-							style="background: linear-gradient(135deg, {theme.light} 50%, {theme.dark} 50%)"
+							style="background: {themeSwatch(theme)}"
 						></span>
 						<span
 							class="text-[10px] {boardPrefs.themeName === theme.name

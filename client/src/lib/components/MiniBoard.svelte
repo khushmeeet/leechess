@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '$lib/pieces.css';
-	import { boardImageUrl } from '$lib/boardThemes';
+	import { boardBackground } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 
 	// Static position diagram: renders the placement field of a FEN with the
@@ -53,7 +53,7 @@
 
 <div
 	class="miniboard pieces-{boardPrefs.pieceSet}"
-	style="background-image: {boardImageUrl(boardPrefs.theme)}"
+	style="background-image: {boardBackground(boardPrefs.theme)}"
 	role="img"
 	aria-label={label}
 >
