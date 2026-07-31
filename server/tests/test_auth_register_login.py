@@ -17,7 +17,6 @@ def test_register_signs_the_new_account_in(anon_client, db_engine):
     assert response.status_code == 200
     body = response.json()
     assert body["username"] == "alice"
-    assert body["is_guest"] is False
     assert body["email"] is None
     assert COOKIE_NAME in response.cookies
 

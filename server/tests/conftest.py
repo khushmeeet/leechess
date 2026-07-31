@@ -189,22 +189,26 @@ def anon_client(db_engine, lifespan_sessions):
         yield test_client
 
 
+USERNAME = "tester"
+OTHER_USERNAME = "somebody-else"
+PASSWORD = "correct-horse"
+
+
 @pytest.fixture()
 def client(anon_client):
-    """Signed in as a guest, because every route outside /auth now requires an
-    account — an anonymous client would only ever prove that 401 works.
+    """Signed in, because every route outside /auth requires an account — an
+    anonymous client would only ever prove that 401 works. (Playing without an
+    account never reaches this server: it is a mode of the SPA.)
 
-    A real sign-in through the API rather than a dependency override: the
+    A real registration through the API rather than a dependency override: the
     cookie, the token and the ownership columns are the thing under test in
     most of these files, and an override would quietly skip all three.
     """
-    response = anon_client.post("/auth/guest", json={"username": "tester"})
+    response = anon_client.post(
+        "/auth/register", json={"username": USERNAME, "password": PASSWORD}
+    )
     assert response.status_code == 200, response.text
     return anon_client
-
-
-GUEST_USERNAME = "tester"
-OTHER_USERNAME = "somebody-else"
 
 
 @pytest.fixture()
@@ -214,22 +218,22 @@ def signed_in_user(client, db_session):
     from app.auth.models import User
 
     # By name rather than "the only row": ownership tests add a second account.
-    return db_session.scalars(
-        select(User).where(User.username == GUEST_USERNAME)
-    ).one()
+    return db_session.scalars(select(User).where(User.username == USERNAME)).one()
 
 
 @pytest.fixture()
 def second_client(client):
     """A second account, with a cookie jar of its own.
 
-    A separate TestClient, not a second sign-in on the same one: cookies live
-    on the client, so reusing it would just swap which account the single
+    A separate TestClient, not a second registration on the same one: cookies
+    live on the client, so reusing it would just swap which account the single
     browser is. `client` has already installed the get_db override and run the
     lifespan, so this needs neither.
     """
     other = TestClient(app)
-    response = other.post("/auth/guest", json={"username": OTHER_USERNAME})
+    response = other.post(
+        "/auth/register", json={"username": OTHER_USERNAME, "password": PASSWORD}
+    )
     assert response.status_code == 200, response.text
     return other
 

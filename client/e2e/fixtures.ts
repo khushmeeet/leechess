@@ -1,6 +1,11 @@
 import { test as base, expect } from '@playwright/test';
 import { API } from './helpers';
 
+/** The account every spec but the signed-out ones runs as. Playing without one
+ * saves nothing, so a spec about saved data has to have one. */
+export const E2E_USERNAME = 'e2e-player';
+export const E2E_PASSWORD = 'correct-horse';
+
 /** Every spec imports `test` from here instead of '@playwright/test'.
  *
  * Three guarantees the raw Playwright `test` cannot give:
@@ -18,9 +23,10 @@ import { API } from './helpers';
  *    left behind. Each test now starts from the same state: no games, no
  *    puzzles, no attempts, and a freshly seeded endgame catalog.
  *
- * 3. A signed-in account. Every screen but /welcome now needs one. Specs that
- *    are about being signed out opt back out with `test.use({ signedIn:
- *    false })`.
+ * 3. A signed-in account. Every screen that keeps anything needs one, and
+ *    playing anonymously (the other way in) keeps nothing. Specs that are
+ *    about being signed out, or about anonymous play, opt back out with
+ *    `test.use({ signedIn: false })`.
  *
  * Browser state needs no equivalent hook — Playwright already gives each test
  * its own context, so localStorage starts empty.
@@ -45,13 +51,13 @@ export const test = base.extend<{ signedIn: boolean; cleanDatabase: void }>({
 
 			if (signedIn) {
 				// After the reset, never before: the truncate above clears `users`
-				// too, so signing in first would leave the browser holding a
+				// too, so registering first would leave the browser holding a
 				// perfectly valid cookie whose subject no longer exists — and
 				// every request in the spec would 401 for no visible reason.
-				const guest = await request.post(`${API}/auth/guest`, {
-					data: { username: 'e2e-player' }
+				const account = await request.post(`${API}/auth/register`, {
+					data: { username: E2E_USERNAME, password: E2E_PASSWORD }
 				});
-				expect(guest.ok()).toBe(true);
+				expect(account.ok()).toBe(true);
 
 				// `request` and the browser context are separate cookie jars, and
 				// specs use both — seeding games through `request`, then asserting

@@ -3,7 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { getProgress, type ProgressSummary } from '$lib/api/client';
 	import { humanizeMotif } from '$lib/motifs';
+	import AccountGate from '$lib/components/AccountGate.svelte';
 	import CplTrend from '$lib/components/CplTrend.svelte';
+	import { session } from '$lib/stores/session.svelte';
 
 	const windows = [
 		{ days: 30, label: '30 days' },
@@ -17,6 +19,9 @@
 
 	$effect(() => {
 		const requested = days;
+		// Progress is a history, and an anonymous player is not keeping one —
+		// there is nothing to ask the server for.
+		if (session.anonymous) return;
 		let cancelled = false;
 		getProgress(requested)
 			.then((fetched) => {
@@ -46,26 +51,34 @@
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 	<h1 class="font-display text-2xl">Progress</h1>
-	<div
-		class="flex rounded-xs border border-line bg-card text-sm"
-		role="group"
-		aria-label="Time window"
-	>
-		{#each windows as window (window.label)}
-			<button
-				onclick={() => (days = window.days)}
-				aria-pressed={days === window.days}
-				class="px-3 py-1 first:rounded-l-xs last:rounded-r-xs {days === window.days
-					? 'bg-ink font-semibold text-paper'
-					: 'text-muted hover:bg-paper'}"
-			>
-				{window.label}
-			</button>
-		{/each}
-	</div>
+	<!-- Nothing to window over without an account, and a picker that changes
+	     nothing reads as a broken control rather than a locked one. -->
+	{#if !session.anonymous}
+		<div
+			class="flex rounded-xs border border-line bg-card text-sm"
+			role="group"
+			aria-label="Time window"
+		>
+			{#each windows as window (window.label)}
+				<button
+					onclick={() => (days = window.days)}
+					aria-pressed={days === window.days}
+					class="px-3 py-1 first:rounded-l-xs last:rounded-r-xs {days === window.days
+						? 'bg-ink font-semibold text-paper'
+						: 'text-muted hover:bg-paper'}"
+				>
+					{window.label}
+				</button>
+			{/each}
+		</div>
+	{/if}
 </div>
 
-{#if error}
+{#if session.anonymous}
+	<AccountGate
+		what="Success rate per motif over 30 days, 90 days or all time, your weakest patterns called out with a link straight to a drill, and a day streak."
+	/>
+{:else if error}
 	<p class="text-sm break-all text-err">Failed to load progress: {error}</p>
 {:else if !progress}
 	<p class="text-sm text-muted">Loading progress…</p>

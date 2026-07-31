@@ -3,103 +3,141 @@ import { API, seedGame, scholarsMateSans } from './helpers';
 
 test.use({ signedIn: false });
 
-test('a guest can start playing straight from the welcome screen', async ({ page }) => {
+test('playing needs nothing: one click from the welcome screen to the board', async ({ page }) => {
 	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
+	await page.getByTestId('welcome-play').click();
 
+	// No form in between — no name to pick, nothing to fill in.
 	await expect(page).toHaveURL(/\/$/);
 	await expect(page.locator('cg-board')).toBeVisible();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await expect(page.getByTestId('nav-username')).toContainText('Anonymous');
 });
 
-test('a guest session survives a reload', async ({ page }) => {
+test('an anonymous session survives a reload', async ({ page }) => {
 	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await page.getByTestId('welcome-play').click();
+	await expect(page.getByTestId('nav-username')).toContainText('Anonymous');
 
 	await page.reload();
 
-	// Still signed in, and never bounced back through the welcome screen —
-	// which is what the layout guard's `ready` gate is there to prevent.
+	// Never bounced back through the welcome screen — which is what the layout
+	// guard's `ready` gate is there to prevent, for an account and for this.
 	await expect(page).toHaveURL(/\/$/);
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await expect(page.getByTestId('nav-username')).toContainText('Anonymous');
 });
 
-test('a guest with a game is offered a password, and keeps everything on taking it', async ({
-	page,
-	context
-}) => {
+test('an anonymous player has no server session to write anything with', async ({ page }) => {
 	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await page.getByTestId('welcome-play').click();
+	await expect(page.locator('cg-board')).toBeVisible();
+	await expect(page.getByTestId('anonymous-not-saved')).toBeVisible();
 
-	// A game to lose. Through the API so the spec is about the upgrade, not
-	// about playing chess — the cookie jar is shared with the page.
-	const gameId = await seedGame(context.request, scholarsMateSans, '1-0');
-
-	await page.goto('/review');
-	// The prompt is deliberately late: it appears only once there is something
-	// worth keeping.
-	await expect(page.getByTestId('upgrade-prompt')).toBeVisible();
-
-	await page.getByTestId('upgrade-open').click();
-	await page.getByTestId('upgrade-password').fill('correct-horse');
-	await page.getByTestId('upgrade-submit').click();
-
-	await expect(page.getByTestId('upgrade-done')).toBeVisible();
-	// Same account, same games — the upgrade is in place, not a migration.
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
-	const games = await (await context.request.get(`${API}/games`)).json();
-	expect(games.map((game: { id: number }) => game.id)).toContain(gameId);
+	// page.request shares the page's cookie jar, and there is no session cookie
+	// in it. That is the whole of "saves nothing": every route that writes is
+	// behind an account, so this browser could not reach one if it tried.
+	expect((await page.request.get(`${API}/games`)).status()).toBe(401);
 });
 
-test('a guest is offered a way to keep the account rather than a way to lose it', async ({
+test('the screens that keep something ask for an account instead of showing it empty', async ({
 	page
 }) => {
 	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await page.getByTestId('welcome-play').click();
+	await expect(page.getByTestId('nav-username')).toContainText('Anonymous');
 
-	await page.getByTestId('settings-button').click();
-
-	// Signing out of an account with no password is signing out for good.
-	await expect(page.getByTestId('sign-up')).toBeVisible();
-	await expect(page.getByTestId('sign-out')).toHaveCount(0);
+	for (const path of ['/review', '/puzzles', '/endgames', '/progress']) {
+		await page.goto(path);
+		// "Nothing here yet" would be a lie: nothing played this way will ever
+		// arrive, so the screen says what an account would make of it.
+		await expect(page.getByTestId('account-gate')).toBeVisible();
+	}
 });
 
-test('the password set as a guest signs the same account back in', async ({ page }) => {
+test('literature stays open to an anonymous player', async ({ page }) => {
+	// Nothing on it is anybody's, so an account would be a wall around a
+	// reference shelf.
 	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await page.getByTestId('welcome-play').click();
 
-	// Through Settings rather than the API: this is the path a guest who went
-	// looking for it takes, and the one that turns Sign up back into Sign out.
-	await page.getByTestId('settings-button').click();
-	await page.getByTestId('sign-up').click();
-	await page.getByTestId('sign-up-password').fill('correct-horse');
-	await page.getByTestId('sign-up-submit').click();
+	await page.goto('/literature');
 
-	await expect(page.getByTestId('sign-up-done')).toBeVisible();
-	await page.getByTestId('sign-out').click();
-	await expect(page).toHaveURL(/\/welcome$/);
+	await expect(page.getByTestId('account-gate')).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Literature' })).toBeVisible();
+});
 
-	await page.getByTestId('welcome-signin').click();
-	await page.getByTestId('auth-username').fill('drifter');
+test('a gate leads to the sign-up form, and signing up lands back in the app', async ({ page }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-play').click();
+	await page.goto('/progress');
+
+	await page.getByTestId('gate-sign-up').click();
+
+	// Straight into the form rather than back to the chooser — they already
+	// chose by clicking the link.
+	await expect(page).toHaveURL(/mode=signup/);
+	await page.getByTestId('auth-username').fill('newcomer');
 	await page.getByTestId('auth-password').fill('correct-horse');
 	await page.getByTestId('auth-submit').click();
 
 	await expect(page).toHaveURL(/\/$/);
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
+	await expect(page.getByTestId('nav-username')).toContainText('newcomer');
+	// The anonymous badge is gone with it: this browser is an account now.
+	await expect(page.getByTestId('nav-sign-up')).toHaveCount(0);
+});
+
+test('an account keeps its games, and signing back in finds them', async ({ page, context }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-signup').click();
+	await page.getByTestId('auth-username').fill('ada');
+	await page.getByTestId('auth-password').fill('correct-horse');
+	await page.getByTestId('auth-submit').click();
+	await expect(page.getByTestId('nav-username')).toContainText('ada');
+
+	// Through the API so the spec is about the account, not about playing
+	// chess — the cookie jar is shared with the page.
+	const gameId = await seedGame(context.request, scholarsMateSans, '1-0');
+
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('sign-out').click();
+	await expect(page).toHaveURL(/\/welcome$/);
+
+	await page.getByTestId('welcome-signin').click();
+	await page.getByTestId('auth-username').fill('ada');
+	await page.getByTestId('auth-password').fill('correct-horse');
+	await page.getByTestId('auth-submit').click();
+	// The guard's redirect is what says the sign-in landed; navigating before
+	// it lands would load /review with no cookie yet and bounce right back.
+	await expect(page).toHaveURL(/\/$/);
+
+	await page.goto('/review');
+	await expect(page.getByTestId('games-list')).toContainText(String(gameId));
+});
+
+test('settings offers an anonymous player the account, not a rename', async ({ page }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-play').click();
+
+	await page.getByTestId('settings-button').click();
+
+	// There is no account for the name to be the name of, so the field would
+	// be a control that changes nothing.
+	await expect(page.getByTestId('anonymous-player')).toContainText('Anonymous');
+	await expect(page.getByTestId('username-setting-input')).toHaveCount(0);
+	await expect(page.getByTestId('sign-up')).toBeVisible();
+});
+
+test('leaving anonymous play returns to the welcome screen', async ({ page }) => {
+	await page.goto('/welcome');
+	await page.getByTestId('welcome-play').click();
+	await expect(page.getByTestId('nav-username')).toContainText('Anonymous');
+
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('sign-out').click();
+
+	await expect(page).toHaveURL(/\/welcome$/);
+	// And it stays left: the flag that survives a reload has to be gone too.
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/welcome$/);
 });
 
 test('a registered account can rename itself from Settings', async ({ page }) => {
@@ -122,7 +160,9 @@ test('a rename onto a taken name is refused and the field snaps back', async ({
 	page,
 	request
 }) => {
-	await request.post(`${API}/auth/guest`, { data: { username: 'taken' } });
+	await request.post(`${API}/auth/register`, {
+		data: { username: 'taken', password: 'correct-horse' }
+	});
 
 	await page.goto('/welcome');
 	await page.getByTestId('welcome-signup').click();
@@ -140,28 +180,4 @@ test('a rename onto a taken name is refused and the field snaps back', async ({
 	// The field must not keep showing a name the server refused.
 	await expect(field).toHaveValue('ada');
 	await expect(page.getByTestId('nav-username')).toContainText('ada');
-});
-
-test('a guest renaming onto a taken name is numbered rather than refused', async ({
-	page,
-	request
-}) => {
-	await request.post(`${API}/auth/guest`, { data: { username: 'taken' } });
-
-	await page.goto('/welcome');
-	await page.getByTestId('welcome-guest').click();
-	await page.getByTestId('auth-username').fill('drifter');
-	await page.getByTestId('auth-submit').click();
-	await expect(page.getByTestId('nav-username')).toContainText('drifter');
-
-	await page.getByTestId('settings-button').click();
-	const field = page.getByTestId('username-setting-input');
-	await field.fill('taken');
-	await field.blur();
-
-	// The other half of the same rule the welcome screen follows, and the
-	// field has to show what was actually stored rather than what was typed.
-	await expect(page.getByTestId('nav-username')).toContainText('taken-2');
-	await expect(field).toHaveValue('taken-2');
-	await expect(page.getByTestId('username-setting-error')).toHaveCount(0);
 });

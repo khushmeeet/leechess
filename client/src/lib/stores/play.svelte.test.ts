@@ -26,6 +26,11 @@ const persistence = vi.hoisted(() => ({
 	clearActiveGame: vi.fn()
 }));
 
+/** The account store, as far as PlaySession is concerned: a name for the PGN
+ * header, and whether there is anywhere to sync to at all. Mutable so the
+ * anonymous case can be driven from a test rather than a second module mock. */
+const account = vi.hoisted(() => ({ name: null as string | null, authenticated: true }));
+
 vi.mock('$lib/stores/stockfish', () => ({ stockfish: engine }));
 vi.mock('$lib/stores/gamePersistence', () => persistence);
 vi.mock('$lib/api/client', async (importOriginal) => {
@@ -35,7 +40,7 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 vi.mock('$lib/stores/soundPrefs.svelte', () => ({
 	soundPrefs: { enabled: false, play: vi.fn(), move: vi.fn(), setEnabled: vi.fn() }
 }));
-vi.mock('$lib/stores/session.svelte', () => ({ session: { name: null } }));
+vi.mock('$lib/stores/session.svelte', () => ({ session: account }));
 vi.mock('$lib/openings', () => ({
 	loadOpenings: vi.fn(async () => false),
 	openingsReady: () => false,
@@ -84,6 +89,8 @@ async function playWithReply(session: PlaySession, orig: string, dest: string) {
 
 beforeEach(() => {
 	vi.resetAllMocks();
+	account.name = null;
+	account.authenticated = true;
 	persistence.loadActiveGame.mockReturnValue(null);
 	engine.warmup.mockResolvedValue(undefined);
 	engine.evaluate.mockResolvedValue(evalResult(30));
@@ -151,6 +158,48 @@ describe('server sync chain', () => {
 		expect(session.serverError).toContain('boom');
 		expect(api.postMove).toHaveBeenCalledTimes(1); // engine reply's post skipped
 		expect(session.game.moves.length).toBe(2); // local play unaffected
+	});
+
+	it('writes nothing to the server without an account', async () => {
+		account.authenticated = false;
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+		await settle();
+
+		// The whole of anonymous play: the board, the engine and the badges,
+		// with no record of any of it anywhere but this tab.
+		expect(api.startGame).not.toHaveBeenCalled();
+		expect(api.postMove).not.toHaveBeenCalled();
+		expect(session.serverGameId).toBeNull();
+		expect(session.serverError).toBeNull(); // not an error — there is no server side
+		expect(session.game.moves.length).toBe(2);
+	});
+
+	it('resyncs a restored game once there is an account to sync it to', async () => {
+		// Signing up mid-game goes through the welcome screen, so the play
+		// screen is remounted on the way back and the constructor resyncs.
+		// Anything already played has to arrive then, not just what follows.
+		persistence.loadActiveGame.mockReturnValue({
+			version: 1,
+			engineSkill: 5,
+			playerColor: 'white',
+			moves: ['e2e4', 'e7e5'],
+			evals: [30, 30],
+			badges: [null, null],
+			lastFeedback: null,
+			currentEval: 30,
+			serverGameId: null,
+			completedGameId: null
+		});
+
+		new PlaySession();
+		await settle();
+
+		expect(api.startGame).toHaveBeenCalledOnce();
+		expect(api.postMove.mock.calls).toEqual([
+			[42, 'e2e4'],
+			[42, 'e7e5']
+		]);
 	});
 });
 

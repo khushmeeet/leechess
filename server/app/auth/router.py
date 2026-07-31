@@ -14,15 +14,12 @@ from app.auth.backend import (
 )
 from app.auth.manager import (
     InvalidUsername,
-    NotAGuest,
     UsernameTaken,
     UserManager,
     get_user_manager,
 )
 from app.auth.models import User, canonical
 from app.auth.schemas import (
-    GuestCreate,
-    PasswordSet,
     PasswordVerify,
     SessionOut,
     UserCreate,
@@ -54,23 +51,6 @@ async def register(
     return await _signed_in(user, strategy)
 
 
-@router.post("/guest", response_model=UserRead)
-async def start_as_guest(
-    payload: GuestCreate,
-    request: Request,
-    user_manager: UserManager = Depends(get_user_manager),
-    strategy: Strategy = Depends(auth_backend.get_strategy),
-):
-    """A guest is a real account without a password. It owns rows and survives
-    a reload like any other, so nothing about playing has to know the
-    difference — and POST /auth/upgrade later turns this same row into a
-    registered account without moving any data."""
-    user = await user_manager.create_user(
-        payload.username, None, is_guest=True, request=request
-    )
-    return await _signed_in(user, strategy)
-
-
 @router.post("/login", response_model=UserRead)
 async def login(
     payload: PasswordVerify,
@@ -89,18 +69,6 @@ async def login(
     throttle.clear(key)
     await user_manager.on_after_login(user, request)
     return await _signed_in(user, strategy)
-
-
-@router.post("/upgrade", response_model=UserRead)
-async def upgrade(
-    payload: PasswordSet,
-    request: Request,
-    user: User = Depends(current_active_user),
-    user_manager: UserManager = Depends(get_user_manager),
-):
-    """Guest chooses a password. The existing session cookie names this same
-    user id and stays valid, so no new token is issued."""
-    return await user_manager.set_password(user, payload.password, request=request)
 
 
 @router.post("/logout", status_code=204)
@@ -133,9 +101,9 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidPasswordException)
     async def _invalid_password(_request: Request, exc: InvalidPasswordException):
-        # fastapi-users' own users router catches this one; the routes in this
-        # module raise it from create_user and set_password, so it needs a
-        # handler here too or a short password reads as a server error.
+        # fastapi-users' own users router catches this one; /auth/register
+        # raises it from create_user, so it needs a handler here too or a
+        # short password reads as a server error.
         return JSONResponse(
             status_code=400,
             content={"detail": "PASSWORD_INVALID", "reason": exc.reason},
@@ -148,10 +116,6 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(UsernameTaken)
     async def _username_taken(_request: Request, _exc: UsernameTaken):
         return JSONResponse(status_code=409, content={"detail": "USERNAME_TAKEN"})
-
-    @app.exception_handler(NotAGuest)
-    async def _not_a_guest(_request: Request, _exc: NotAGuest):
-        return JSONResponse(status_code=409, content={"detail": "ALREADY_REGISTERED"})
 
     @app.exception_handler(throttle.TooManyAttempts)
     async def _too_many(_request: Request, exc: throttle.TooManyAttempts):

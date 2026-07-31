@@ -65,9 +65,9 @@ def test_a_name_differing_only_in_case_is_a_conflict(anon_client):
 
 @pytest.mark.parametrize("username", ["ab", "has space", "way-too-long-a-name-for-here"])
 def test_a_badly_shaped_name_is_rejected(anon_client, username):
-    """400 rather than 422: the shape check moved off the schema and into the
-    manager when guests stopped being held to it, so a registered user's bad
-    name now comes back as a code the client already has wording for."""
+    """400 rather than 422: the shape check lives in the manager rather than
+    on the schema, so a bad name comes back as a code the client already has
+    wording for instead of a pydantic error it would have to translate."""
     anon_client.post("/auth/register", json=CREDENTIALS)
 
     response = anon_client.patch("/users/me", json={"username": username})
@@ -87,15 +87,6 @@ def test_an_email_cannot_be_set(anon_client):
     anon_client.post("/auth/register", json=CREDENTIALS)
 
     assert anon_client.patch("/users/me", json={"email": "a@b.com"}).status_code == 422
-
-
-def test_a_guest_can_choose_a_different_name_before_signing_up(anon_client):
-    anon_client.post("/auth/guest", json={"username": "drifter"})
-
-    response = anon_client.patch("/users/me", json={"username": "settled"})
-
-    assert response.status_code == 200
-    assert response.json()["is_guest"] is True
 
 
 def test_an_explicitly_null_username_is_rejected_not_a_crash(anon_client):

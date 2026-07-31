@@ -17,7 +17,9 @@
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import CplGraph from '$lib/components/CplGraph.svelte';
 	import WikiBookPanel from '$lib/components/WikiBookPanel.svelte';
+	import AccountGate from '$lib/components/AccountGate.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
+	import { session } from '$lib/stores/session.svelte';
 	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 
@@ -55,6 +57,9 @@
 
 	$effect(() => {
 		const gameId = page.params.gameId!;
+		// Reachable by deep link, and no game belongs to an anonymous player —
+		// polling it would be forty 401s and a spinner.
+		if (session.anonymous) return;
 		void pollEpoch; // re-run (with a fresh attempt budget) on "Check again"
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let cancelled = false;
@@ -232,9 +237,9 @@
 		citedShape = citedShape?.orig === shape.orig && citedShape?.dest === shape.dest ? null : shape;
 	}
 
-	// The layout mounts SettingsMenu and UpgradePrompt on every page, so a text
-	// field can hold focus while this page is up. Arrows belong to the caret
-	// there, not to the board.
+	// The layout mounts SettingsMenu on every page, so a text field can hold
+	// focus while this page is up. Arrows belong to the caret there, not to the
+	// board.
 	function isTyping(target: EventTarget | null): boolean {
 		if (!(target instanceof HTMLElement)) return false;
 		return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
@@ -287,7 +292,11 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if error}
+{#if session.anonymous}
+	<AccountGate
+		what="The move-by-move review of a game you played: where the evaluation swung, the motif you missed, and why the move cost what it did."
+	/>
+{:else if error}
 	<p class="text-err">Failed to load game: {error}</p>
 {:else if !game}
 	<p class="text-muted">Loading game…</p>
