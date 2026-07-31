@@ -79,9 +79,12 @@
      keeps both halves on screen. Narrow screens stack and scroll as usual.
      3rem is the padding <main> adds; there is no nav on this route. -->
 <div class="flex min-h-[calc(100svh-3rem)] flex-col justify-center" data-testid="welcome">
-	<div class="grid items-center gap-8 lg:grid-cols-[20rem_1fr] lg:gap-12">
-		<!-- identity, thesis, and the way in -->
-		<div class="flex flex-col items-center text-center lg:items-start lg:text-left">
+	<div class="grid items-center gap-8 lg:grid-cols-[1fr_20rem] lg:gap-12">
+		<!-- Identity, thesis, and the way in. Ordered rather than moved: the
+		     wordmark is the h1, so it stays first in the DOM for a screen reader
+		     and first in the stack on a narrow screen — only the desktop layout
+		     puts it to the right of the primer. -->
+		<div class="flex flex-col items-center text-center lg:order-2 lg:items-start lg:text-left">
 			<img src={logo} alt="" class="mb-3 h-12 w-12" />
 			<h1 class="mb-3 font-display text-3xl">leechess</h1>
 			<p class="mb-6 text-sm text-body">
@@ -192,7 +195,7 @@
 		</div>
 
 		<!-- the primer -->
-		<div>
+		<div class="lg:order-1">
 			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
 				What you get
 			</h2>
