@@ -71,5 +71,5 @@ coords.squares:nth-of-type(even) :nth-child(odd) {
 .orientation-black .files :nth-child(even),
 coords.squares:nth-of-type(odd) :nth-child(odd),
 coords.squares:nth-of-type(even) :nth-child(even) {
-	color: var(--sq-lt, #f0d9b5);
+	color: var(--coord-on-dark, var(--sq-lt, #f0d9b5));
 }

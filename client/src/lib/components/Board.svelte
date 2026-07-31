@@ -7,7 +7,7 @@
 	import 'chessground/assets/chessground.base.css';
 	import '$lib/board.css';
 	import '$lib/pieces.css';
-	import { boardImageUrl } from '$lib/boardThemes';
+	import { boardVars } from '$lib/boardThemes';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 
 	type PieceColor = 'white' | 'black';
@@ -223,11 +223,7 @@
 
 <!-- Outer div owns the user's board prefs; chessground mutates the inner
      element's classes, so Svelte must never re-render attributes on it. -->
-<div
-	class="pieces-{boardPrefs.pieceSet} w-full"
-	style="--sq-lt: {boardPrefs.theme.light}; --sq-dk: {boardPrefs.theme
-		.dark}; --board-image: {boardImageUrl(boardPrefs.theme)}"
->
+<div class="pieces-{boardPrefs.pieceSet} w-full" style={boardVars(boardPrefs.theme)}>
 	{@render eliminatedRow(topColor)}
 	<div class="relative aspect-square w-full">
 		<div bind:this={el} class="h-full w-full"></div>

@@ -217,3 +217,39 @@
 .pieces-maestro piece.king.black {
 	background-image: url('/pieces/maestro/bK.svg');
 }
+.pieces-leipzig piece.pawn.white {
+	background-image: url('/pieces/leipzig/wP.svg');
+}
+.pieces-leipzig piece.knight.white {
+	background-image: url('/pieces/leipzig/wN.svg');
+}
+.pieces-leipzig piece.bishop.white {
+	background-image: url('/pieces/leipzig/wB.svg');
+}
+.pieces-leipzig piece.rook.white {
+	background-image: url('/pieces/leipzig/wR.svg');
+}
+.pieces-leipzig piece.queen.white {
+	background-image: url('/pieces/leipzig/wQ.svg');
+}
+.pieces-leipzig piece.king.white {
+	background-image: url('/pieces/leipzig/wK.svg');
+}
+.pieces-leipzig piece.pawn.black {
+	background-image: url('/pieces/leipzig/bP.svg');
+}
+.pieces-leipzig piece.knight.black {
+	background-image: url('/pieces/leipzig/bN.svg');
+}
+.pieces-leipzig piece.bishop.black {
+	background-image: url('/pieces/leipzig/bB.svg');
+}
+.pieces-leipzig piece.rook.black {
+	background-image: url('/pieces/leipzig/bR.svg');
+}
+.pieces-leipzig piece.queen.black {
+	background-image: url('/pieces/leipzig/bQ.svg');
+}
+.pieces-leipzig piece.king.black {
+	background-image: url('/pieces/leipzig/bK.svg');
+}

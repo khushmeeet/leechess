@@ -11,6 +11,7 @@ SVGs vendored from [lichess-org/lila](https://github.com/lichess-org/lila)
 | staunty  | sadsnake1                   | CC BY-NC-SA 4.0                      |
 | fresca   | sadsnake1                   | CC BY-NC-SA 4.0                      |
 | maestro  | sadsnake1                   | CC BY-NC-SA 4.0                      |
+| leipzig  | Armando Hernandez Marroquin | [Freeware](http://www.enpassant.dk/chess/fonteng.htm#LEIPZIG) |
 
 leechess is a personal, non-commercial project. If that ever changes, drop the
 alpha / staunty / fresca / maestro sets (NC-licensed) and keep the GPL pair.
