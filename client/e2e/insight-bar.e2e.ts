@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { move, waitForEngineReady } from './helpers';
+import { move, restoreActiveGame, waitForEngineReady } from './helpers';
 
 // The in-game insight bar — Play's single coaching panel: opening name/ECO
 // from the bundled book, the live tactic (motif + why), a rule-based coach
@@ -96,23 +96,7 @@ test('coach and ideas toggles hide the rows and persist across reloads', async (
 test('tactic, coach and ideas share one panel, gated by the hint mode', async ({ page }) => {
 	// a live tactic is needed for the Tactic row to have anything to say:
 	// Black has just hung the queen with ...Qh4, so Nxh4 wins it
-	await page.addInitScript(() => {
-		localStorage.setItem(
-			'leechess.activeGame',
-			JSON.stringify({
-				version: 1,
-				engineSkill: 5,
-				playerColor: 'white',
-				moves: ['e2e4', 'e7e5', 'g1f3', 'd8h4'],
-				evals: [],
-				badges: [],
-				lastFeedback: null,
-				currentEval: null,
-				serverGameId: null,
-				completedGameId: null
-			})
-		);
-	});
+	await restoreActiveGame(page, { moves: ['e2e4', 'e7e5', 'g1f3', 'd8h4'] });
 	await page.goto('/');
 	await waitForEngineReady(page);
 

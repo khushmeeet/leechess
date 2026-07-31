@@ -198,6 +198,60 @@ export async function gameNumber(request: APIRequestContext, gameId: number): Pr
 	return (await response.json()).number;
 }
 
+/** Put a game in local storage before the app boots, as though the player had
+ * left this position on the board — the way to reach a specific position
+ * without playing it out against an unscriptable engine.
+ *
+ * The owner is looked up rather than written into the spec: the play store only
+ * hands a saved game back to the player who saved it (an account id, or
+ * `anonymous`), so a snapshot stamped with anything else is discarded and the
+ * spec opens on an empty board instead. It is the account's id, not its
+ * username, which is why this asks the server rather than assuming.
+ */
+export async function restoreActiveGame(page: Page, game: Record<string, unknown>) {
+	const response = await page.request.get(`${API}/auth/session`);
+	expect(response.ok()).toBe(true);
+	const user = (await response.json()).user;
+	await page.addInitScript(
+		(saved) => localStorage.setItem('leechess.activeGame', JSON.stringify(saved)),
+		{
+			version: 2,
+			owner: user ? user.id : 'anonymous',
+			engineSkill: 5,
+			playerColor: 'white',
+			evals: [],
+			badges: [],
+			lastFeedback: null,
+			currentEval: null,
+			serverGameId: null,
+			completedGameId: null,
+			completedGameNumber: null,
+			...game
+		}
+	);
+}
+
+/** The id of the server record the live game is syncing to, read off the saved
+ * game rather than the screen: it is a row id, and the app deliberately shows
+ * the player their own game number instead. Polls, because the record is
+ * created by the first move's sync and the id is written down when it lands. */
+export async function syncedGameId(page: Page): Promise<number> {
+	let id: number | null = null;
+	await expect
+		.poll(
+			async () => {
+				id = await page.evaluate(() => {
+					const raw = localStorage.getItem('leechess.activeGame');
+					return raw ? (JSON.parse(raw).serverGameId as number | null) : null;
+				});
+				return id;
+			},
+			{ message: 'the live game never reached a server record' }
+		)
+		.not.toBeNull();
+	return id!;
+}
+
 /** Poll until the server-side analysis job finishes for a game. */
 export async function waitForAnalysis(request: APIRequestContext, gameId: number) {
 	await expect
