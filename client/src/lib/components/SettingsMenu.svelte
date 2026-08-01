@@ -206,6 +206,22 @@
 			</h2>
 			<div class="flex flex-col gap-1.5 text-sm">
 				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Zen mode</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.zenMode}
+						onchange={(event) => displayPrefs.setZenMode(event.currentTarget.checked)}
+						data-testid="zen-toggle"
+						class="h-4 w-4"
+					/>
+				</label>
+				<!-- Said plainly, because this menu is behind the nav that zen
+				     hides: the way back is on the board screen, not in here. -->
+				<p class="-mt-0.5 mb-1 text-[11px] text-muted">
+					Play with the board alone — no nav, no panels. Tap beside the board for Resign, New game
+					and the way out.
+				</p>
+				<label class="flex items-center justify-between gap-2">
 					<span class="text-ink">Eval bar</span>
 					<input
 						type="checkbox"

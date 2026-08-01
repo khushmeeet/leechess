@@ -175,6 +175,76 @@
 	const movableColor = $derived(game.isGameOver ? undefined : session.playerColor);
 	let moveListElement = $state<HTMLOListElement | null>(null);
 
+	// ── Zen ────────────────────────────────────────────────────────────────
+	// The board and nothing else. Board.svelte already draws the side labels
+	// and the eliminated pieces, so zen is that component alone on a full
+	// viewport — no panels, no eval bar, and (via the layout) no nav.
+	const zen = $derived(displayPrefs.zenMode);
+
+	/** How long the controls linger before fading back out. Long enough to
+	 * read four words and reach for one of them, short enough that a stray tap
+	 * doesn't leave the board framed for the rest of the game. */
+	const CONTROLS_LINGER = 4500;
+
+	let controlsShown = $state(false);
+	// Deliberately not $state: the effects below write it while showing the
+	// controls, and a tracked value would make each of them re-run itself.
+	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function clearControlsTimer() {
+		if (controlsTimer !== null) clearTimeout(controlsTimer);
+		controlsTimer = null;
+	}
+
+	/** `sticky` for the states the player has to act on — the game is over, or
+	 * the engine stalled — where fading the only way forward back out would
+	 * strand them on a board that no longer does anything. */
+	function showControls(sticky = false) {
+		clearControlsTimer();
+		controlsShown = true;
+		if (!sticky) controlsTimer = setTimeout(() => (controlsShown = false), CONTROLS_LINGER);
+	}
+
+	function hideControls() {
+		clearControlsTimer();
+		controlsShown = false;
+	}
+
+	const needsControls = $derived(game.isGameOver || session.engineError !== null);
+
+	$effect(() => {
+		if (!zen) {
+			hideControls();
+			return;
+		}
+		// Entering zen reveals the strip once and lets it fade: it is the only
+		// place the gesture is taught, and it has to be taught the same way on
+		// a trackpad and on a touchscreen.
+		showControls(needsControls);
+	});
+
+	$effect(() => {
+		return clearControlsTimer;
+	});
+
+	/** Tapping the space around the board toggles the controls — a click on a
+	 * Mac, a tap on an iPad, one gesture and one code path. Guarded on the
+	 * stage itself so anything landing on the board belongs to chessground. */
+	function onStagePointerDown(event: PointerEvent & { currentTarget: HTMLElement }) {
+		if (event.target !== event.currentTarget) return;
+		if (controlsShown) hideControls();
+		else showControls();
+	}
+
+	function onZenKeydown(event: KeyboardEvent) {
+		if (!zen || event.key !== 'Escape') return;
+		// Board.svelte closes an open promotion picker on Escape from its own
+		// window listener. Both fire on the same key, so without this the
+		// player cancelling a promotion would be thrown out of zen as well.
+		if (document.querySelector('[data-testid="promotion-picker"]')) return;
+		displayPrefs.setZenMode(false);
+	}
+
 	const movePairs = $derived.by(() => {
 		const pairs: {
 			number: number;
@@ -243,250 +313,419 @@
 	{/if}
 {/snippet}
 
-<div class="flex flex-col gap-4">
-	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-		<div class="relative flex max-w-xl self-start">
-			{#if displayPrefs.showEvalBar}
-				<div class="absolute top-7 right-full bottom-7 mr-2 w-14">
-					<EvalBar cp={session.currentEval} orientation={session.playerColor} />
+{#snippet boardWithResult(wrapperClass: string)}
+	<div class={wrapperClass}>
+		<Board
+			fen={game.fen}
+			turnColor={game.turnColor}
+			dests={game.dests}
+			lastMove={game.lastMove}
+			{movableColor}
+			orientation={session.playerColor}
+			autoShapes={boardShapes}
+			onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
+		/>
+
+		{#if resultOutcome}
+			<div
+				class="result-overlay {resultOutcome}"
+				data-testid="game-result-overlay"
+				data-outcome={resultOutcome}
+				role="status"
+				aria-live="assertive"
+				aria-atomic="true"
+			>
+				{#if resultOutcome === 'win'}
+					<div class="confetti" data-testid="game-result-confetti" aria-hidden="true">
+						{#each confetti as piece, index (index)}
+							<i
+								class:round={index % 4 === 0}
+								style={`--burst-x: ${piece.burstX.toFixed(1)}px; --burst-y: ${piece.burstY.toFixed(1)}px; --land-x: ${piece.landX.toFixed(1)}px; --delay: ${piece.delay}ms; --duration: ${piece.duration}ms; --mid-spin: ${piece.midSpin}deg; --spin: ${piece.spin}deg; --piece-width: ${piece.width}px; --piece-height: ${piece.height}px; --piece-color: ${piece.color}`}
+							></i>
+						{/each}
+					</div>
+				{/if}
+
+				<div class="result-banner rounded-xs border border-line bg-card p-3 text-sm">
+					<img src={logo} alt="leechess" class="result-logo" data-testid="game-result-logo" />
+					<div class="result-copy">
+						<p class="text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
+							Final score · {game.result === '1/2-1/2' ? '½–½' : game.result.replace('-', '–')}
+						</p>
+						<h2 class="mt-0.5 font-display text-2xl leading-tight text-ink">
+							{resultContent.title}
+						</h2>
+						<p class="mt-1 text-sm text-muted">{resultContent.message}</p>
+					</div>
 				</div>
-			{/if}
-			<div class="relative min-w-0 flex-1">
-				<Board
-					fen={game.fen}
-					turnColor={game.turnColor}
-					dests={game.dests}
-					lastMove={game.lastMove}
-					{movableColor}
-					orientation={session.playerColor}
-					autoShapes={boardShapes}
-					onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
-				/>
+			</div>
+		{/if}
+	</div>
+{/snippet}
 
-				{#if resultOutcome}
-					<div
-						class="result-overlay {resultOutcome}"
-						data-testid="game-result-overlay"
-						data-outcome={resultOutcome}
-						role="status"
-						aria-live="assertive"
-						aria-atomic="true"
-					>
-						{#if resultOutcome === 'win'}
-							<div class="confetti" data-testid="game-result-confetti" aria-hidden="true">
-								{#each confetti as piece, index (index)}
-									<i
-										class:round={index % 4 === 0}
-										style={`--burst-x: ${piece.burstX.toFixed(1)}px; --burst-y: ${piece.burstY.toFixed(1)}px; --land-x: ${piece.landX.toFixed(1)}px; --delay: ${piece.delay}ms; --duration: ${piece.duration}ms; --mid-spin: ${piece.midSpin}deg; --spin: ${piece.spin}deg; --piece-width: ${piece.width}px; --piece-height: ${piece.height}px; --piece-color: ${piece.color}`}
-									></i>
-								{/each}
-							</div>
-						{/if}
+{#snippet zenControls()}
+	<!-- Never removed from the flow, only faded: chessground caches the
+	     board's viewport rectangle, and a strip that took up space only while
+	     shown would move the board under it — after which every click lands on
+	     the square the board used to be over. -->
+	<div
+		class="zen-controls"
+		class:shown={controlsShown}
+		data-testid="zen-controls"
+		inert={!controlsShown}
+	>
+		{#if !game.isGameOver && session.started}
+			<button type="button" data-testid="zen-resign" onclick={() => session.resign()}>
+				Resign
+			</button>
+		{/if}
+		{#if session.engineError}
+			<button
+				type="button"
+				data-testid="zen-engine-retry"
+				onclick={() => session.retryEngineMove()}
+			>
+				Engine stalled — retry
+			</button>
+		{/if}
+		<button type="button" data-testid="zen-new-game" onclick={() => session.newGame()}>
+			New game
+		</button>
+		<button
+			type="button"
+			data-testid="zen-leave"
+			onclick={() => displayPrefs.setZenMode(false)}
+			class="leave"
+		>
+			Leave zen
+		</button>
+	</div>
+{/snippet}
 
-						<div class="result-banner rounded-xs border border-line bg-card p-3 text-sm">
-							<img src={logo} alt="leechess" class="result-logo" data-testid="game-result-logo" />
-							<div class="result-copy">
-								<p class="text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-									Final score · {game.result === '1/2-1/2' ? '½–½' : game.result.replace('-', '–')}
-								</p>
-								<h2 class="mt-0.5 font-display text-2xl leading-tight text-ink">
-									{resultContent.title}
-								</h2>
-								<p class="mt-1 text-sm text-muted">{resultContent.message}</p>
-							</div>
+<svelte:window onkeydown={onZenKeydown} />
+
+{#if zen}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="zen-stage" data-testid="zen-stage" onpointerdown={onStagePointerDown}>
+		<!-- The tap-beside-the-board gesture has no keyboard equivalent, and the
+		     controls are inert until shown, so this is the only way in without a
+		     pointer. First thing in the stage, so one Tab reaches it. -->
+		<button
+			type="button"
+			class="zen-reveal"
+			data-testid="zen-reveal"
+			onclick={() => showControls()}
+		>
+			Show game controls
+		</button>
+		{@render boardWithResult('zen-board relative')}
+		{@render zenControls()}
+	</div>
+{:else}
+	<div class="flex flex-col gap-4">
+		<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+			<div class="relative flex max-w-xl self-start">
+				{#if displayPrefs.showEvalBar}
+					<div class="absolute top-7 right-full bottom-7 mr-2 w-14">
+						<EvalBar cp={session.currentEval} orientation={session.playerColor} />
+					</div>
+				{/if}
+				{@render boardWithResult('relative min-w-0 flex-1')}
+			</div>
+
+			<aside class="flex flex-col gap-4">
+				<section class="rounded-xs border border-line bg-card p-3 text-sm">
+					<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+						<label for="strength" class="text-muted">Strength</label>
+						<select
+							id="strength"
+							bind:value={session.engineSkill}
+							disabled={session.started}
+							class="rounded-xs border border-line bg-card px-2 py-1 disabled:opacity-50"
+						>
+							{#each strengthPresets as preset (preset.skill)}
+								<option value={preset.skill}>{preset.label} (≈{preset.elo} Elo)</option>
+							{/each}
+						</select>
+						<label for="play-color" class="text-muted">You play</label>
+						<select
+							id="play-color"
+							value={session.preferredColor}
+							onchange={(event) =>
+								session.setPreferredColor(event.currentTarget.value as 'white' | 'black')}
+							class="rounded-xs border border-line bg-card px-2 py-1"
+						>
+							<option value="white">White</option>
+							<option value="black">Black</option>
+						</select>
+						<span class="text-muted">Hints</span>
+						<div
+							class="flex rounded-xs border border-line bg-paper"
+							role="group"
+							aria-label="Hints"
+							data-testid="hint-mode"
+						>
+							{#each [{ mode: 'off', label: 'Off' }, { mode: 'nudge', label: 'Nudge' }, { mode: 'full', label: 'Full' }] as { mode, label } (mode)}
+								<button
+									type="button"
+									aria-pressed={displayPrefs.hintMode === mode}
+									data-testid="hint-mode-{mode}"
+									onclick={() => displayPrefs.setHintMode(mode as HintMode)}
+									class="flex-1 px-2 py-1 first:rounded-l-xs last:rounded-r-xs {displayPrefs.hintMode ===
+									mode
+										? 'bg-ink font-semibold text-paper'
+										: 'text-muted hover:bg-accent-soft'}"
+								>
+									{label}
+								</button>
+							{/each}
 						</div>
 					</div>
-				{/if}
-			</div>
-		</div>
+					<p class="mt-2 text-xs text-faint">
+						engine:
+						<span data-testid="engine-status" class="font-mono">
+							{session.engineReady ? 'ready' : 'warming up…'}
+						</span>
+						· you play {session.playerColor === 'white' ? 'White' : 'Black'}{account.name
+							? ` as ${account.name}`
+							: ''}
+						{#if session.preferredColor !== session.playerColor}
+							· {session.preferredColor === 'white' ? 'White' : 'Black'} from the next game
+						{/if}
+					</p>
+				</section>
 
-		<aside class="flex flex-col gap-4">
-			<section class="rounded-xs border border-line bg-card p-3 text-sm">
-				<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
-					<label for="strength" class="text-muted">Strength</label>
-					<select
-						id="strength"
-						bind:value={session.engineSkill}
-						disabled={session.started}
-						class="rounded-xs border border-line bg-card px-2 py-1 disabled:opacity-50"
-					>
-						{#each strengthPresets as preset (preset.skill)}
-							<option value={preset.skill}>{preset.label} (≈{preset.elo} Elo)</option>
-						{/each}
-					</select>
-					<label for="play-color" class="text-muted">You play</label>
-					<select
-						id="play-color"
-						value={session.preferredColor}
-						onchange={(event) =>
-							session.setPreferredColor(event.currentTarget.value as 'white' | 'black')}
-						class="rounded-xs border border-line bg-card px-2 py-1"
-					>
-						<option value="white">White</option>
-						<option value="black">Black</option>
-					</select>
-					<span class="text-muted">Hints</span>
-					<div
-						class="flex rounded-xs border border-line bg-paper"
-						role="group"
-						aria-label="Hints"
-						data-testid="hint-mode"
-					>
-						{#each [{ mode: 'off', label: 'Off' }, { mode: 'nudge', label: 'Nudge' }, { mode: 'full', label: 'Full' }] as { mode, label } (mode)}
+				<InsightBar
+					opening={session.opening}
+					openingState={session.openingsFailed
+						? 'failed'
+						: session.openingsLoaded
+							? 'ready'
+							: 'loading'}
+					ply={game.moves.length}
+					takeback={takebackRow}
+					tactic={tacticRow}
+					showCoach={displayPrefs.showCoach && fullHints}
+					coach={coachText}
+					showIdeas={displayPrefs.showIdeas && fullHints}
+					ideas={candidateIdeas}
+					gameOver={game.isGameOver}
+					onideahover={(uci) => (hoverUci = uci)}
+				/>
+
+				<section
+					class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
+					data-testid="moves-panel"
+				>
+					<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+						Moves
+						{#if session.engineError}
+							<span class="font-normal text-err">(engine stalled)</span>
 							<button
 								type="button"
-								aria-pressed={displayPrefs.hintMode === mode}
-								data-testid="hint-mode-{mode}"
-								onclick={() => displayPrefs.setHintMode(mode as HintMode)}
-								class="flex-1 px-2 py-1 first:rounded-l-xs last:rounded-r-xs {displayPrefs.hintMode ===
-								mode
-									? 'bg-ink font-semibold text-paper'
-									: 'text-muted hover:bg-accent-soft'}"
+								class="ml-auto rounded-xs border border-line px-2 py-0.5 text-xs font-normal text-ink hover:bg-paper"
+								data-testid="engine-retry"
+								onclick={() => session.retryEngineMove()}
 							>
-								{label}
+								Retry
 							</button>
-						{/each}
-					</div>
-				</div>
-				<p class="mt-2 text-xs text-faint">
-					engine:
-					<span data-testid="engine-status" class="font-mono">
-						{session.engineReady ? 'ready' : 'warming up…'}
-					</span>
-					· you play {session.playerColor === 'white' ? 'White' : 'Black'}{account.name
-						? ` as ${account.name}`
-						: ''}
-					{#if session.preferredColor !== session.playerColor}
-						· {session.preferredColor === 'white' ? 'White' : 'Black'} from the next game
-					{/if}
-				</p>
-			</section>
-
-			<InsightBar
-				opening={session.opening}
-				openingState={session.openingsFailed
-					? 'failed'
-					: session.openingsLoaded
-						? 'ready'
-						: 'loading'}
-				ply={game.moves.length}
-				takeback={takebackRow}
-				tactic={tacticRow}
-				showCoach={displayPrefs.showCoach && fullHints}
-				coach={coachText}
-				showIdeas={displayPrefs.showIdeas && fullHints}
-				ideas={candidateIdeas}
-				gameOver={game.isGameOver}
-				onideahover={(uci) => (hoverUci = uci)}
-			/>
-
-			<section
-				class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
-				data-testid="moves-panel"
-			>
-				<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
-					Moves
-					{#if session.engineError}
-						<span class="font-normal text-err">(engine stalled)</span>
-						<button
-							type="button"
-							class="ml-auto rounded-xs border border-line px-2 py-0.5 text-xs font-normal text-ink hover:bg-paper"
-							data-testid="engine-retry"
-							onclick={() => session.retryEngineMove()}
-						>
-							Retry
-						</button>
+						{:else}
+							<span class="font-normal text-faint">
+								({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
+							</span>
+						{/if}
+					</h2>
+					{#if movePairs.length === 0}
+						<p class="text-sm text-faint">No moves yet.</p>
 					{:else}
-						<span class="font-normal text-faint">
-							({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
-						</span>
-					{/if}
-				</h2>
-				{#if movePairs.length === 0}
-					<p class="text-sm text-faint">No moves yet.</p>
-				{:else}
-					<ol
-						class="min-h-0 flex-1 overflow-y-auto text-sm"
-						data-testid="move-list"
-						bind:this={moveListElement}
-					>
-						{#each movePairs as pair (pair.number)}
-							<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
-								<span class="text-faint">{pair.number}.</span>
-								{#each [pair.white, pair.black] as half, i (i)}
-									<span class="flex items-center gap-1.5">
-										{#if half}
-											{half.san}
-											{#if session.badges[half.ply - 1]}
-												<span
-													data-testid={half.ply === session.lastFeedback?.ply
-														? 'move-badge'
-														: undefined}
-												>
-													<ClassificationBadge classification={session.badges[half.ply - 1]!} />
-												</span>
+						<ol
+							class="min-h-0 flex-1 overflow-y-auto text-sm"
+							data-testid="move-list"
+							bind:this={moveListElement}
+						>
+							{#each movePairs as pair (pair.number)}
+								<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
+									<span class="text-faint">{pair.number}.</span>
+									{#each [pair.white, pair.black] as half, i (i)}
+										<span class="flex items-center gap-1.5">
+											{#if half}
+												{half.san}
+												{#if session.badges[half.ply - 1]}
+													<span
+														data-testid={half.ply === session.lastFeedback?.ply
+															? 'move-badge'
+															: undefined}
+													>
+														<ClassificationBadge classification={session.badges[half.ply - 1]!} />
+													</span>
+												{/if}
 											{/if}
-										{/if}
-									</span>
-								{/each}
-							</li>
-						{/each}
-					</ol>
-				{/if}
-				{#if game.isGameOver}
-					<p class="mt-2 text-sm font-semibold">Game over: {game.result}</p>
-				{/if}
-			</section>
+										</span>
+									{/each}
+								</li>
+							{/each}
+						</ol>
+					{/if}
+					{#if game.isGameOver}
+						<p class="mt-2 text-sm font-semibold">Game over: {game.result}</p>
+					{/if}
+				</section>
 
-			<section class="flex flex-col gap-2">
-				{#if !game.isGameOver && session.started}
-					<div class="flex gap-2">
-						<button
-							onclick={() => session.resign()}
-							class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
-						>
-							Resign
-						</button>
-					</div>
-				{/if}
-				<button
-					onclick={() => session.newGame()}
-					class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-				>
-					New game
-				</button>
+				<section class="flex flex-col gap-2">
+					{#if !game.isGameOver && session.started}
+						<div class="flex gap-2">
+							<button
+								onclick={() => session.resign()}
+								class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
+							>
+								Resign
+							</button>
+						</div>
+					{/if}
+					<button
+						onclick={() => session.newGame()}
+						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+					>
+						New game
+					</button>
 
-				{#if session.completedGameId !== null}
-					<p class="text-sm text-ok">
-						<!-- The account's own count of its saved games, which is what
+					{#if session.completedGameId !== null}
+						<p class="text-sm text-ok">
+							<!-- The account's own count of its saved games, which is what
 						     Review lists it under. -->
-						Saved{session.completedGameNumber === null
-							? ''
-							: ` as game #${session.completedGameNumber}`}, analysis queued —
-						<a
-							class="underline"
-							href={resolve('/review/[gameId]', { gameId: String(session.completedGameId) })}
-						>
-							open review
-						</a>
-					</p>
-				{:else if session.serverGameId !== null && !session.serverError}
-					<!-- No number yet: a game in progress has not been saved, and the
+							Saved{session.completedGameNumber === null
+								? ''
+								: ` as game #${session.completedGameNumber}`}, analysis queued —
+							<a
+								class="underline"
+								href={resolve('/review/[gameId]', { gameId: String(session.completedGameId) })}
+							>
+								open review
+							</a>
+						</p>
+					{:else if session.serverGameId !== null && !session.serverError}
+						<!-- No number yet: a game in progress has not been saved, and the
 					     row id it is being written under is not one anybody has a use
 					     for. -->
-					<p class="text-xs text-faint">syncing to server</p>
-				{/if}
-				{#if session.serverError}
-					<p class="text-sm break-all text-err">
-						Server sync failed — the game continues locally. {session.serverError}
-					</p>
-				{/if}
-			</section>
-		</aside>
+						<p class="text-xs text-faint">syncing to server</p>
+					{/if}
+					{#if session.serverError}
+						<p class="text-sm break-all text-err">
+							Server sync failed — the game continues locally. {session.serverError}
+						</p>
+					{/if}
+				</section>
+			</aside>
+		</div>
 	</div>
-</div>
+{/if}
 
 <style>
+	.zen-stage {
+		position: fixed;
+		top: 0;
+		left: 0;
+		z-index: 30;
+		display: flex;
+		width: 100%;
+		/* svh, not vh: Safari's collapsing URL bar makes 100vh taller than the
+		   screen on an iPhone, which pushes the bottom eliminated row and the
+		   controls off the end of it. */
+		height: 100svh;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		padding: clamp(0.5rem, 2.5vw, 2rem);
+		background: var(--color-paper);
+		/* Kills iOS's double-tap-zoom delay on the surrounding space, and the
+		   grey flash it paints over a tap that hit no control. */
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	/* Square, and sized so the board plus its two eliminated rows and the
+	   controls fit the viewport without scrolling — width wins on a phone,
+	   height on a laptop, and the cap keeps it from filling a large monitor. */
+	.zen-board {
+		width: min(100%, calc(100svh - 11rem), 52rem);
+	}
+
+	.zen-controls {
+		display: flex;
+		min-height: 2.25rem;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		opacity: 0;
+		/* Hidden, the strip still covers a band under the board. Without this a
+		   tap there would land on the strip instead of the stage, and the one
+		   gesture that brings the controls back would do nothing in the place
+		   people reach for first. */
+		pointer-events: none;
+		transition: opacity 160ms ease;
+	}
+
+	.zen-controls.shown {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.zen-controls button,
+	.zen-reveal {
+		border: 1px solid var(--color-line);
+		border-radius: 2px;
+		background: var(--color-card);
+		color: var(--color-muted);
+		font-size: 0.625rem;
+		font-weight: 600;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		cursor: pointer;
+	}
+
+	.zen-controls button {
+		padding: 0.3rem 0.7rem;
+	}
+
+	/* The keyboard's way in. Absolutely positioned even while hidden, so
+	   revealing it on focus cannot move the board. */
+	.zen-reveal {
+		position: absolute;
+		top: 0.75rem;
+		left: 0.75rem;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.zen-reveal:focus-visible {
+		width: auto;
+		height: auto;
+		padding: 0.3rem 0.7rem;
+		overflow: visible;
+		clip-path: none;
+	}
+
+	.zen-controls button:hover {
+		background: var(--color-accent-soft);
+		color: var(--color-ink);
+	}
+
+	.zen-controls button.leave {
+		border-color: var(--color-accent-line);
+		color: var(--color-accent);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.zen-controls {
+			transition: none;
+		}
+	}
+
 	.result-overlay {
 		position: absolute;
 		inset: 1.75rem 0;

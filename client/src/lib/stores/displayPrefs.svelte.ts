@@ -5,6 +5,7 @@ const COACH_KEY = 'leechess.showCoach';
 const IDEAS_KEY = 'leechess.showIdeas';
 const OPENING_THEORY_KEY = 'leechess.showOpeningTheory';
 const HINT_MODE_KEY = 'leechess.hintMode';
+const ZEN_MODE_KEY = 'leechess.zenMode';
 
 /** Live in-game hint level (Play). `off` = a "real game" with no help; `nudge`
  * = the pre-move "Checks, captures, threats?" prompt only; `full` = that plus
@@ -22,6 +23,12 @@ class DisplayPrefs {
 	showOpeningTheory = $state(false);
 	/** Persisted default carried into each new game; changeable per game. */
 	hintMode = $state<HintMode>('full');
+	/** Play stripped to the board alone — no nav, no panels, no eval bar. Every
+	 * other display toggle is about what sits AROUND the board; this one is
+	 * about whether anything does, so it overrides them rather than joining
+	 * them. Scoped to Play by the layout: the other screens are reading
+	 * screens, and hiding the nav on one would leave no way off it. */
+	zenMode = $state(false);
 
 	constructor() {
 		if (!browser) return;
@@ -30,10 +37,16 @@ class DisplayPrefs {
 		if (localStorage.getItem(COACH_KEY) === 'false') this.showCoach = false;
 		if (localStorage.getItem(IDEAS_KEY) === 'false') this.showIdeas = false;
 		if (localStorage.getItem(OPENING_THEORY_KEY) === 'true') this.showOpeningTheory = true;
+		if (localStorage.getItem(ZEN_MODE_KEY) === 'true') this.zenMode = true;
 		const hintMode = localStorage.getItem(HINT_MODE_KEY);
 		if (hintMode !== null && HINT_MODES.includes(hintMode as HintMode)) {
 			this.hintMode = hintMode as HintMode;
 		}
+	}
+
+	setZenMode(value: boolean) {
+		this.zenMode = value;
+		if (browser) localStorage.setItem(ZEN_MODE_KEY, String(value));
 	}
 
 	setHintMode(value: HintMode) {
