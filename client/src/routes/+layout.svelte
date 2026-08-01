@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import SettingsMenu from '$lib/components/SettingsMenu.svelte';
+	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { session } from '$lib/stores/session.svelte';
 
 	let { children } = $props();
@@ -21,6 +22,11 @@
 
 	const welcome = resolve('/welcome');
 	const onWelcome = $derived(page.url.pathname === welcome);
+
+	// Zen belongs to Play alone. The nav is the only way off a screen, so
+	// hiding it anywhere the board isn't the whole point would strand the
+	// visitor — and Play is the one screen that carries its own way out.
+	const zen = $derived(displayPrefs.zenMode && page.url.pathname === resolve('/'));
 
 	// onMount rather than the component body, matching how the play screen
 	// starts its engine — a side effect that only makes sense in a browser
@@ -54,7 +60,7 @@
 	     an empty duplicate of the page beneath it. Excluded on /welcome rather
 	     than only while signed out: an anonymous player can be sitting on that
 	     screen, having followed a sign-up link out of the app. -->
-	{#if session.admitted && !onWelcome}
+	{#if session.admitted && !onWelcome && !zen}
 		<nav class="border-b border-line bg-card">
 			<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
 				<a href={resolve('/')} class="flex items-center gap-2">
@@ -93,7 +99,9 @@
 			</div>
 		</nav>
 	{/if}
-	<main class="mx-auto max-w-5xl px-4 py-6">
+	<!-- Zen's stage positions itself against the viewport, so the page's own
+	     column would only add a scrollbar behind it. -->
+	<main class={zen ? '' : 'mx-auto max-w-5xl px-4 py-6'}>
 		{#if session.ready}
 			{@render children()}
 		{/if}
