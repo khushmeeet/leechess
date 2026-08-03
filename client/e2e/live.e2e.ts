@@ -163,6 +163,45 @@ test('an opponent who leaves can be claimed, not just resigned to', async ({ pag
 	await expect(page.getByTestId('friend-result')).toContainText('abandonment');
 });
 
+test('leaving a finished friend game goes to the welcome screen', async ({ page, context }) => {
+	// The invite route is exempt from the layout guard so a link works for
+	// someone who has never been here. That exemption is for arriving: it used
+	// to swallow the redirect on the way out too, so Leave cleared the session,
+	// the nav vanished with it, and the player was left on a board with no way
+	// off it — which looks exactly like zen mode with the controls stuck.
+	const link = await hostAGame(page);
+	const friend = await friendPage(context, link);
+	await expect(page.getByTestId('presence-black')).toHaveText('here');
+
+	await friend.getByTestId('friend-resign').click();
+	await expect(page.getByTestId('friend-result')).toBeVisible();
+
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('sign-out').click();
+
+	await expect(page).toHaveURL(/\/welcome$/);
+	await expect(page.getByTestId('welcome')).toBeVisible();
+});
+
+test('after leaving, an invite link still works in the same tab', async ({ page }) => {
+	// The other half of the same guard. Remembering "has been admitted" as a
+	// bare flag fixes the trap above and breaks this: leaving one game would
+	// hold against every link opened afterwards, bouncing each one to the
+	// welcome screen. It is remembered per screen, and forgotten on the way out.
+	const first = await hostAGame(page);
+	await page.getByTestId('settings-button').click();
+	await page.getByTestId('sign-out').click();
+	await expect(page).toHaveURL(/\/welcome$/);
+
+	// A fresh link, and the one they just left — both have to open.
+	const second = await hostAGame(page);
+	expect(second).not.toBe(first);
+	await page.goto(first);
+
+	await expect(page.getByTestId('friend-game')).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`${first.split('/play/')[1]}$`));
+});
+
 test('a signed-in player gets the game in their review', async ({ page, context }) => {
 	// The other half of the bargain: an account is what turns a finished game
 	// into something to look back at, and a friend game is no exception.

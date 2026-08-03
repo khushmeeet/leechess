@@ -30,6 +30,22 @@
 	// anonymously once it mounts; this is what lets it get that far.
 	const onInvite = $derived(page.url.pathname.startsWith('/play/'));
 
+	// That exemption is for arriving, not for staying. Once a visitor has been
+	// admitted on an invite screen, losing it means they left (Settings →
+	// Leave) or their session lapsed — and both of those belong on the welcome
+	// screen exactly like anywhere else. Without this the invite route
+	// swallows the redirect and leaves them on a board with no nav, which
+	// reads as zen mode with no way out of it.
+	//
+	// Keyed by path, not a bare "has ever been admitted": that would hold
+	// against the *next* link they open, so leaving a game would quietly make
+	// every other invite in the same tab bounce to the welcome screen. Cleared
+	// when the redirect fires, so re-opening the link they just left works too.
+	//
+	// Plain, not $state: written and read inside the one effect below, so there
+	// is nothing to notify and no ordering to get wrong.
+	let admittedOn: string | null = null;
+
 	// Zen belongs to Play alone. The nav is the only way off a screen, so
 	// hiding it anywhere the board isn't the whole point would strand the
 	// visitor — and Play is the one screen that carries its own way out.
@@ -54,8 +70,16 @@
 	// end.
 	$effect(() => {
 		if (!session.ready) return;
-		if (!session.admitted && !onWelcome && !onInvite) goto(welcome, { replaceState: true });
-		else if (session.authenticated && onWelcome) goto(resolve('/'), { replaceState: true });
+		const path = page.url.pathname;
+		if (session.admitted) admittedOn = path;
+		// An invite link is only waved through for someone still on their way in.
+		const arriving = onInvite && admittedOn !== path;
+		if (!session.admitted && !onWelcome && !arriving) {
+			admittedOn = null;
+			goto(welcome, { replaceState: true });
+		} else if (session.authenticated && onWelcome) {
+			goto(resolve('/'), { replaceState: true });
+		}
 	});
 </script>
 
