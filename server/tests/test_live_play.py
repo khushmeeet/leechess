@@ -605,6 +605,158 @@ def test_only_your_own_blunders_become_puzzles(client, db_session, analysis_queu
     assert {puzzle.source_move.ply for puzzle in drilled} <= {2, 4}
 
 
+# --- the opponent who walked off ---
+
+
+def test_a_present_opponent_cannot_be_claimed(client, guest_client):
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}"):
+            white.send_json({"type": "claim"})
+            refused = drain_to(white, "error")
+
+    assert "still at the board" in refused["message"]
+
+
+def test_the_wait_is_counted_down_to_the_player(client, guest_client):
+    """The client renders a countdown from this rather than guessing, and a
+    remaining duration means the two ends never have to agree on the time."""
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        opened = white.receive_json()
+        # Nothing to claim while nobody has left.
+        assert opened["state"]["claim_wait"] is None
+
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+            play(white, "e2e4")
+        gone = drain_to(white, "presence")
+
+    # A clean close is a player who meant to go, so it is the short wait.
+    assert 0 < gone["state"]["claim_wait"] <= live.DELIBERATE_LEAVE_GRACE
+
+
+def test_claiming_too_early_is_refused(client, guest_client):
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+            play(white, "e2e4")
+        drain_to(white, "presence")
+
+        white.send_json({"type": "claim"})
+        refused = drain_to(white, "error")
+
+    assert "Wait" in refused["message"]
+
+
+def test_claiming_an_abandoned_game_wins_it(
+    client, guest_client, db_session, analysis_queue, monkeypatch
+):
+    """The whole point: your opponent left, and you get the game without
+    having to record a loss you did not suffer."""
+    monkeypatch.setattr(live, "DELIBERATE_LEAVE_GRACE", 0.0)
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+            play(white, "e2e4")
+            play(black, "e7e5")
+        drain_to(white, "presence")
+
+        white.send_json({"type": "claim"})
+        ended = drain_to(white, "end")
+
+    assert ended["reason"] == "abandonment"
+    assert ended["state"]["result"] == "1-0"
+    # And it is kept, like any other finished game.
+    saved = db_session.scalars(select(Game)).one()
+    assert saved.user_color == "white"
+    assert saved.result == "1-0"
+    assert analysis_queue == [saved.id]
+
+
+def test_coming_back_stops_the_clock(client, guest_client):
+    """A flapping connection is not walking off, so returning clears it."""
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+            play(white, "e2e4")
+        left = drain_to(white, "presence")
+        assert left["state"]["claim_wait"] is not None
+
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as back:
+            back.receive_json()
+            back_again = drain_to(white, "presence")
+
+    assert back_again["state"]["claim_wait"] is None
+    assert back_again["state"]["black"]["present"] is True
+
+
+def test_an_unplayed_game_cannot_be_claimed(client, guest_client, monkeypatch):
+    """No moves, no game to take — an unplayed one is aborted rather than won,
+    which is what the sweep does with it. Claiming would hand out a result
+    nothing would even record."""
+    monkeypatch.setattr(live, "DELIBERATE_LEAVE_GRACE", 0.0)
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        opened = white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+        gone = drain_to(white, "presence")
+
+        white.send_json({"type": "claim"})
+        refused = drain_to(white, "error")
+
+    assert opened["state"]["claim_wait"] is None
+    assert gone["state"]["claim_wait"] is None
+    assert "still at the board" in refused["message"]
+
+
+def test_a_spectator_is_told_nothing_about_claiming(client, guest_client):
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"])
+    token = created["token"]
+
+    with client.websocket_connect(f"/live/{token}/ws?seat={created['seat']}") as white:
+        white.receive_json()
+        with client.websocket_connect(f"/live/{token}/ws?seat={joined['seat']}") as black:
+            black.receive_json()
+            play(white, "e2e4")
+        drain_to(white, "presence")
+
+        with client.websocket_connect(f"/live/{token}/ws") as watcher:
+            opened = watcher.receive_json()
+            watcher.send_json({"type": "claim"})
+            refused = drain_to(watcher, "error")
+
+    assert opened["state"]["claim_wait"] is None
+    assert "watching" in refused["message"]
+
+
 def test_abandoned_games_are_swept(anon_client, db_session, lifespan_sessions):
     """A link nobody took up is litter — and unlike a Game row it was never
     anybody's to look back at."""
@@ -622,3 +774,36 @@ def test_abandoned_games_are_swept(anon_client, db_session, lifespan_sessions):
 
     remaining = {game.token for game in db_session.scalars(select(LiveGame))}
     assert remaining == {fresh}
+    # Nothing was played, so there is nothing to have kept.
+    assert db_session.scalars(select(Game)).all() == []
+
+
+def test_the_sweep_keeps_what_was_actually_played(
+    client, guest_client, db_session, analysis_queue
+):
+    """Both players walking away is not a reason to destroy the game.
+
+    A signed-in seat gets its copy before the live row goes — an account
+    quietly losing a game it played is the opposite of what an account is for.
+    The result stays "*": nobody won an abandoned game, and writing one in
+    would put a result in a review that never happened.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    created = open_game(client, color="white")
+    join(guest_client, created["token"])
+    row = db_session.scalars(select(LiveGame)).one()
+    row.moves_uci = "e2e4 e7e5"
+    row.last_activity_at = utcnow() - live.ABANDONED_AFTER - timedelta(minutes=1)
+    db_session.commit()
+
+    assert live.sweep_abandoned() == 1
+
+    assert db_session.scalars(select(LiveGame)).all() == []
+    saved = db_session.scalars(select(Game)).one()
+    assert saved.user_color == "white"
+    assert saved.result == "*"
+    assert [move.san for move in saved.moves] == ["e4", "e5"]
+    assert analysis_queue == [saved.id]

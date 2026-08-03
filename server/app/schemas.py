@@ -181,6 +181,9 @@ class LiveStateOut(BaseModel):
     joinable: bool
     # Set on the response to whoever has a seat — never broadcast.
     draw_offer_from: str | None = None
+    # Seconds until this viewer may claim a game their opponent left; 0 means
+    # now, None means there is nothing to claim.
+    claim_wait: float | None = None
 
 
 class LiveSeated(BaseModel):

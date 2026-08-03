@@ -62,6 +62,13 @@ export default defineConfig({
 				LEECHESS_WIKIBOOK: 'off',
 				// and never auto-download the Lichess puzzle dump
 				LEECHESS_AUTO_SEED: 'off',
+				// How long a friend game waits before the player still at the
+				// board may claim it. Seconds here so the spec can drive the
+				// whole flow: the real values (10s on a deliberate leave, 40s
+				// on a dropped connection) are a unit test's business, and
+				// sitting them out here would buy nothing.
+				LEECHESS_LEAVE_GRACE: '1',
+				LEECHESS_DISCONNECT_GRACE: '1',
 				// mounts POST /testing/reset, which e2e/fixtures.ts calls before
 				// every test so no spec inherits another's data
 				LEECHESS_TEST_RESET: 'on',

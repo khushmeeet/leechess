@@ -112,7 +112,19 @@ play, and beside a live opponent that is not a display preference. The eval
 bar, the live badges and the move list are toggles of their own under
 Settings → Play with a friend, defaulting to a board and a move list.
 
-Untouched live games are swept after two days (`app/live.py`), on startup.
+**If your opponent walks off**, you can claim the game rather than resign to
+an empty chair. The waits follow Lichess: 10 seconds when they left on purpose
+(a closed tab sends a clean close frame), 40 when the connection dropped on
+its own, since that usually comes back by itself. Both are overridable via
+`LEECHESS_LEAVE_GRACE` / `LEECHESS_DISCONNECT_GRACE`, which is how the browser
+suite drives the flow in a second. There is no scaling by material and no
+penalty for repeat offenders — those protect a rating ladder, and there isn't
+one here. A game with no moves cannot be claimed at all: an unplayed game is
+aborted rather than won, which is what the sweep does with it.
+
+Untouched live games are swept after two days (`app/live.py`), on startup —
+but a game with moves in it is forked to its signed-in seats first. Both
+players walking away is not a reason to destroy what they played.
 
 Guests used to be passwordless rows in `users` with an `is_guest` flag, upgraded
 in place by `POST /auth/upgrade`. Both endpoints and the column are gone; the

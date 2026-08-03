@@ -184,8 +184,12 @@ def _state_only(token: str, seat: str | None) -> dict:
         db.close()
 
 
-def _apply(token: str, color: str, action: str, uci: str | None) -> tuple[dict, dict]:
-    """Apply one action and return (event, state) for broadcast.
+def _apply(token: str, color: str, action: str, uci: str | None) -> dict:
+    """Apply one action and return the event to broadcast.
+
+    The state that goes out with it is read separately and per seat, because
+    a state says different things to different people — so this returns only
+    what happened, not anyone's view of it.
 
     Runs in a worker thread, and holds the game's lock across the whole
     read-modify-write — the row is read *inside* the lock, so two players
@@ -214,9 +218,12 @@ def _apply(token: str, color: str, action: str, uci: str | None) -> tuple[dict, 
             elif action == "draw-decline":
                 live.decline_draw(game, color)
                 event = {"type": "draw-decline", "from": color}
+            elif action == "claim":
+                live.claim_abandoned(db, game, color)
+                event = {"type": "end", "reason": "abandonment"}
             else:
                 raise live.LiveError(f"Unknown action {action!r}.")
-            return event, live.state_of(game, seat_color_=color)
+            return event
         finally:
             db.close()
 
@@ -267,6 +274,20 @@ async def live_socket(
     # socket's own presence — otherwise the first thing it received would be a
     # correction to the second thing it received.
     live.join_room(token, websocket, color)
+    if color is not None:
+        live.mark_present(token, color)
+        # A player arriving to an empty seat opposite starts its clock, which
+        # is what makes the claim survive a restart: the hub is memory, so
+        # after one nobody is here and nothing remembers when anybody left.
+        # Only a player does this — a passing spectator should not put
+        # anyone's game on a countdown.
+        opponent = "black" if color == "white" else "white"
+        if opponent not in live.present_seats(token):
+            live.note_absence(token, opponent)
+    # A clean close frame means they meant to go — a closed tab, a navigation.
+    # Anything else is the connection failing under them, which is usually a
+    # tunnel or a sleeping laptop and usually comes back.
+    deliberate = False
     try:
         state = await run_in_threadpool(_state_only, token, seat)
         await websocket.send_json({"type": "state", "you": color, "state": state})
@@ -294,7 +315,7 @@ async def live_socket(
                 continue
 
             try:
-                event, state = await run_in_threadpool(
+                event = await run_in_threadpool(
                     _apply, token, color, action, message.get("uci")
                 )
             except live.LiveError as error:
@@ -306,11 +327,20 @@ async def live_socket(
                 )
                 continue
 
-            await live.broadcast(token, {**event, "state": state})
-            if state["status"] == "finished":
+            # Per seat, not one payload for the room: a state carries things
+            # that belong to one player — the standing draw offer, the
+            # countdown on an opponent who left — and broadcasting the actor's
+            # view would hand both to everyone watching.
+            states = await run_in_threadpool(_states_by_seat, token)
+            await live.broadcast_per_seat(
+                token, {side: {**event, "state": s} for side, s in states.items()}
+            )
+            if states[None]["status"] == "finished":
                 await _announce_saved(token)
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as closed:
+        # 1000 normal, 1001 going away — both are a browser saying so on the
+        # way out rather than a socket that fell over.
+        deliberate = closed.code in (1000, 1001)
     except Exception:
         # A broken socket must not take the app down — but it must not vanish
         # either. Swallowed silently, a bug in here looks exactly like a
@@ -319,9 +349,15 @@ async def live_socket(
         logger.exception("live socket for %s failed", token)
     finally:
         live.leave_room(token, websocket)
+        # Only once the seat has no socket left at all: a second tab closing
+        # is not the player leaving.
+        if color is not None and color not in live.present_seats(token):
+            live.mark_away(token, color, deliberate=deliberate)
         # Whoever is left should see the seat go quiet rather than wait for a
-        # move that is not coming.
-        await _broadcast_state(token)
+        # move that is not coming — and start their countdown. Detached,
+        # because this handler is being cancelled: awaiting it here would stop
+        # at the first suspension point and the message would never go out.
+        live.spawn(_broadcast_state(token))
 
 
 def state_unavailable() -> dict:
@@ -339,12 +375,35 @@ def state_unavailable() -> dict:
         "black": {"name": None, "seated": False, "present": False, "saves": False},
         "joinable": False,
         "draw_offer_from": None,
+        "claim_wait": None,
     }
 
 
+def _states_by_seat(token: str) -> dict[str | None, dict]:
+    """One read, three views: the game as White sees it, as Black sees it, and
+    as a spectator does. Presence carries the abandonment countdown, which is
+    only ever one player's — so it cannot be one payload sent to everybody."""
+    db = session_factory()
+    try:
+        game = live.get_by_token(db, token)
+        if game is None:
+            empty = state_unavailable()
+            return {None: empty, "white": empty, "black": empty}
+        return {
+            seat: live.state_of(game, seat_color_=seat)
+            for seat in (None, "white", "black")
+        }
+    finally:
+        db.close()
+
+
 async def _broadcast_state(token: str, *, exclude: WebSocket | None = None) -> None:
-    fresh = await run_in_threadpool(_state_only, token, None)
-    await live.broadcast(token, {"type": "presence", "state": fresh}, exclude=exclude)
+    states = await run_in_threadpool(_states_by_seat, token)
+    await live.broadcast_per_seat(
+        token,
+        {seat: {"type": "presence", "state": state} for seat, state in states.items()},
+        exclude=exclude,
+    )
 
 
 async def _announce_saved(token: str) -> None:

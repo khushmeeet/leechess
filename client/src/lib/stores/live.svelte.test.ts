@@ -88,6 +88,7 @@ function state(overrides: Record<string, unknown> = {}) {
 		black: { name: 'Bo', seated: true, present: true, saves: false },
 		joinable: false,
 		draw_offer_from: null,
+		claim_wait: null,
 		...overrides
 	};
 }
@@ -315,6 +316,77 @@ describe('ending', () => {
 		// White signed in, Black did not — see the fixture.
 		expect(session.willSave).toBe(true);
 		expect(session.opponent.saves).toBe(false);
+	});
+});
+
+describe('an opponent who walked off', () => {
+	it('counts the wait down and only then offers the claim', async () => {
+		vi.useFakeTimers();
+		try {
+			const session = await whiteSession();
+			expect(session.claimWait).toBeNull();
+			expect(session.canClaim).toBe(false);
+
+			FakeSocket.last!.deliver({ type: 'presence', state: state({ claim_wait: 3 }) });
+			expect(session.claimCountdown).toBe(3);
+			expect(session.canClaim).toBe(false);
+
+			vi.advanceTimersByTime(3000);
+
+			expect(session.canClaim).toBe(true);
+			expect(session.claimCountdown).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('will not send a claim before the wait is up', async () => {
+		const session = await whiteSession();
+		FakeSocket.last!.deliver({ type: 'presence', state: state({ claim_wait: 30 }) });
+
+		session.claim();
+
+		expect(FakeSocket.last!.sent).not.toContainEqual({ type: 'claim' });
+	});
+
+	it('sends the claim once the wait is up', async () => {
+		const session = await whiteSession();
+		FakeSocket.last!.deliver({ type: 'presence', state: state({ claim_wait: 0 }) });
+
+		session.claim();
+
+		expect(FakeSocket.last!.sent).toContainEqual({ type: 'claim' });
+	});
+
+	it('stops counting when the opponent comes back', async () => {
+		vi.useFakeTimers();
+		try {
+			const session = await whiteSession();
+			FakeSocket.last!.deliver({ type: 'presence', state: state({ claim_wait: 30 }) });
+			FakeSocket.last!.deliver({ type: 'presence', state: state({ claim_wait: null }) });
+
+			vi.advanceTimersByTime(60_000);
+
+			expect(session.claimWait).toBeNull();
+			expect(session.canClaim).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('tells a spectator nothing about claiming', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		api.joinLiveGame.mockRejectedValue(new ApiError(409, 'both taken'));
+		const session = new LiveSession('tok');
+		await session.start();
+		FakeSocket.last!.open();
+		// The server never sends a spectator a wait, but the button must not
+		// appear even if one arrived.
+		FakeSocket.last!.deliver({ type: 'state', you: null, state: state({ claim_wait: 0 }) });
+
+		session.claim();
+
+		expect(FakeSocket.last!.sent).toEqual([]);
 	});
 });
 

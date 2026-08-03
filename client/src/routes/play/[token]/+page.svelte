@@ -399,6 +399,36 @@
 					{/if}
 				</section>
 
+				<!-- Your opponent walked off. Without this the only ways out are to
+			     resign, which records a loss you did not suffer, or to walk away
+			     and let the game be swept. -->
+				{#if live.status === 'playing' && !live.isSpectator && live.claimWait !== null}
+					<section
+						class="rounded-xs border border-accent-line bg-card p-3 text-sm"
+						data-testid="claim-panel"
+						role="status"
+						aria-live="polite"
+					>
+						{#if live.canClaim}
+							<p class="mb-2 text-body">
+								{seatLabel(live.opponent, live.color === 'white' ? 'black' : 'white')} left the game.
+							</p>
+							<button
+								type="button"
+								onclick={() => live.claim()}
+								data-testid="claim-win"
+								class="w-full rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+							>
+								Claim the win
+							</button>
+						{:else}
+							<p class="text-muted" data-testid="claim-countdown">
+								Your opponent left. You can claim the win in {live.claimCountdown}s.
+							</p>
+						{/if}
+					</section>
+				{/if}
+
 				{#if live.drawOfferFrom && live.drawOfferFrom !== live.color && live.status === 'playing'}
 					<section
 						class="rounded-xs border border-accent-line bg-card p-3 text-sm"

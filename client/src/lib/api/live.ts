@@ -29,6 +29,11 @@ export interface LiveState {
 	joinable: boolean;
 	/** The colour that has a draw offer standing, for the two players only. */
 	draw_offer_from: 'white' | 'black' | null;
+	/** Seconds until this player may claim a game their opponent walked out
+	 * of; 0 means now, null means there is nothing to claim. A remaining
+	 * duration rather than a deadline, so the two ends never have to agree
+	 * about what time it is. */
+	claim_wait: number | null;
 }
 
 export interface LiveSeated {

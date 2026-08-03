@@ -61,6 +61,12 @@ export class LiveSession {
 	error = $state<string | null>(null);
 	saved = $state<SavedWhere | null>(null);
 
+	/** Seconds until this player may claim a game their opponent left; 0 means
+	 * now, null means there is nothing to claim. Seeded from the server and
+	 * counted down locally — the server is asked again for real when the
+	 * button is pressed, so this only has to be close enough to read. */
+	claimWait = $state<number | null>(null);
+
 	private socket: WebSocket | null = null;
 	private seat: string | null = null;
 	private attempt = 0;
@@ -70,6 +76,7 @@ export class LiveSession {
 	/** Plies the server has confirmed. An optimistic move sits beyond this
 	 * until the echo arrives, and is rolled back if it never does. */
 	private confirmedPlies = 0;
+	private claimTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(token: string) {
 		this.token = token;
@@ -101,6 +108,16 @@ export class LiveSession {
 	 * is the one thing that differs between the two ways of playing. */
 	get willSave(): boolean {
 		return this.me.saves;
+	}
+
+	/** The opponent left and the wait is over — the game can be taken. */
+	get canClaim(): boolean {
+		return this.claimWait !== null && this.claimWait <= 0;
+	}
+
+	/** They left, but not long enough ago yet. */
+	get claimCountdown(): number | null {
+		return this.claimWait !== null && this.claimWait > 0 ? Math.ceil(this.claimWait) : null;
 	}
 
 	/** Take a seat if there is one, then connect.
@@ -235,6 +252,7 @@ export class LiveSession {
 		this.white = state.white;
 		this.black = state.black;
 		this.drawOfferFrom = state.draw_offer_from;
+		this.setClaimWait(state.claim_wait);
 
 		// The opponent's move, or one of ours the server had not confirmed yet.
 		// Our own optimistic move already made its sound when it was played.
@@ -244,6 +262,7 @@ export class LiveSession {
 		if (state.status === 'finished' && !wasFinished) {
 			soundPrefs.play('game-end');
 			this.stopHeartbeat();
+			this.stopClaimCountdown();
 		}
 	}
 
@@ -281,6 +300,36 @@ export class LiveSession {
 		this.send({ type: 'draw-decline' });
 	}
 
+	/** Take a game the opponent walked out of. The server re-checks the wait
+	 * itself, so a client that counted down wrong (a slept laptop, a fiddled
+	 * clock) is refused rather than believed. */
+	claim(): void {
+		if (this.isSpectator || !this.canClaim) return;
+		this.send({ type: 'claim' });
+	}
+
+	/** Seed the countdown from the server and tick it down locally. One
+	 * interval, not a timer per update: presence arrives whenever a socket
+	 * opens or closes, and each of those would otherwise leave a timer behind. */
+	private setClaimWait(seconds: number | null): void {
+		this.claimWait = seconds;
+		if (seconds === null || seconds <= 0) {
+			this.stopClaimCountdown();
+			return;
+		}
+		if (this.claimTimer !== null) return;
+		this.claimTimer = setInterval(() => {
+			if (this.claimWait === null) return this.stopClaimCountdown();
+			this.claimWait = Math.max(0, this.claimWait - 1);
+			if (this.claimWait === 0) this.stopClaimCountdown();
+		}, 1000);
+	}
+
+	private stopClaimCountdown(): void {
+		if (this.claimTimer !== null) clearInterval(this.claimTimer);
+		this.claimTimer = null;
+	}
+
 	/** Ask for the whole state again. The reconnect path does this for free
 	 * (the handshake is a state message), so this is for the cases a socket
 	 * cannot notice — a tab woken from background, a suspended laptop. */
@@ -299,6 +348,7 @@ export class LiveSession {
 	close(): void {
 		this.closed = true;
 		this.stopHeartbeat();
+		this.stopClaimCountdown();
 		if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
 		const socket = this.socket;

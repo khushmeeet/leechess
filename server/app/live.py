@@ -22,9 +22,10 @@ as a matter of course, and the client only has to open a new one.
 import asyncio
 import contextlib
 import logging
+import os
 import secrets
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import chess
 import chess.pgn
@@ -125,6 +126,14 @@ def state_of(game: LiveGame, *, seat_color_: str | None = None) -> dict:
         # A draw offer is between the two players; a spectator has no part in
         # it and is not shown one.
         "draw_offer_from": offer if seat_color_ else None,
+        # Seconds until this viewer may claim a game their opponent walked out
+        # of; 0 means now, None means there is nothing to claim. Sent as a
+        # remaining duration rather than a deadline so the two ends never have
+        # to agree about what time it is — the client counts down from it, and
+        # the server decides for real when the button is pressed.
+        "claim_wait": (
+            claim_wait_remaining(game, seat_color_) if seat_color_ else None
+        ),
     }
 
 
@@ -132,7 +141,7 @@ def _seat_state(game: LiveGame, color: str) -> dict:
     return {
         "name": getattr(game, f"{color}_name"),
         "seated": getattr(game, f"{color}_seat") is not None,
-        "present": color in _present(game.token),
+        "present": color in present_seats(game.token),
         # Said out loud on the board, because it is the one thing that differs
         # between the two ways of playing and there is no second chance to
         # mention it: no account, no review.
@@ -291,6 +300,105 @@ def decline_draw(game: LiveGame, color: str) -> None:
         _draw_offers.pop(game.token, None)
 
 
+# ── the opponent who walked off ────────────────────────────────────────────
+#
+# Without this there are only two ways out of a game your opponent left:
+# resign, which records a loss you did not suffer, or walk away and let the
+# sweep take it. So the player still at the board may claim the game once the
+# other seat has been empty long enough.
+#
+# The two waits, and the gap between them, are Lichess's: leaving on purpose
+# is answered in seconds, while a connection that dropped is given time to
+# come back, because it usually does. Neither is scaled by material and there
+# is no penalty for repeat offenders — both of those exist to protect a rating
+# ladder, and there isn't one here. The only way to reach an opponent at all
+# is a link you sent them yourself.
+
+# Closed the tab, navigated away: they know they left.
+DELIBERATE_LEAVE_GRACE = float(os.environ.get("LEECHESS_LEAVE_GRACE", "10"))
+# The socket died on its own. Usually a tunnel, a sleeping laptop, or the Fly
+# machine being replaced — all of which the client reconnects from by itself.
+# Overridable so the browser suite can drive the whole flow in a second
+# instead of sitting out a wait whose value is a unit test's business.
+DISCONNECT_GRACE = float(os.environ.get("LEECHESS_DISCONNECT_GRACE", "40"))
+
+# token → colour → (when the seat emptied, how long to wait). In memory with
+# the rooms, because it describes connections rather than the game: a restart
+# drops every socket anyway, and the clock restarts when somebody observes the
+# seat is empty (see `note_absence`).
+_away_since: dict[str, dict[str, tuple[datetime, float]]] = {}
+
+
+def mark_away(token: str, color: str, *, deliberate: bool) -> None:
+    """Start the clock on an empty seat."""
+    grace = DELIBERATE_LEAVE_GRACE if deliberate else DISCONNECT_GRACE
+    _away_since.setdefault(token, {})[color] = (utcnow(), grace)
+
+
+def mark_present(token: str, color: str) -> None:
+    """They came back. Someone who returns and leaves again gets the full
+    wait over, which is the forgiving reading and the right one — a flapping
+    connection is not the same as walking off."""
+    seats = _away_since.get(token)
+    if seats:
+        seats.pop(color, None)
+        if not seats:
+            _away_since.pop(token, None)
+
+
+def note_absence(token: str, color: str) -> None:
+    """Start the clock on a seat that is already empty and has no record.
+
+    The case this exists for is a restart: the hub is memory, so after one
+    nobody is connected and nothing knows when anybody left. The first player
+    back finds their opponent missing with no history, and counting from now
+    is the honest answer — claiming instantly on the strength of a record that
+    does not exist would take the game off somebody who was two seconds behind
+    them in reconnecting.
+    """
+    if color in _away_since.get(token, {}):
+        return
+    mark_away(token, color, deliberate=False)
+
+
+def claim_wait_remaining(game: LiveGame, color: str) -> float | None:
+    """Seconds until `color` may claim the game, 0 when they already may.
+
+    None when there is nothing to claim: the game is not running, or the
+    opponent is at the board.
+    """
+    if game.status != "playing":
+        return None
+    # Nothing has been played, so there is no game to take. A seat that was
+    # claimed a minute ago and never connected is a friend still reading the
+    # link, not an opponent who walked off — and an unplayed game is aborted
+    # rather than won, which is what the sweep does with it for free. This is
+    # the one place the rule lives, so neither way of starting a clock has to
+    # remember it.
+    if not move_list(game):
+        return None
+    opponent = "black" if color == "white" else "white"
+    if opponent in present_seats(game.token):
+        return None
+    away = _away_since.get(game.token, {}).get(opponent)
+    if away is None:
+        return None
+    since, grace = away
+    return max(0.0, grace - (utcnow() - since).total_seconds())
+
+
+def claim_abandoned(db: Session, game: LiveGame, color: str) -> None:
+    """Take the game your opponent left. Re-checked here rather than trusted
+    from the client: the countdown they watched is a convenience, and this is
+    the thing that decides."""
+    remaining = claim_wait_remaining(game, color)
+    if remaining is None:
+        raise LiveError("Your opponent is still at the board.")
+    if remaining > 0:
+        raise LiveError(f"Wait {int(remaining) + 1}s before claiming.")
+    finish(db, game, "1-0" if color == "white" else "0-1", "abandonment")
+
+
 # ── ending: one saved game per signed-in seat ──────────────────────────────
 
 
@@ -418,7 +526,9 @@ def lock_for(token: str) -> threading.Lock:
         return _locks.setdefault(token, threading.Lock())
 
 
-def _present(token: str) -> set[str]:
+def present_seats(token: str) -> set[str]:
+    """Which sides have a socket open right now. Presence, not membership —
+    a seat is held by its token, not by its connection."""
     return {color for color in _rooms.get(token, {}).values() if color}
 
 
@@ -463,6 +573,28 @@ async def broadcast(
                 await socket.close()
 
 
+async def broadcast_per_seat(
+    token: str, message_for: dict[str | None, dict], *, exclude: WebSocket | None = None
+) -> None:
+    """Send everyone in the room the version of a message meant for them.
+
+    Presence needs this: the same event tells one player their opponent is
+    gone and how long until the game is theirs to claim, and tells a spectator
+    only that a seat went quiet. Keyed by seat colour, with None for the
+    watchers.
+    """
+    for socket, seat in list(_rooms.get(token, {}).items()):
+        if socket is exclude:
+            continue
+        try:
+            await socket.send_json(message_for[seat])
+        except Exception:
+            logger.warning("dropping a dead socket on live game %s", token)
+            leave_room(token, socket)
+            with contextlib.suppress(Exception):
+                await socket.close()
+
+
 async def send_to_seat(token: str, color: str, message: dict) -> None:
     """For the things that are one player's business alone — where their
     saved game landed, whose draw offer is waiting."""
@@ -476,12 +608,38 @@ async def send_to_seat(token: str, color: str, message: dict) -> None:
             leave_room(token, socket)
 
 
+# Detached work, held here only so the loop keeps a strong reference — a task
+# nobody holds can be garbage-collected mid-flight.
+_detached: set[asyncio.Task] = set()
+
+
+def spawn(coro) -> None:
+    """Run something to completion independently of the caller's task.
+
+    This exists for one job: telling the other player that a socket closed.
+    That has to happen while the handler it belongs to is being torn down,
+    and a disconnect *cancels* that handler — so an `await` in its `finally`
+    (the state read is one) is a cancellation point the teardown never gets
+    past. The message would simply never be sent, and the player still at the
+    board would sit waiting for a move from someone who had already gone,
+    with no countdown and nothing to claim.
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except RuntimeError:  # no loop (sync callers, tests): nothing to detach to
+        coro.close()
+        return
+    _detached.add(task)
+    task.add_done_callback(_detached.discard)
+
+
 def reset_rooms() -> None:
     """Test support: module state outlives the app instance."""
     _rooms.clear()
     with _locks_guard:
         _locks.clear()
     _draw_offers.clear()
+    _away_since.clear()
 
 
 # ── housekeeping ───────────────────────────────────────────────────────────
@@ -501,6 +659,19 @@ def sweep_abandoned() -> int:
             db.scalars(select(LiveGame).where(LiveGame.last_activity_at < cutoff))
         )
         for game in stale:
+            # A game with moves in it is somebody's, finished or not. Both
+            # players walking away is not a reason to destroy what they
+            # played, so a signed-in seat gets its copy here before the row
+            # goes — the alternative is an account quietly losing a game it
+            # played, which is the opposite of what an account is for.
+            #
+            # The result stays "*". Nobody won an abandoned game, and writing
+            # one in would put a result in a review that never happened.
+            if game.status != "finished" and move_list(game):
+                game.status = "finished"
+                game.end_reason = "abandoned"
+                db.commit()
+                fork_into_games(db, game)
             db.delete(game)
         db.commit()
         if stale:

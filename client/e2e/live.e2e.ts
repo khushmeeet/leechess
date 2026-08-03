@@ -135,6 +135,34 @@ test('an anonymous game keeps nothing, and says so before it ends', async ({ pag
 	await expect(page.getByTestId('friend-review-link')).toHaveCount(0);
 });
 
+test('an opponent who leaves can be claimed, not just resigned to', async ({ page, context }) => {
+	// The whole point of the claim: without it the only ways out of a game
+	// your opponent left are to resign — recording a loss you did not suffer —
+	// or to walk away and let it be swept.
+	const link = await hostAGame(page);
+	const friend = await friendPage(context, link);
+	await expect(page.getByTestId('presence-black')).toHaveText('here');
+
+	// Somebody has to move first: an unplayed game is aborted, not won.
+	const [white, black] = await orientedPlayers(page, friend);
+	await move(white.page, 'e2', 'e4', white.orientation);
+	await expect(black.page.getByTestId('friend-move-list')).toContainText('e4');
+
+	// Nothing to claim while they are still here.
+	await expect(page.getByTestId('claim-panel')).toHaveCount(0);
+
+	await friend.close();
+
+	// Closing the tab is a deliberate departure, so it is the short wait —
+	// the countdown appears first, then the button.
+	await expect(page.getByTestId('claim-countdown')).toBeVisible();
+	await expect(page.getByTestId('claim-win')).toBeVisible({ timeout: 20_000 });
+	await page.getByTestId('claim-win').click();
+
+	await expect(page.getByTestId('friend-result')).toBeVisible();
+	await expect(page.getByTestId('friend-result')).toContainText('abandonment');
+});
+
 test('a signed-in player gets the game in their review', async ({ page, context }) => {
 	// The other half of the bargain: an account is what turns a finished game
 	// into something to look back at, and a friend game is no exception.
