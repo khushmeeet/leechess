@@ -211,19 +211,9 @@
 							class="h-4 w-4"
 						/>
 					</label>
-					<label class="flex items-center justify-between gap-2">
-						<span class="text-ink">Move badges</span>
-						<input
-							type="checkbox"
-							checked={displayPrefs.friendBadges}
-							onchange={(event) => displayPrefs.setFriendBadges(event.currentTarget.checked)}
-							data-testid="friend-badges-toggle"
-							class="h-4 w-4"
-						/>
-					</label>
 					<p class="text-[11px] text-muted">
-						The eval bar and the badges run Stockfish on the live position. They are yours alone,
-						and your opponent is not told — so switch them on knowing what that is.
+						The eval bar runs Stockfish on the live position. It is yours alone, and your opponent
+						is not told — so switch it on knowing what that is.
 					</p>
 				</div>
 			</div>
