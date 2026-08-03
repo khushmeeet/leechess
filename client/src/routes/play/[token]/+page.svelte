@@ -11,10 +11,12 @@
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
+	import HoldButton from '$lib/components/HoldButton.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { liveGameLink } from '$lib/api/live';
 	import { classifyMove, clampEval, type Classification } from '$lib/classification';
 	import { gameOutcome } from '$lib/result';
+	import { rise } from '$lib/transitions';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { LiveSession, openFriendGame } from '$lib/stores/live.svelte';
 	import { session as account } from '$lib/stores/session.svelte';
@@ -408,6 +410,8 @@
 						data-testid="claim-panel"
 						role="status"
 						aria-live="polite"
+						in:rise
+						out:rise={{ duration: 160 }}
 					>
 						{#if live.canClaim}
 							<p class="mb-2 text-body">
@@ -435,6 +439,8 @@
 						data-testid="draw-offer"
 						role="status"
 						aria-live="polite"
+						in:rise
+						out:rise={{ duration: 160 }}
 					>
 						<p class="mb-2 text-body">Your opponent offers a draw.</p>
 						<div class="flex gap-2">
@@ -496,14 +502,15 @@
 					<section class="flex flex-col gap-2">
 						{#if live.status === 'playing'}
 							<div class="flex gap-2">
-								<button
-									type="button"
-									onclick={() => live.resign()}
+								<!-- A person is waiting on the other end of this one, so a
+								     misclick costs them a game as well. -->
+								<HoldButton
+									oncomplete={() => live.resign()}
 									data-testid="friend-resign"
 									class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
 								>
-									Resign
-								</button>
+									Hold to resign
+								</HoldButton>
 								<button
 									type="button"
 									onclick={() => live.offerDraw()}

@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { API, move, restoreActiveGame, syncedGameId, waitForEngineReady } from './helpers';
+import { API, hold, move, restoreActiveGame, syncedGameId, waitForEngineReady } from './helpers';
 
 // Phase 1 acceptance criteria for the Play screen: live classification badge
 // within 500ms of a move, and every finished game auto-completing
@@ -106,7 +106,15 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	// doesn't produce a scriptable checkmate line to click through)
 	await move(page, 'e2', 'e4');
 	await expect(page.getByTestId('move-list')).toContainText('e4');
-	await page.getByRole('button', { name: 'Resign' }).click();
+	// Wait for Stockfish's reply rather than racing it. Resigning is a hold
+	// now, and 1.2s is comfortably longer than the engine takes to answer at
+	// this strength — so a spec that resigned straight after e4 would record
+	// one move or two depending on how loaded the machine was. The panel only
+	// says "white to move" again once the reply has landed.
+	await expect(page.getByTestId('moves-panel')).toContainText('white to move', {
+		timeout: 30_000
+	});
+	await hold(page, page.getByTestId('resign'));
 	await expect(page.getByText('Game over: 0-1')).toBeVisible();
 	const resultOverlay = page.getByTestId('game-result-overlay');
 	await expect(resultOverlay).toHaveAttribute('data-outcome', 'loss');
@@ -127,7 +135,7 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	const game = await response.json();
 	expect(game.result).toBe('0-1');
 	expect(['analyzing', 'complete']).toContain(game.analysis_status);
-	expect(game.moves).toHaveLength(1);
+	expect(game.moves).toHaveLength(2); // e4 and the engine's reply
 	expect(game.moves.at(0).san).toBe('e4');
 });
 
@@ -195,7 +203,7 @@ test('game survives a refresh and stays in sync with the server', async ({ page,
 	await move(page, 'g1', 'f3');
 	await expect(page.getByTestId('move-list')).toContainText('Nf3');
 	await expect(page.getByText('(white to move)')).toBeVisible({ timeout: 15_000 });
-	await page.getByRole('button', { name: 'Resign' }).click();
+	await hold(page, page.getByTestId('resign'));
 	await expect(page.getByText(/Saved as game #\d+/)).toBeVisible();
 
 	const response = await request.get(`${API}/games/${gameId}`);
@@ -213,7 +221,7 @@ test('resigning or starting a new game ends persistence', async ({ page }) => {
 
 	await move(page, 'e2', 'e4');
 	await expect(page.getByTestId('move-list')).toContainText('e4');
-	await page.getByRole('button', { name: 'Resign' }).click();
+	await hold(page, page.getByTestId('resign'));
 	await expect(page.getByText('Game over: 0-1')).toBeVisible();
 
 	// a resigned game does not come back after a refresh

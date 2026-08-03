@@ -201,7 +201,7 @@
 				</section>
 			{:else}
 				<div
-					class="rounded-xs border px-3 py-2 text-sm {session.status === 'won'
+					class="verdict rounded-xs border px-3 py-2 text-sm {session.status === 'won'
 						? 'border-ok-line bg-ok-bg text-ok'
 						: 'border-err-line bg-err-bg text-err'}"
 					data-testid={session.status === 'won' ? 'drill-success' : 'drill-failed'}
@@ -246,3 +246,27 @@
 <!-- Always rendered, including the "nothing due" state — that's exactly when
      you want to see when each drill comes back. -->
 {@render drillTable()}
+
+<style>
+	/* Converted / Held / Not converted — the verdict on a technique you just
+	 * spent twenty moves trying to show. Same recipe as the puzzle verdict,
+	 * because it is the same moment. */
+	.verdict {
+		transition:
+			opacity 240ms var(--ease-rise),
+			transform 240ms var(--ease-rise);
+	}
+
+	@starting-style {
+		.verdict {
+			transform: translateY(0.25rem) scale(0.98);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.verdict {
+			transition: opacity 160ms var(--ease-rise);
+		}
+	}
+</style>

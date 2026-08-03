@@ -105,7 +105,7 @@
 
 	{#if open}
 		<div
-			class="absolute top-full right-0 z-20 mt-2 w-72 rounded-xs border border-line bg-card p-4 shadow-lg"
+			class="settings-panel absolute top-full right-0 z-20 mt-2 w-72 rounded-xs border border-line bg-card p-4 shadow-lg"
 			data-testid="settings-menu"
 		>
 			<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">Player</h2>
@@ -364,3 +364,39 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* The largest thing in the app that used to simply be there — eight
+	 * sections and 18rem of it, a frame after the gear is clicked. It grows
+	 * out of the gear instead. The origin is the trigger's corner rather than
+	 * a guess, because the panel is already pinned to it (top-full right-0);
+	 * the spatial relationship exists in the layout and this only makes it
+	 * legible.
+	 *
+	 * Entrance only, and that asymmetry is deliberate. {#if open} takes the
+	 * node out on close, so an exit would have to be a JS transition — and it
+	 * would buy nothing. An entrance says where a thing came from; nobody
+	 * needs to be told where the menu they just dismissed went. */
+	.settings-panel {
+		transform-origin: top right;
+		transition:
+			opacity 180ms var(--ease-rise),
+			transform 180ms var(--ease-rise);
+	}
+
+	@starting-style {
+		.settings-panel {
+			transform: scale(0.96) translateY(-4px);
+			opacity: 0;
+		}
+	}
+
+	/* Dropping transform from the transition list is the whole override: a
+	 * property that is not transitioning paints at its final value from the
+	 * first frame, so the scale in @starting-style above is never shown. */
+	@media (prefers-reduced-motion: reduce) {
+		.settings-panel {
+			transition: opacity 120ms var(--ease-rise);
+		}
+	}
+</style>

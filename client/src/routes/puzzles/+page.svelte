@@ -136,7 +136,7 @@
 
 			{#if session.status === 'solved'}
 				<div
-					class="rounded-xs border border-ok-line bg-ok-bg px-3 py-2 text-sm text-ok"
+					class="verdict rounded-xs border border-ok-line bg-ok-bg px-3 py-2 text-sm text-ok"
 					data-testid="puzzle-correct"
 				>
 					<p class="font-semibold">Correct!</p>
@@ -159,7 +159,7 @@
 			{:else}
 				{#if session.wrong}
 					<div
-						class="flex items-center justify-between gap-2 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err"
+						class="verdict flex items-center justify-between gap-2 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err"
 						data-testid="puzzle-retry"
 					>
 						<span>Not quite — try again.</span>
@@ -178,3 +178,31 @@
 		</aside>
 	</div>
 {/if}
+
+<style>
+	/* "Correct!" and "Not quite" are the beat this whole screen exists for, and
+	 * both used to blink into the column flat. They rise in instead.
+	 *
+	 * Deliberately no confetti, and not for want of an excuse: the app spends
+	 * that budget once, on the game-result banner, and it is worth spending
+	 * there precisely because it is rare. Firing it on every solved puzzle —
+	 * dozens in a sitting — would spend down the one place it means something. */
+	.verdict {
+		transition:
+			opacity 240ms var(--ease-rise),
+			transform 240ms var(--ease-rise);
+	}
+
+	@starting-style {
+		.verdict {
+			transform: translateY(0.25rem) scale(0.98);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.verdict {
+			transition: opacity 160ms var(--ease-rise);
+		}
+	}
+</style>

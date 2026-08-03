@@ -8,7 +8,7 @@
  * each side is left with when the game ends.
  */
 import { expect, test } from './fixtures';
-import { boardPosition, clickSquares, consoleErrors, move } from './helpers';
+import { boardPosition, clickSquares, consoleErrors, hold, move } from './helpers';
 import type { BrowserContext, Page } from '@playwright/test';
 
 /** The friend: a second browser with its own cookies and its own
@@ -97,7 +97,7 @@ test('resigning ends the game for both players', async ({ page, context }) => {
 	const friend = await friendPage(context, link);
 	await expect(page.getByTestId('presence-black')).toHaveText('here');
 
-	await page.getByTestId('friend-resign').click();
+	await hold(page, page.getByTestId('friend-resign'));
 
 	await expect(page.getByTestId('friend-result')).toBeVisible();
 	await expect(friend.getByTestId('friend-result')).toBeVisible();
@@ -128,7 +128,7 @@ test('an anonymous game keeps nothing, and says so before it ends', async ({ pag
 	// an empty Review screen.
 	await expect(page.getByTestId('friend-seats')).toContainText('Nothing is saved');
 
-	await page.getByTestId('friend-resign').click();
+	await hold(page, page.getByTestId('friend-resign'));
 
 	await expect(page.getByTestId('friend-result')).toContainText('Nothing was saved');
 	await expect(friend.getByTestId('friend-result')).toContainText('Nothing was saved');
@@ -173,7 +173,7 @@ test('leaving a finished friend game goes to the welcome screen', async ({ page,
 	const friend = await friendPage(context, link);
 	await expect(page.getByTestId('presence-black')).toHaveText('here');
 
-	await friend.getByTestId('friend-resign').click();
+	await hold(friend, friend.getByTestId('friend-resign'));
 	await expect(page.getByTestId('friend-result')).toBeVisible();
 
 	await page.getByTestId('settings-button').click();
@@ -226,7 +226,7 @@ test('a signed-in player gets the game in their review', async ({ page, context 
 	await move(white.page, 'e2', 'e4', white.orientation);
 	await expect(black.page.getByTestId('friend-move-list')).toContainText('e4');
 
-	await friend.getByTestId('friend-resign').click();
+	await hold(friend, friend.getByTestId('friend-resign'));
 
 	await expect(page.getByTestId('friend-review-link')).toBeVisible({ timeout: 15_000 });
 	await page.getByTestId('friend-review-link').click();

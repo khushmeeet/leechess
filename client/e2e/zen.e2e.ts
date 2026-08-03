@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { boardPosition, move, waitForEngineReady } from './helpers';
+import { boardPosition, hold, move, waitForEngineReady } from './helpers';
 
 // Zen mode: Play stripped to the board alone. Everything the screen normally
 // carries — nav, panels, eval bar — goes, and the only way back to any of it
@@ -121,7 +121,7 @@ test('resigning from the strip ends the game on the board', async ({ page }) => 
 
 	// No tap needed: entering zen shows the strip, and it is still up.
 	await expect(page.getByTestId('zen-controls')).toHaveClass(/shown/);
-	await page.getByTestId('zen-resign').click();
+	await hold(page, page.getByTestId('zen-resign'));
 
 	// The result overlay is drawn inside the board, so it is the one piece of
 	// chrome zen keeps — and the strip pins itself open, since starting the

@@ -73,10 +73,46 @@
 	--color-series-opening: #0369a1;
 	--color-series-middlegame: #b45309;
 	--color-series-endgame: #17a06f;
+
+	/* The app's one motion curve. It was already the de facto curve — both
+	 * hand-rolled animations on the game-result overlay were written with it —
+	 * so naming it here changes nothing and gives everything added after it
+	 * something to match. A fast start that settles rather than arrives, which
+	 * is what "rise" means: things here enter by coming up a few pixels.
+	 *
+	 * Named --ease-rise and not --ease-out on purpose. --ease-* is Tailwind's
+	 * transition-timing-function namespace, so --ease-out would quietly
+	 * redefine the built-in `ease-out` utility everywhere in the app. This adds
+	 * an `ease-rise` utility alongside it instead of shadowing one. */
+	--ease-rise: cubic-bezier(0.2, 0, 0, 1);
 }
 
 :root {
 	color-scheme: light;
+}
+
+/* Press feedback, on every button in the app. The only motion that is applied
+ * this broadly, and it is deliberately below the threshold of notice: the
+ * buttons here are pressed tens of times a session — hint rungs, ply steppers,
+ * theme swatches, the promotion picker — and at that frequency anything
+ * legible as an animation reads as lag instead of as feedback. 2% over 120ms
+ * is felt rather than seen, which is the entire job.
+ *
+ * Not gated on (hover: hover): :active is exactly what a touch press produces,
+ * and on a touch device this is the only press feedback there is.
+ *
+ * Gated on no-preference rather than given a gentler variant, because there is
+ * no gentler version of 2% — the honest reduced-motion answer is none. */
+@layer base {
+	@media (prefers-reduced-motion: no-preference) {
+		button {
+			transition: transform 120ms var(--ease-rise);
+		}
+
+		button:active:not(:disabled) {
+			transform: scale(0.98);
+		}
+	}
 }
 
 /* The in-game insight panel's labelled rows (Tactic / Coach / Ideas): a small

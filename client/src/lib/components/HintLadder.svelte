@@ -46,10 +46,10 @@
 {#snippet rungs(content: HintContent)}
 	<ol class="flex flex-col gap-1.5">
 		{#if level >= 1}
-			<li data-testid="hint-level-1" class="text-body">{content.category}</li>
+			<li data-testid="hint-level-1" class="rung text-body">{content.category}</li>
 		{/if}
 		{#if level >= 2}
-			<li data-testid="hint-level-2" class="text-body">
+			<li data-testid="hint-level-2" class="rung text-body">
 				Look for a
 				<span
 					class="inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
@@ -59,17 +59,17 @@
 			</li>
 		{/if}
 		{#if level >= 3}
-			<li data-testid="hint-level-3" class="text-body">
+			<li data-testid="hint-level-3" class="rung text-body">
 				The key squares are highlighted on the board.
 			</li>
 		{/if}
 		{#if level >= 4}
-			<li data-testid="hint-level-4" class="text-body">
+			<li data-testid="hint-level-4" class="rung text-body">
 				<span class="font-mono font-semibold">{content.moveSan}</span> — {content.reason}
 			</li>
 		{/if}
 		{#if level >= 5}
-			<li data-testid="hint-level-5" class="text-body">
+			<li data-testid="hint-level-5" class="rung text-body">
 				Full line: <span class="font-mono">{content.line.join(' ')}</span>
 			</li>
 		{/if}
@@ -103,3 +103,33 @@
 		</div>
 	{/if}
 {/if}
+
+<style>
+	/* A rung is the answer to a question the player just asked, and it used to
+	 * arrive already in place — which reads as though it had been there all
+	 * along, sitting on a button that silently relabelled itself underneath.
+	 * Rising into place says a new one arrived, and says which one is new.
+	 *
+	 * @starting-style is doing the work that would otherwise need per-rung
+	 * bookkeeping: it applies only to elements being inserted, so the rungs
+	 * already on screen stay exactly where they are while the new one comes
+	 * up. Revealing level 4 does not re-animate levels 1 through 3. */
+	.rung {
+		transition:
+			opacity 200ms var(--ease-rise),
+			transform 200ms var(--ease-rise);
+	}
+
+	@starting-style {
+		.rung {
+			transform: translateY(0.25rem);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.rung {
+			transition: opacity 150ms var(--ease-rise);
+		}
+	}
+</style>

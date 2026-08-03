@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 /** The dedicated e2e backend port from playwright.config.ts. Not 8000: a
  * developer's own server lives there, and the suite must never reach it. */
@@ -38,6 +38,26 @@ async function squareCenter(
 		);
 	}
 	return point;
+}
+
+/** Press and hold a HoldButton until it commits.
+ *
+ * Resignation is hold-to-confirm, so `.click()` on one of those buttons is now
+ * a no-op — deliberately, since that is the slip it exists to prevent. The
+ * hold is a real pointer press held down for longer than the fill takes
+ * (HoldButton's holdMs, 1200ms by default); the button commits when the fill
+ * transition finishes, so the wait has to clear the animation and not just the
+ * duration. The slack is generous because a loaded CI machine paints late, and
+ * releasing early cancels silently — which would show up as an unrelated
+ * assertion failing further down the spec.
+ */
+export async function hold(page: Page, button: Locator, holdMs = 1200) {
+	await button.scrollIntoViewIfNeeded();
+	const box = (await button.boundingBox())!;
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(holdMs + 600);
+	await page.mouse.up();
 }
 
 /** A fingerprint of the board's rendered position, taken from chessground's

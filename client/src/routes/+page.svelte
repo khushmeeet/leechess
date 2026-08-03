@@ -4,6 +4,7 @@
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
 	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
+	import HoldButton from '$lib/components/HoldButton.svelte';
 	import InsightBar from '$lib/components/InsightBar.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { coachAdvice } from '$lib/coach';
@@ -11,6 +12,7 @@
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
+	import { rise } from '$lib/transitions';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
 	import { PlaySession } from '$lib/stores/play.svelte';
 	// Aliased: `session` on this page already means the play session.
@@ -272,8 +274,20 @@
 {#snippet takebackRow()}
 	{#if offerTakeback}
 		<!-- polite, not assertive: this appears in the middle of the game and
-		     must not cut across the move it is reacting to. -->
-		<div class="panel-row" data-testid="takeback-offer" role="status" aria-live="polite">
+		     must not cut across the move it is reacting to.
+		     Rises in and leaves the same way, rather than blinking on and off
+		     the panel: it arrives unbidden in the middle of a game, and an
+		     offer that appears between two glances at the board is easy to
+		     read as having always been there. The 200ms does not hold up the
+		     aria-live announcement, and nothing is delayed on top of it. -->
+		<div
+			class="panel-row"
+			data-testid="takeback-offer"
+			role="status"
+			aria-live="polite"
+			in:rise
+			out:rise={{ duration: 160 }}
+		>
 			<span class="panel-row-label text-err">Blunder</span>
 			<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
 				<span class="min-w-0">That drops material. Take it back and think again?</span>
@@ -375,9 +389,9 @@
 		inert={!controlsShown}
 	>
 		{#if !game.isGameOver && session.started}
-			<button type="button" data-testid="zen-resign" onclick={() => session.resign()}>
-				Resign
-			</button>
+			<HoldButton oncomplete={() => session.resign()} data-testid="zen-resign">
+				Hold to resign
+			</HoldButton>
 		{/if}
 		{#if session.engineError}
 			<button
@@ -574,12 +588,13 @@
 				<section class="flex flex-col gap-2">
 					{#if !game.isGameOver && session.started}
 						<div class="flex gap-2">
-							<button
-								onclick={() => session.resign()}
+							<HoldButton
+								oncomplete={() => session.resign()}
+								data-testid="resign"
 								class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
 							>
-								Resign
-							</button>
+								Hold to resign
+							</HoldButton>
 						</div>
 					{/if}
 					<button
@@ -672,7 +687,12 @@
 		pointer-events: auto;
 	}
 
-	.zen-controls button,
+	/* :global(button), not `button` — Resign in this strip is a HoldButton, and
+	   a scoped descendant selector stops at the component boundary: the button
+	   it renders carries that component's scope class, not this one's, so the
+	   strip's whole look would fall off it. Contained by .zen-controls, which
+	   is scoped to this file. */
+	.zen-controls :global(button),
 	.zen-reveal {
 		border: 1px solid var(--color-line);
 		border-radius: 2px;
@@ -685,7 +705,7 @@
 		cursor: pointer;
 	}
 
-	.zen-controls button {
+	.zen-controls :global(button) {
 		padding: 0.3rem 0.7rem;
 	}
 
@@ -710,12 +730,12 @@
 		clip-path: none;
 	}
 
-	.zen-controls button:hover {
+	.zen-controls :global(button:hover) {
 		background: var(--color-accent-soft);
 		color: var(--color-ink);
 	}
 
-	.zen-controls button.leave {
+	.zen-controls :global(button.leave) {
 		border-color: var(--color-accent-line);
 		color: var(--color-accent);
 	}
@@ -737,7 +757,7 @@
 		background: rgb(25 21 16 / 62%);
 		isolation: isolate;
 		pointer-events: none;
-		animation: overlay-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+		animation: overlay-in 180ms var(--ease-rise) both;
 	}
 
 	.result-banner {
@@ -747,7 +767,7 @@
 		width: min(88%, 22rem);
 		align-items: center;
 		gap: 0.75rem;
-		animation: banner-in 280ms 50ms cubic-bezier(0.2, 0, 0, 1) both;
+		animation: banner-in 280ms 50ms var(--ease-rise) both;
 	}
 
 	.result-logo {

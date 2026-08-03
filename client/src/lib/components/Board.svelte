@@ -316,8 +316,21 @@
 		inset: 0;
 		z-index: 10;
 		background: rgb(0 0 0 / 30%);
+		transition: opacity 140ms var(--ease-rise);
 	}
 
+	/* Grows off the edge the pawn is promoting on. The column is already
+	 * anchored there, and .from-bottom already knows which edge that is, so
+	 * the origin costs one extra declaration and buys the whole spatial story:
+	 * the picker comes out of the square being promoted on rather than
+	 * appearing over the board.
+	 *
+	 * A uniform scale, not scaleY — squashing four piece glyphs is plainly
+	 * visible, where shrinking them by 6% is not.
+	 *
+	 * 140ms, faster than the app's other entrances, because this one is in the
+	 * way: it interrupts a move already in progress and the player has already
+	 * decided what they are reaching for. */
 	.promo-column {
 		position: absolute;
 		top: 0;
@@ -325,13 +338,36 @@
 		display: flex;
 		width: 12.5%;
 		flex-direction: column;
+		transform-origin: top center;
 		box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+		transition:
+			opacity 140ms var(--ease-rise),
+			transform 140ms var(--ease-rise);
 	}
 
 	.promo-column.from-bottom {
 		top: auto;
 		bottom: 0;
 		flex-direction: column-reverse;
+		transform-origin: bottom center;
+	}
+
+	@starting-style {
+		.promo-backdrop {
+			opacity: 0;
+		}
+
+		.promo-column {
+			transform: scale(0.94);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.promo-backdrop,
+		.promo-column {
+			transition: opacity 100ms var(--ease-rise);
+		}
 	}
 
 	.promo-column button {
