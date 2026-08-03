@@ -61,14 +61,16 @@ def build_summary_prompt(game: Game) -> str:
     """The user turn: a factual digest of the analyzed game, evals expressed
     as plain "pawns lost" figures like the explanation prompts."""
     player_moves = _player_moves(game)
-    lines = [
-        f"Result: {game.result}"
-        + (
-            f" — you played {(game.user_color or 'white').capitalize()} against the engine."
-            if game.mode == "engine"
-            else " — local game, both sides played by hand; every move counts as yours."
-        )
-    ]
+    side = (game.user_color or "white").capitalize()
+    if game.mode == "engine":
+        context = f" — you played {side} against the engine."
+    elif game.mode == "online":
+        # Named so the coach does not write about "the engine's" mistakes when
+        # the other side of the board was a person having a bad day.
+        context = f" — you played {side} against another player."
+    else:
+        context = " — local game, both sides played by hand; every move counts as yours."
+    lines = [f"Result: {game.result}{context}"]
 
     counts: dict[str, int] = {}
     for move in player_moves:

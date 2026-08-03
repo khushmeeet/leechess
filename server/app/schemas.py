@@ -127,6 +127,72 @@ class MoveAccepted(BaseModel):
     game_over: bool
 
 
+class LiveCreate(BaseModel):
+    """Start a friend game. `color` is the side the creator takes; "random"
+    lets the server pick, which is the default because the person sharing the
+    link should not have to think about it."""
+
+    color: str = "random"
+    # Display name for the creator's seat. Ignored for a signed-in caller —
+    # their username is who they are, and letting the body override it would
+    # make the name beside the board unverifiable.
+    name: str | None = None
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str) -> str:
+        if value not in {"white", "black", "random"}:
+            raise ValueError("color must be 'white', 'black' or 'random'")
+        return value
+
+
+class LiveJoin(BaseModel):
+    name: str | None = None
+
+
+class LiveSeatOut(BaseModel):
+    """One side of the board as everyone may see it — never the seat token,
+    which is the credential for moving as that side."""
+
+    name: str | None
+    # Somebody has taken this seat (the link is only joinable while a seat has
+    # not been).
+    seated: bool
+    # A socket for this seat is open right now. Presence, not membership: a
+    # player who closes the tab keeps their seat and can come back to it.
+    present: bool
+    # Whether this side's moves will be saved and analyzed when the game ends.
+    saves: bool
+
+
+class LiveStateOut(BaseModel):
+    """The whole live game, as sent on connect and after every change."""
+
+    token: str
+    status: str  # "waiting" | "playing" | "finished"
+    result: str
+    end_reason: str | None
+    moves: list[str]  # UCI, in order
+    fen: str
+    turn: str  # "white" | "black"
+    white: LiveSeatOut
+    black: LiveSeatOut
+    # A seat is still open, so this link can still be taken up.
+    joinable: bool
+    # Set on the response to whoever has a seat — never broadcast.
+    draw_offer_from: str | None = None
+
+
+class LiveSeated(BaseModel):
+    """POST /live and POST /live/{token}/join: the seat credential, plus the
+    state so the client can render without a second round trip."""
+
+    token: str
+    seat: str
+    color: str
+    state: LiveStateOut
+
+
 class SideCpl(BaseModel):
     """One side's review-table row: average centipawn loss plus counts of
     the flagged classifications."""

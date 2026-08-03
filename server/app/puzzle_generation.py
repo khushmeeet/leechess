@@ -16,6 +16,7 @@ import itertools
 
 import chess
 
+from app.cpl import player_moves
 from app.models import Game, Move, Puzzle
 from app.motifs import FLAGGED_CLASSIFICATIONS, detect_motifs
 
@@ -48,10 +49,18 @@ def create_puzzles_for_game(game: Game) -> list[Puzzle]:
     """Create the missing puzzle rows for an analyzed game's flagged moves.
     Idempotent: moves that already have a puzzle are skipped, so re-runs
     (practice endpoint, backfill script) never duplicate. As in the tagger,
-    move N+1's stored best_move is the best reply to move N."""
+    move N+1's stored best_move is the best reply to move N.
+
+    Only the owner's own moves are drilled. The queue is "your own missed
+    tactics" (spec §5), and a game with somebody on the other side of it — the
+    engine, or a friend online — has half its blunders belonging to them.
+    Local pass-and-play is the one mode where every move is yours, and
+    `player_moves` already knows the difference.
+    """
+    mine = {move.ply for move in player_moves(game)}
     created: list[Puzzle] = []
     for move, reply in itertools.zip_longest(game.moves, game.moves[1:]):
-        if move.puzzles:
+        if move.puzzles or move.ply not in mine:
             continue
         puzzle = puzzle_for_move(move, reply.best_move if reply else None)
         if puzzle is not None:
