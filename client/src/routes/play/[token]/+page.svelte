@@ -9,12 +9,11 @@
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import Board from '$lib/components/Board.svelte';
-	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import EvalBar from '$lib/components/EvalBar.svelte';
 	import HoldButton from '$lib/components/HoldButton.svelte';
 	import logo from '$lib/assets/logo.svg';
 	import { liveGameLink } from '$lib/api/live';
-	import { classifyMove, clampEval, type Classification } from '$lib/classification';
+	import { clampEval } from '$lib/classification';
 	import { gameOutcome } from '$lib/result';
 	import { rise } from '$lib/transitions';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
@@ -35,34 +34,28 @@
 		return () => live.close();
 	});
 
-	// ── The optional engine extras ─────────────────────────────────────────
-	// Off unless Settings says otherwise, and never shown to a spectator.
-	// Both of these run Stockfish locally on the live position, which is why
-	// they are opt-in and why the Settings copy says what they are.
+	// ── The optional eval bar ──────────────────────────────────────────────
+	// Off unless Settings says otherwise, and never shown to a spectator. It
+	// runs Stockfish locally on the live position, which is why it is opt-in
+	// and why the Settings copy says what it is.
 
-	const wantsEngine = $derived(
-		!live.isSpectator && (displayPrefs.friendEvalBar || displayPrefs.friendBadges)
-	);
+	const wantsEngine = $derived(!live.isSpectator && displayPrefs.friendEvalBar);
 
 	let currentEval = $state<number | null>(null);
-	let badges = $state<(Classification | null)[]>([]);
-	/** Serializes engine work: one WASM engine, and each eval is the next
-	 * move's baseline. Same shape as PlaySession's chain, minus the opponent. */
+	/** Serializes engine work: one WASM engine, one search at a time. Same
+	 * shape as PlaySession's chain, minus the opponent. */
 	let chain: Promise<void> = Promise.resolve();
-	let baseline = 0;
 	let evaluatedPlies = 0;
 	let warmed = false;
 
 	function evaluatePosition() {
 		if (!wantsEngine) return;
 		const ply = game.moves.length;
-		if (ply === evaluatedPlies) return;
 		// A takeback cannot happen here, so the move list only ever grows —
-		// but a reconnect can replay it wholesale, so re-baseline rather than
-		// assuming the last eval still describes the previous position.
-		const rewound = ply < evaluatedPlies;
+		// but a reconnect can replay it wholesale, which lands on the same
+		// count and needs no second search.
+		if (ply === evaluatedPlies) return;
 		evaluatedPlies = ply;
-		const move = game.moves.at(-1);
 		const fen = game.fen;
 		chain = chain
 			.then(async () => {
@@ -71,39 +64,16 @@
 					warmed = true;
 				}
 				if (game.fen !== fen) return; // a move landed mid-search
-				const before = baseline;
 				const result = await stockfish.evaluate(fen, 14, 1);
 				if (game.fen !== fen) return;
-				const after =
+				currentEval =
 					result.mate !== undefined
 						? result.mate > 0
 							? clampEval(Infinity)
 							: clampEval(-Infinity)
 						: clampEval(result.cp ?? 0);
-				baseline = after;
-				currentEval = after;
-				// Only your own moves get a badge: the point is what *you*
-				// played, and grading your opponent live would be a running
-				// commentary on their game that they never asked for.
-				if (
-					displayPrefs.friendBadges &&
-					move &&
-					!rewound &&
-					moverColor(move.fenBefore) === live.color
-				) {
-					badges[move.ply - 1] = classifyMove(
-						before,
-						after,
-						moverColor(move.fenBefore) === 'white',
-						false
-					);
-				}
 			})
 			.catch((error) => console.error('friend-game eval:', error));
-	}
-
-	function moverColor(fenBefore: string): 'white' | 'black' {
-		return fenBefore.split(' ')[1] === 'b' ? 'black' : 'white';
 	}
 
 	$effect(() => {
@@ -175,17 +145,15 @@
 		}
 	}
 
+	// Plain SANs: the ply numbers were here to index the badge each move
+	// carried, and nothing else in the list ever asked which ply it was.
 	const movePairs = $derived.by(() => {
-		const pairs: {
-			number: number;
-			white: { san: string; ply: number };
-			black?: { san: string; ply: number };
-		}[] = [];
+		const pairs: { number: number; white: string; black?: string }[] = [];
 		for (let i = 0; i < game.moves.length; i += 2) {
 			pairs.push({
 				number: i / 2 + 1,
-				white: { san: game.moves[i].san, ply: i + 1 },
-				black: game.moves[i + 1] ? { san: game.moves[i + 1].san, ply: i + 2 } : undefined
+				white: game.moves[i].san,
+				black: game.moves[i + 1]?.san
 			});
 		}
 		return pairs;
@@ -482,14 +450,7 @@
 									<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
 										<span class="text-faint">{pair.number}.</span>
 										{#each [pair.white, pair.black] as half, i (i)}
-											<span class="flex items-center gap-1.5">
-												{#if half}
-													{half.san}
-													{#if badges[half.ply - 1]}
-														<ClassificationBadge classification={badges[half.ply - 1]!} />
-													{/if}
-												{/if}
-											</span>
+											<span>{half ?? ''}</span>
 										{/each}
 									</li>
 								{/each}
