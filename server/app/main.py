@@ -20,7 +20,8 @@ from app.auth.schemas import UserRead, UserUpdate
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
 from app.legacy_ownership import claim_legacy_rows
-from app.routers import endgames, games, progress, puzzles, testing, wikibook
+from app.live import sweep_abandoned
+from app.routers import endgames, games, live, progress, puzzles, testing, wikibook
 from app.seeding import maybe_autoseed
 
 
@@ -40,6 +41,10 @@ async def lifespan(app: FastAPI):
     # is already there (a restart after signing up), hand it over; otherwise
     # the same call runs again when that account is created.
     claim_legacy_rows()
+    # Friend games are ephemeral: the ones worth keeping were already forked
+    # into Game rows when they ended, so what is left is links nobody took up
+    # and boards both players walked away from.
+    sweep_abandoned()
     yield
 
 
@@ -224,6 +229,7 @@ app.include_router(
 )
 
 app.include_router(games.router)
+app.include_router(live.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
 app.include_router(endgames.router)

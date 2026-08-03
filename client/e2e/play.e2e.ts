@@ -13,7 +13,7 @@ test('toggling the eval bar does not resize the board', async ({ page }) => {
 	expect(sizeBefore).not.toBeNull();
 
 	await page.getByTestId('settings-button').click();
-	await page.getByTestId('settings-menu').getByLabel('Eval bar').check();
+	await page.getByTestId('eval-bar-toggle').check();
 	await expect(page.getByTestId('eval-bar')).toBeVisible();
 
 	const sizeAfter = await board.boundingBox();

@@ -2,6 +2,12 @@
 // in production FastAPI serves this SPA, so requests are same-origin.
 const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
+/** Where the backend is, for the one caller that needs more than `request`:
+ * friend games open a WebSocket, and its URL has to come from the same place
+ * as every other call or the dev split (:5173 → :8000) and a deploy would
+ * disagree about where the server is. Empty string means same-origin. */
+export const API_BASE = BASE;
+
 export interface GameSummary {
 	id: number;
 	/** What the app calls this game — "game #3" — counted per account, in the
@@ -115,7 +121,7 @@ function detailFrom(body: string): string | null {
 	}
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`${BASE}${path}`, {
 		headers: { 'Content-Type': 'application/json' },
 		// The session lives in an httpOnly cookie, which the browser withholds

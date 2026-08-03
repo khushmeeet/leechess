@@ -66,6 +66,72 @@ class Game(Base):
     )
 
 
+class LiveGame(Base):
+    """One friend game in progress: two people, one link, no accounts required.
+
+    Deliberately not a `Game` row. A Game belongs to exactly one account —
+    every router filters on `user_id`, and Review, Puzzles and Progress are
+    built on that being true. A live game has two sides that may belong to two
+    accounts, one, or none at all, so it is kept apart until it ends: on
+    completion it is *forked* into an ordinary Game per signed-in seat (see
+    app/live.py), each with its own `user_color`, and everything downstream
+    carries on knowing nothing about the second player.
+
+    The move list is a column rather than Move rows. Nothing analyzes a game
+    while it is being played, so the live path is one row to read and one row
+    to write per move — and a reconnect (or a machine restart, which fly.toml
+    permits between moves) rebuilds the whole position from this one string.
+    """
+
+    __tablename__ = "live_games"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # What the shared link carries, and the only thing needed to watch a game.
+    # Unguessable rather than sequential: the link is the invitation, so a
+    # crawlable id would be an open door onto somebody else's board.
+    token: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    # Seat credentials. Whoever holds one may move for that side; NULL means
+    # the seat is still open, which is what makes the link joinable. Not an
+    # account: the whole point is that a friend can play without one, so the
+    # seat token is the identity and the browser keeps it in localStorage.
+    white_seat: Mapped[str | None] = mapped_column(String, nullable=True)
+    black_seat: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Set only when the person in that seat happened to be signed in. This is
+    # the whole rule for what gets saved: a seat with an account gets a Game
+    # row and an analysis at the end, a seat without one gets nothing.
+    white_user_id: Mapped[UserId | None] = _owner_column()
+    black_user_id: Mapped[UserId | None] = _owner_column()
+    white_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    black_name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Space-separated UCI, in order. The position is always derived from this
+    # by replaying, never stored alongside it — one source of truth, and the
+    # replay doubles as a check on it.
+    moves_uci: Mapped[str] = mapped_column(Text, default="")
+    # "waiting" (a seat is open) → "playing" → "finished".
+    status: Mapped[str] = mapped_column(String, default="waiting")
+    result: Mapped[str] = mapped_column(String, default="*")
+    # How it ended — "checkmate", "stalemate", "draw", "resignation",
+    # "agreement". Shown to both players; not used for anything else.
+    end_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # The forked Game rows, once there are any. Kept so a player who refreshes
+    # after the final move is still told where their review is.
+    white_game_id: Mapped[int | None] = mapped_column(
+        ForeignKey("games.id"), nullable=True
+    )
+    black_game_id: Mapped[int | None] = mapped_column(
+        ForeignKey("games.id"), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # Bumped on every move and every join — what the abandoned-game sweep in
+    # app/live.py reads, since a game nobody ever came back to has no other
+    # way of saying so.
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Move(Base):
     __tablename__ = "moves"
 

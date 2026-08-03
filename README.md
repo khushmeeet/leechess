@@ -83,6 +83,49 @@ themselves — nothing played anonymously will ever arrive there. Signing up
 mid-game keeps the game on the board: the play screen is remounted on the way
 back from the welcome screen and syncs the whole move list at once.
 
+## Playing a friend
+
+One link, no lobby: "Play with a friend" (welcome screen, or Settings) opens a
+game and hands you a `/play/<token>` URL. Whoever opens it first takes the
+other seat and the game starts; anyone after that watches. Neither side needs
+an account, and the person you send it to is never asked for anything.
+
+Moves run over a WebSocket (`/live/{token}/ws`) with the server authoritative
+for legality, turn order and the result — a seat token, kept in localStorage,
+is what authorizes a move, never the session cookie. Connections live in a
+module-level dict in `app/live.py`, which is right for one machine and one
+uvicorn worker and would silently split two players apart on a second of
+either; the database is the source of truth, so a dropped socket reconnects by
+replaying the move list and needs no catch-up path.
+
+**What is kept depends on the seat, not the game.** A live game is its own
+`live_games` row, never a `Game`. When it ends it is forked into an ordinary
+`Game` per *signed-in* seat, each with its own `user_color` — so Review,
+Puzzles, Progress and the analysis job carry on knowing nothing about a second
+player. A seat with no account gets the game and nothing else, which is the
+same bargain "Play now" already makes. Two accounts means two rows and two
+analyses of the same moves.
+
+A friend game is a bare board. The coach line, the ideas row and the hint
+ladder are absent rather than hidden: all three read out what Stockfish would
+play, and beside a live opponent that is not a display preference. The eval
+bar, the live badges and the move list are toggles of their own under
+Settings → Play with a friend, defaulting to a board and a move list.
+
+**If your opponent walks off**, you can claim the game rather than resign to
+an empty chair. The waits follow Lichess: 10 seconds when they left on purpose
+(a closed tab sends a clean close frame), 40 when the connection dropped on
+its own, since that usually comes back by itself. Both are overridable via
+`LEECHESS_LEAVE_GRACE` / `LEECHESS_DISCONNECT_GRACE`, which is how the browser
+suite drives the flow in a second. There is no scaling by material and no
+penalty for repeat offenders — those protect a rating ladder, and there isn't
+one here. A game with no moves cannot be claimed at all: an unplayed game is
+aborted rather than won, which is what the sweep does with it.
+
+Untouched live games are swept after two days (`app/live.py`), on startup —
+but a game with moves in it is forked to its signed-in seats first. Both
+players walking away is not a reason to destroy what they played.
+
 Guests used to be passwordless rows in `users` with an `is_guest` flag, upgraded
 in place by `POST /auth/upgrade`. Both endpoints and the column are gone; the
 migration in `app/main.py` drops it, and any rows left behind are ordinary

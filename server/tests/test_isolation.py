@@ -11,7 +11,13 @@ from sqlalchemy import select
 
 from app import db as app_db
 from app.models import EndgameDrill, Game
-from tests.conftest import DEV_DB, LIFESPAN_SESSION_FACTORIES, _TEST_DB_DIR
+from tests.conftest import (
+    DEV_DB,
+    LIFESPAN_SESSION_FACTORIES,
+    REDIRECTED_SESSION_FACTORIES,
+    REQUEST_SCOPE_SESSION_FACTORIES,
+    _TEST_DB_DIR,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -26,7 +32,7 @@ def test_configured_database_is_the_throwaway_one():
 
 
 def test_lifespan_fixture_redirects_every_listed_factory(lifespan_sessions):
-    for target in LIFESPAN_SESSION_FACTORIES:
+    for target in REDIRECTED_SESSION_FACTORIES:
         module_path, attribute = target.rsplit(".", 1)
         module = __import__(module_path, fromlist=[attribute])
         assert getattr(module, attribute) is lifespan_sessions, target
@@ -70,6 +76,33 @@ def test_every_lifespan_service_with_a_session_factory_is_redirected():
         "the lifespan calls into a module with its own session_factory that "
         "tests/conftest.py does not redirect (or lists one it no longer calls): "
         f"{with_factories ^ covered}"
+    )
+
+
+def test_every_router_with_its_own_session_factory_is_redirected():
+    """The same exact-set guard, for the routers.
+
+    A router normally takes its session from `get_db`, which the client
+    fixture overrides — so a router owning a module-level `session_factory` is
+    saying it has a code path that cannot (a WebSocket handler, which outlives
+    the request scope the override belongs to). Those have to be redirected by
+    hand, and the one that isn't would write to the configured database while
+    every other assertion in its test read the throwaway one.
+    """
+    import importlib
+    import pkgutil
+
+    import app.routers
+
+    with_factories = set()
+    for info in pkgutil.iter_modules(app.routers.__path__):
+        name = f"app.routers.{info.name}"
+        if hasattr(importlib.import_module(name), "session_factory"):
+            with_factories.add(name)
+    covered = {target.rsplit(".", 1)[0] for target in REQUEST_SCOPE_SESSION_FACTORIES}
+    assert with_factories == covered, (
+        "a router owns a session_factory that tests/conftest.py does not "
+        f"redirect (or lists one that no longer has one): {with_factories ^ covered}"
     )
 
 

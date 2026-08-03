@@ -39,10 +39,21 @@ def move_loss(move: EvaluatedMove) -> float | None:
     )
 
 
+# Modes where the game had a second player and only one side is the
+# student's. Local pass-and-play is the exception the other way round: both
+# sides were the same person, so both count.
+TWO_SIDED_MODES = {"engine", "online"}
+
+
 def player_moves(game: Game) -> list[Move]:
-    """The student's moves: vs the engine only the side you played
-    (user_color) counts; local pass-and-play counts both sides."""
-    if game.mode == "engine":
+    """The student's moves: vs the engine, or vs a friend online, only the
+    side you played (user_color) counts; local pass-and-play counts both.
+
+    Getting this wrong is not a rounding error — it would average an
+    opponent's blunders into your own centipawn loss and chart them as your
+    progress.
+    """
+    if game.mode in TWO_SIDED_MODES:
         # `or "white"` covers unflushed rows where the column default has
         # not been applied yet
         user_parity = 1 if (game.user_color or "white") == "white" else 0

@@ -37,6 +37,19 @@ LIFESPAN_SESSION_FACTORIES = (
     "app.seeding.session_factory",
     "app.endgame_drills.session_factory",
     "app.legacy_ownership.session_factory",
+    "app.live.session_factory",
+)
+
+# The same redirect, for a different reason. These are not lifespan services —
+# they are handlers that run inside a request but cannot take their session
+# from the `get_db` override, because a WebSocket outlives the request scope
+# that override belongs to. Kept in their own tuple so the exact-set guard in
+# test_isolation.py keeps meaning what it says: that one is about what the
+# lifespan reaches, and a socket handler is not it.
+REQUEST_SCOPE_SESSION_FACTORIES = ("app.routers.live.session_factory",)
+
+REDIRECTED_SESSION_FACTORIES = (
+    LIFESPAN_SESSION_FACTORIES + REQUEST_SCOPE_SESSION_FACTORIES
 )
 
 
@@ -155,7 +168,7 @@ def lifespan_sessions(db_engine, monkeypatch):
     engine and hand back the factory, for tests that enter the app lifespan
     themselves instead of going through the `client` fixture."""
     TestSession = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
-    for target in LIFESPAN_SESSION_FACTORIES:
+    for target in REDIRECTED_SESSION_FACTORIES:
         monkeypatch.setattr(target, TestSession)
     return TestSession
 

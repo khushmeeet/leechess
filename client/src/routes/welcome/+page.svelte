@@ -9,6 +9,7 @@
 	import { resolve } from '$app/paths';
 	import logo from '$lib/assets/logo.svg';
 	import { authErrorMessage } from '$lib/auth/messages';
+	import { openFriendGame } from '$lib/stores/live.svelte';
 	import { ANONYMOUS_NAME, session } from '$lib/stores/session.svelte';
 
 	type Mode = 'choose' | 'signup' | 'signin';
@@ -23,11 +24,13 @@
 	let password = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
+	let friendBusy = $state(false);
+	let friendError = $state<string | null>(null);
 
 	const loop = [
 		{
 			title: 'Play',
-			body: 'Stockfish at one of five strengths, or pass-and-play. Every move is classified as you make it — Best through Blunder — and a live hint ladder nudges before it tells.'
+			body: 'Stockfish at one of five strengths, or a friend over a shared link. Against the engine, every move is classified as you make it — Best through Blunder — and a live hint ladder nudges before it tells. Against a friend, none of that: a board and nothing else.'
 		},
 		{
 			title: 'Review',
@@ -63,6 +66,27 @@
 	function startPlaying() {
 		session.playAnonymously();
 		goto(resolve('/'));
+	}
+
+	/** Open a friend game and go to it, where the link to send is waiting.
+	 *
+	 * Admits an unknown visitor anonymously on the way, the same as "Play now"
+	 * does: a friend game keeps nothing for a player without an account, so
+	 * there is nothing here an account is needed for. Signing in later is
+	 * still what turns a finished game into a review. */
+	async function playWithFriend() {
+		if (friendBusy) return;
+		friendBusy = true;
+		friendError = null;
+		try {
+			const token = await openFriendGame();
+			if (!session.admitted) session.playAnonymously();
+			await goto(resolve('/play/[token]', { token }));
+		} catch {
+			friendError = 'Could not start a game just now. Try again in a moment.';
+		} finally {
+			friendBusy = false;
+		}
 	}
 
 	async function submit(event: SubmitEvent) {
@@ -119,6 +143,20 @@
 						     them the same button is the way back out of it. -->
 						{session.anonymous ? 'Back to the board' : 'Play now'}
 					</button>
+					<button
+						type="button"
+						onclick={playWithFriend}
+						disabled={friendBusy}
+						data-testid="welcome-play-friend"
+						class="rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"
+					>
+						{friendBusy ? 'Starting a game…' : 'Play with a friend'}
+					</button>
+					{#if friendError}
+						<p class="text-xs text-err" role="alert" data-testid="welcome-friend-error">
+							{friendError}
+						</p>
+					{/if}
 					<div class="flex gap-2 text-sm">
 						<button
 							type="button"
@@ -224,7 +262,7 @@
 				{/each}
 			</div>
 			<p class="mt-3 text-xs text-muted">
-				Single player. No matchmaking, no rating ladder, nothing shared with anyone.
+				No matchmaking and no rating ladder — the only way to play someone is to send them a link.
 			</p>
 		</div>
 	</div>
