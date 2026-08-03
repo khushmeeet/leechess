@@ -20,7 +20,7 @@ export function authErrorMessage(error: unknown): string {
 		case 'PASSWORD_INVALID':
 			return 'Passwords need to be at least 8 characters.';
 		case 'LOGIN_BAD_CREDENTIALS':
-			return "That name and password don't match.";
+			return "Username and password don't match.";
 		case 'TOO_MANY_ATTEMPTS':
 			return 'Too many attempts. Wait a few minutes and try again.';
 		case 'ALREADY_REGISTERED':
