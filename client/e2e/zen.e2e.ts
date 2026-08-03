@@ -42,7 +42,7 @@ async function tapBesideBoard(page: Page) {
 test('zen leaves the board and nothing else', async ({ page }) => {
 	await page.goto('/');
 	await page.getByTestId('settings-button').click();
-	await page.getByTestId('settings-menu').getByLabel('Eval bar').check();
+	await page.getByTestId('eval-bar-toggle').check();
 	await expect(page.getByTestId('eval-bar')).toBeVisible();
 	await page.getByTestId('settings-menu').getByLabel('Zen mode').click();
 	await expect(page.getByTestId('zen-stage')).toBeVisible();

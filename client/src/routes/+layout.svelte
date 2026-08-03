@@ -23,6 +23,13 @@
 	const welcome = resolve('/welcome');
 	const onWelcome = $derived(page.url.pathname === welcome);
 
+	// A friend game's link has to work for someone who has never been here.
+	// They are not signed in and have not chosen to play anonymously — they
+	// clicked a link — so the guard below would send them to a sign-up form
+	// instead of the board they were invited to. The screen admits them
+	// anonymously once it mounts; this is what lets it get that far.
+	const onInvite = $derived(page.url.pathname.startsWith('/play/'));
+
 	// Zen belongs to Play alone. The nav is the only way off a screen, so
 	// hiding it anywhere the board isn't the whole point would strand the
 	// visitor — and Play is the one screen that carries its own way out.
@@ -47,7 +54,7 @@
 	// end.
 	$effect(() => {
 		if (!session.ready) return;
-		if (!session.admitted && !onWelcome) goto(welcome, { replaceState: true });
+		if (!session.admitted && !onWelcome && !onInvite) goto(welcome, { replaceState: true });
 		else if (session.authenticated && onWelcome) goto(resolve('/'), { replaceState: true });
 	});
 </script>

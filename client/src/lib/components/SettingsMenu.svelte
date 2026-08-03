@@ -1,8 +1,10 @@
 <script lang="ts">
 	// Board look picker, opened from the gear in the nav. Palette and piece
 	// set apply to every Board live and persist via boardPrefs.
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { BOARD_THEMES, PIECE_SETS, themeSwatch } from '$lib/boardThemes';
+	import { openFriendGame } from '$lib/stores/live.svelte';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
 	import { soundPrefs } from '$lib/stores/soundPrefs.svelte';
@@ -19,8 +21,28 @@
 	let open = $state(false);
 	let root = $state<HTMLElement>();
 	let renameError = $state<string | null>(null);
+	let friendBusy = $state(false);
+	let friendError = $state<string | null>(null);
 
 	const welcome = resolve('/welcome');
+
+	/** Open a friend game and go to it. The link to send is on that screen —
+	 * putting it behind one button rather than a dialog is the whole point:
+	 * share the link, start playing. */
+	async function playWithFriend() {
+		if (friendBusy) return;
+		friendBusy = true;
+		friendError = null;
+		try {
+			const token = await openFriendGame();
+			close();
+			await goto(resolve('/play/[token]', { token }));
+		} catch {
+			friendError = 'Could not start a game just now. Try again in a moment.';
+		} finally {
+			friendBusy = false;
+		}
+	}
 
 	/** The username is the login identifier now, so a rename can be refused —
 	 * taken, or the wrong shape. Reverts the field to the server's answer so
@@ -129,6 +151,68 @@
 			</button>
 
 			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Play with a friend
+			</h2>
+			<button
+				type="button"
+				onclick={playWithFriend}
+				disabled={friendBusy}
+				data-testid="settings-play-friend"
+				class="w-full rounded-xs border border-accent-line px-2 py-1 text-center text-sm text-accent hover:bg-accent-soft disabled:opacity-50"
+			>
+				{friendBusy ? 'Starting…' : 'Start a game'}
+			</button>
+			<p class="mt-1 text-[11px] text-muted">
+				You get a link. Whoever opens it first plays the other side — no account needed, on either
+				end.
+			</p>
+			{#if friendError}
+				<p class="mt-1 text-[11px] text-err" role="alert" data-testid="settings-friend-error">
+					{friendError}
+				</p>
+			{/if}
+			<!-- The coach and the ideas row are absent here on purpose, and it is
+			     not an oversight worth "fixing": both say what Stockfish would
+			     play, which beside a live opponent is not a display preference.
+			     What is left is furniture, and it starts out of the way. -->
+			<div class="mt-2 flex flex-col gap-1.5 text-sm">
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Move list</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.friendMoveList}
+						onchange={(event) => displayPrefs.setFriendMoveList(event.currentTarget.checked)}
+						data-testid="friend-move-list-toggle"
+						class="h-4 w-4"
+					/>
+				</label>
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Eval bar</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.friendEvalBar}
+						onchange={(event) => displayPrefs.setFriendEvalBar(event.currentTarget.checked)}
+						data-testid="friend-eval-bar-toggle"
+						class="h-4 w-4"
+					/>
+				</label>
+				<label class="flex items-center justify-between gap-2">
+					<span class="text-ink">Move badges</span>
+					<input
+						type="checkbox"
+						checked={displayPrefs.friendBadges}
+						onchange={(event) => displayPrefs.setFriendBadges(event.currentTarget.checked)}
+						data-testid="friend-badges-toggle"
+						class="h-4 w-4"
+					/>
+				</label>
+				<p class="text-[11px] text-muted">
+					The eval bar and the badges run Stockfish on the live position. They are yours alone, and
+					your opponent is not told — so switch them on knowing what that is.
+				</p>
+			</div>
+
+			<h2 class="mt-4 mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
 				Theme
 			</h2>
 			<div
@@ -221,12 +305,15 @@
 					Play with the board alone — no nav, no panels. Tap beside the board for Resign, New game
 					and the way out.
 				</p>
+				<!-- Friend games have an eval bar of their own, a few sections up,
+				     so "Eval bar" alone no longer picks one out — hence the ids. -->
 				<label class="flex items-center justify-between gap-2">
 					<span class="text-ink">Eval bar</span>
 					<input
 						type="checkbox"
 						checked={displayPrefs.showEvalBar}
 						onchange={(event) => displayPrefs.setEvalBar(event.currentTarget.checked)}
+						data-testid="eval-bar-toggle"
 						class="h-4 w-4"
 					/>
 				</label>

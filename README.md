@@ -83,6 +83,37 @@ themselves — nothing played anonymously will ever arrive there. Signing up
 mid-game keeps the game on the board: the play screen is remounted on the way
 back from the welcome screen and syncs the whole move list at once.
 
+## Playing a friend
+
+One link, no lobby: "Play with a friend" (welcome screen, or Settings) opens a
+game and hands you a `/play/<token>` URL. Whoever opens it first takes the
+other seat and the game starts; anyone after that watches. Neither side needs
+an account, and the person you send it to is never asked for anything.
+
+Moves run over a WebSocket (`/live/{token}/ws`) with the server authoritative
+for legality, turn order and the result — a seat token, kept in localStorage,
+is what authorizes a move, never the session cookie. Connections live in a
+module-level dict in `app/live.py`, which is right for one machine and one
+uvicorn worker and would silently split two players apart on a second of
+either; the database is the source of truth, so a dropped socket reconnects by
+replaying the move list and needs no catch-up path.
+
+**What is kept depends on the seat, not the game.** A live game is its own
+`live_games` row, never a `Game`. When it ends it is forked into an ordinary
+`Game` per *signed-in* seat, each with its own `user_color` — so Review,
+Puzzles, Progress and the analysis job carry on knowing nothing about a second
+player. A seat with no account gets the game and nothing else, which is the
+same bargain "Play now" already makes. Two accounts means two rows and two
+analyses of the same moves.
+
+A friend game is a bare board. The coach line, the ideas row and the hint
+ladder are absent rather than hidden: all three read out what Stockfish would
+play, and beside a live opponent that is not a display preference. The eval
+bar, the live badges and the move list are toggles of their own under
+Settings → Play with a friend, defaulting to a board and a move list.
+
+Untouched live games are swept after two days (`app/live.py`), on startup.
+
 Guests used to be passwordless rows in `users` with an `is_guest` flag, upgraded
 in place by `POST /auth/upgrade`. Both endpoints and the column are gone; the
 migration in `app/main.py` drops it, and any rows left behind are ordinary
