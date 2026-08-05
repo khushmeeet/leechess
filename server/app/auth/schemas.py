@@ -23,6 +23,14 @@ class UserUpdate(schemas.BaseUserUpdate):
     # only accepted value is null. Sending an address is a 422 rather than a
     # silently ignored field.
     email: None = None
+    # Required alongside `password`, and meaningless without it. The inherited
+    # `password` field is what makes PATCH /users/me a password-change route,
+    # and until this existed it was one that asked for no proof: anyone holding
+    # the session cookie could set a new password, and since leechess has no
+    # reset, the owner lost the account outright. Checked in
+    # app/auth/manager.py::_update, which is the one place every caller of this
+    # schema goes through.
+    current_password: str | None = None
 
 
 class UserCreate(BaseModel):

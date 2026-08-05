@@ -9,6 +9,7 @@ import {
 	type AccountUser
 } from '$lib/api/client';
 import { clearActiveGame } from './gamePersistence';
+import { clearAllSeats } from './liveSeat';
 
 /** Pre-accounts, the player's name lived here and nowhere else. Read once on
  * first boot so an existing player finds their name already filled in on the
@@ -146,6 +147,15 @@ class Session {
 		// on a browser that played anonymously earlier would land back in it.
 		this.stopPlayingAnonymously();
 		this.startFresh();
+		// Friend-game seats go too. Each is a bearer credential for one side of
+		// a board — whoever holds it may move as that side, with no account
+		// behind it and no expiry — so leaving them behind hands the next
+		// person at a shared browser every game the last one was playing.
+		//
+		// Only here, deliberately: signing *in* is the same person, and someone
+		// who signs up from the nav mid-game would otherwise be demoted to a
+		// spectator in the game they are in the middle of.
+		clearAllSeats();
 		if (!this.authenticated) return;
 		try {
 			await logout();

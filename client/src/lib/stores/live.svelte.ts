@@ -3,6 +3,7 @@ import {
 	createLiveGame,
 	getLiveGame,
 	joinLiveGame,
+	liveSocketProtocols,
 	liveSocketUrl,
 	type LiveSeat,
 	type LiveState
@@ -153,7 +154,10 @@ export class LiveSession {
 
 	private connect(): void {
 		if (this.closed) return;
-		const socket = new WebSocket(liveSocketUrl(this.token, this.seat));
+		// The seat rides in the subprotocol list, not the URL — see
+		// liveSocketProtocols. An empty list is a spectator, and `new WebSocket`
+		// treats it the same as passing nothing.
+		const socket = new WebSocket(liveSocketUrl(this.token), liveSocketProtocols(this.seat));
 		this.socket = socket;
 
 		socket.onopen = () => {

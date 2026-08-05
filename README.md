@@ -92,7 +92,13 @@ an account, and the person you send it to is never asked for anything.
 
 Moves run over a WebSocket (`/live/{token}/ws`) with the server authoritative
 for legality, turn order and the result — a seat token, kept in localStorage,
-is what authorizes a move, never the session cookie. Connections live in a
+is what authorizes a move, never the session cookie. That token never appears
+in a URL: REST sends it in `X-Live-Seat` and the socket names it as a
+subprotocol (`["leechess.seat", "<token>"]`), because a credential in a query
+string is a credential in every access log and `Referer` that touches it. The
+`?seat=` parameter is still read so a browser holding the previous bundle
+keeps its seat across a deploy. Signing out drops every stored seat.
+Connections live in a
 module-level dict in `app/live.py`, which is right for one machine and one
 uvicorn worker and would silently split two players apart on a second of
 either; the database is the source of truth, so a dropped socket reconnects by
@@ -132,6 +138,15 @@ migration in `app/main.py` drops it, and any rows left behind are ordinary
 accounts that happen to have no password (they cannot sign in — `authenticate`
 already refused a NULL hash).
 
+Changing a password needs the password it replaces (`current_password` on
+`PATCH /users/me`), and doing it ends every session opened before it —
+including the one making the request. Sessions are stateless JWTs, so there is
+no server-side record to delete: each token carries when it was signed and
+each account carries a cutoff (`users.sessions_valid_from`), and a token older
+than the cutoff is refused. Without that, a password changed because a cookie
+was compromised would leave that cookie signed in for the rest of its thirty
+days — and with no reset here, an account taken that way is gone.
+
 Two environment variables:
 
 - `LEECHESS_AUTH_SECRET` — signs the session JWT. The server refuses to boot
@@ -140,6 +155,47 @@ Two environment variables:
 - `LEECHESS_AUTH_COOKIE_SECURE` — `on` unless set to `off`. `make dev` and the
   browser suite turn it off, because a browser will not send a `Secure` cookie
   back over plain-http localhost.
+
+## Limits
+
+Playing a friend, signing up and signing in all work without an account
+already existing, so they are the routes a stranger can reach — and this runs
+on one 512mb machine. Everything below is in-process (`app/rate_limit.py`),
+bounded on both key count and window, and sized for one machine rather than
+for correctness across several; a second worker would need shared state, the
+same caveat `app/live.py` carries about its connection hub.
+
+- **Sign-in** is limited three ways: per address per account (the anti-guessing
+  one), per account across addresses (a high backstop), and per address for
+  *every* attempt regardless of outcome. The last exists because verifying a
+  password is a 64mb argon2 hash paid even for a username that does not exist,
+  so rotating names would otherwise buy unlimited work. The per-account limit
+  is deliberately not the strict one: keyed on the name alone, ten failures
+  from a stranger locked the owner out of their own account.
+- **Hashing itself** is capped at `LEECHESS_PASSWORD_HASH_CONCURRENCY` (2) at
+  once and runs off the event loop, so peak memory is bounded and a sign-in no
+  longer stalls every live game while it hashes.
+- **Sign-up**, **friend-game creation** and **WebSocket messages** are capped
+  per address, per address, and per socket. One game holds a bounded number of
+  sockets, and the process a bounded number overall.
+- **Request bodies** stop at `LEECHESS_MAX_BODY_BYTES` (512kb), refused before
+  they are read rather than after.
+- **Wikibooks lookups** need an account and spend at most four uncached
+  upstream fetches per request; a line fills in over a few visits and is then
+  served from SQLite.
+
+Rate limits key on `request.client.host`, which is only the caller if uvicorn
+trusts the proxy in front of it — hence `--forwarded-allow-ips` in the
+Dockerfile. Without it every request behind Fly's proxy wears the proxy's
+address and every per-caller limit becomes one global bucket.
+
+Responses carry a CSP plus `X-Content-Type-Options`, `Referrer-Policy`,
+`X-Frame-Options` and (when the cookie is `Secure`) HSTS, alongside the
+COOP/COEP pair stockfish.wasm needs. The CSP has to allow inline script —
+app.html sets the theme before first paint and SvelteKit's bootstrap is inline
+and rebuilt each time, so there is no stable hash for a static file server to
+use — but it still forbids foreign script origins, framing, `<base>`
+injection, and `connect-src` anywhere but this origin.
 
 ## Deploy
 

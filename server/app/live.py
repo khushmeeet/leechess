@@ -35,6 +35,7 @@ from starlette.websockets import WebSocket
 
 from app.db import SessionLocal
 from app.models import Game, LiveGame, Move, UserId, utcnow
+from app.pgn import header_value
 
 logger = logging.getLogger(__name__)
 
@@ -267,9 +268,26 @@ def finish(db: Session, game: LiveGame, result: str, reason: str) -> None:
     game.status = "finished"
     game.result = result
     game.end_reason = reason
-    _draw_offers.pop(game.token, None)
+    forget(game.token)
     db.commit()
     fork_into_games(db, game)
+
+
+def forget(token: str) -> None:
+    """Drop the in-memory odds and ends belonging to one game.
+
+    These two dicts are keyed on something an anonymous caller can mint at
+    will (a game token), and nothing used to remove an `_away_since` entry
+    except the player coming *back* — so a game that ended, or one the sweep
+    deleted, left its countdown behind for the life of the process. Small
+    individually; unbounded in aggregate, which on a 512mb machine is the
+    only size that matters.
+
+    Not `_rooms` or `_locks`: those are cleared by leave_room when the last
+    socket goes, and a game that ends still has sockets open on it.
+    """
+    _draw_offers.pop(token, None)
+    _away_since.pop(token, None)
 
 
 # Draw offers live in memory, not in the row: an offer is a moment in a
@@ -479,8 +497,12 @@ def fork_into_games(db: Session, live: LiveGame) -> dict[str, Game]:
 def _pgn_of(board: chess.Board, white: str, black: str, result: str) -> str:
     pgn = chess.pgn.Game.from_board(board)
     pgn.headers["Event"] = "leechess friend game"
-    pgn.headers["White"] = white
-    pgn.headers["Black"] = black
+    # Escaped, because in a friend game one of these names was typed by
+    # somebody with no account into a join form, and python-chess writes header
+    # values through unaltered — a name carrying `"]` and a newline used to
+    # smuggle a forged [Result] into the *other* player's saved game.
+    pgn.headers["White"] = header_value(white, fallback="White")
+    pgn.headers["Black"] = header_value(black, fallback="Black")
     pgn.headers["Result"] = result
     pgn.headers["Date"] = utcnow().strftime("%Y.%m.%d")
     return str(pgn)
@@ -524,6 +546,14 @@ _locks_guard = threading.Lock()
 def lock_for(token: str) -> threading.Lock:
     with _locks_guard:
         return _locks.setdefault(token, threading.Lock())
+
+
+def room_size(token: str) -> int:
+    return len(_rooms.get(token, ()))
+
+
+def total_sockets() -> int:
+    return sum(len(room) for room in _rooms.values())
 
 
 def present_seats(token: str) -> set[str]:
@@ -672,6 +702,7 @@ def sweep_abandoned() -> int:
                 game.end_reason = "abandoned"
                 db.commit()
                 fork_into_games(db, game)
+            forget(game.token)
             db.delete(game)
         db.commit()
         if stale:

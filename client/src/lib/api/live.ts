@@ -65,9 +65,15 @@ export function joinLiveGame(token: string, name?: string): Promise<LiveSeated> 
 	});
 }
 
+/** The seat credential rides in a header, never the URL: a query string is
+ * copied into every access log, proxy log and Referer that touches the
+ * request, and this is the only thing that authorizes a move. */
+export const SEAT_HEADER = 'X-Live-Seat';
+
 export function getLiveGame(token: string, seat?: string | null): Promise<LiveState> {
-	const suffix = seat ? `?seat=${encodeURIComponent(seat)}` : '';
-	return request(`/live/${encodeURIComponent(token)}${suffix}`);
+	return request(`/live/${encodeURIComponent(token)}`, {
+		headers: seat ? { [SEAT_HEADER]: seat } : {}
+	});
 }
 
 /** The socket URL for a game.
@@ -76,13 +82,29 @@ export function getLiveGame(token: string, seat?: string | null): Promise<LiveSt
  * :5173, API on :8000) and a deploy (one origin) both work without a second
  * setting to keep in step. A relative base means same-origin, which is what
  * the deployed build ships — `location` supplies the rest.
+ *
+ * No seat in it. The credential goes in `liveSocketProtocols` instead, for the
+ * reason SEAT_HEADER exists.
  */
-export function liveSocketUrl(token: string, seat?: string | null): string {
+export function liveSocketUrl(token: string): string {
 	const base = API_BASE || (typeof location === 'undefined' ? '' : location.origin);
 	const url = new URL(`/live/${encodeURIComponent(token)}/ws`, base);
 	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-	if (seat) url.searchParams.set('seat', seat);
 	return url.toString();
+}
+
+/** Names the seat credential as a WebSocket subprotocol.
+ *
+ * A browser's WebSocket constructor cannot set headers, and the subprotocol
+ * list is the one part of the handshake it will carry — so this is how the
+ * credential reaches the server without being written into the URL. The server
+ * echoes the first entry back (app/routers/live.py); a spectator offers
+ * nothing and gets a plain socket.
+ */
+export const SEAT_SUBPROTOCOL = 'leechess.seat';
+
+export function liveSocketProtocols(seat?: string | null): string[] {
+	return seat ? [SEAT_SUBPROTOCOL, seat] : [];
 }
 
 /** Where a friend game lives. The whole invitation — nothing else has to be

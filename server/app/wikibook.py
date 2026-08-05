@@ -44,6 +44,13 @@ USER_AGENT = os.environ.get(
 # Theory rarely runs past move 15; cap the walk so a 60-move game never
 # probes 120 pages.
 MAX_PLIES = 30
+# How many of those plies may reach Wikibooks in a single request. The walk is
+# sequential and each fetch has a ten-second timeout, so an uncapped one could
+# hold a worker thread for minutes — forty of those is the whole threadpool,
+# and the threadpool is what serves every other route. Cached plies are free
+# and do not count, so a line somebody is actually reviewing fills in over a
+# few requests and is then instant forever.
+MAX_FETCHES_PER_REQUEST = 4
 # A missing page might get written later — recheck weekly. Found pages are
 # trusted forever.
 MISSING_RECHECK = timedelta(days=7)
@@ -240,21 +247,36 @@ def fetch_page(title: str) -> tuple[str, str] | None:
     return parse["title"], sanitize(parse["text"])
 
 
+def _is_fresh(row: WikibookCache) -> bool:
+    """Whether this cached row can still be served as it stands. Found pages
+    are trusted until the sanitizer moves on; misses are rechecked weekly."""
+    fetched = row.fetched_at
+    if fetched.tzinfo is None:  # SQLite returns naive datetimes
+        fetched = fetched.replace(tzinfo=timezone.utc)
+    if row.html is not None:
+        return row.sanitizer_version == SANITIZER_VERSION  # else re-sanitize
+    return utcnow() - fetched < MISSING_RECHECK
+
+
+def cached(db: Session, sans: list[str]) -> WikibookCache | None:
+    """The row for this prefix if it can be served without going upstream.
+
+    Split out from `lookup` so a caller can tell the two cases apart *before*
+    committing to a ten-second network round trip — which is what lets the
+    router spend a fixed budget of those per request (MAX_FETCHES_PER_REQUEST)
+    while cached plies stay free.
+    """
+    row = db.get(WikibookCache, page_title(sans))
+    return row if row is not None and _is_fresh(row) else None
+
+
 def lookup(db: Session, sans: list[str]) -> WikibookCache:
     """Cached row for one move-sequence prefix, fetching on miss. A row with
     html=None means Wikibooks has no page for this line."""
     path = page_title(sans)
     row = db.get(WikibookCache, path)
     if row is not None:
-        fetched = row.fetched_at
-        if fetched.tzinfo is None:  # SQLite returns naive datetimes
-            fetched = fetched.replace(tzinfo=timezone.utc)
-        fresh = (
-            row.sanitizer_version == SANITIZER_VERSION  # else re-sanitize
-            if row.html is not None
-            else utcnow() - fetched < MISSING_RECHECK
-        )
-        if fresh:
+        if _is_fresh(row):
             return row
         db.delete(row)  # stale negative or outdated sanitize — refetch
         db.flush()
