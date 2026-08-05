@@ -49,3 +49,23 @@ export function saveSeat(token: string, seat: StoredSeat): void {
 export function clearSeat(token: string): void {
 	storage()?.removeItem(PREFIX + token);
 }
+
+/** Drop every seat this browser is holding.
+ *
+ * For signing in and signing out. A seat token is a credential with no expiry
+ * and no account behind it — whoever holds it may move as that side — so
+ * leaving them in storage means the next person at a shared browser inherits
+ * every friend game the last one was playing. `clearActiveGame` has always
+ * done this for the engine game; these keys were simply missed.
+ */
+export function clearAllSeats(): void {
+	const store = storage();
+	if (!store) return;
+	const keys: string[] = [];
+	for (let index = 0; index < store.length; index += 1) {
+		const key = store.key(index);
+		if (key?.startsWith(PREFIX)) keys.push(key);
+	}
+	// Collected first: removing while iterating shifts the indices underneath.
+	for (const key of keys) store.removeItem(key);
+}

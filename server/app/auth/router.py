@@ -13,6 +13,7 @@ from app.auth.backend import (
     current_active_user_optional,
 )
 from app.auth.manager import (
+    CurrentPasswordWrong,
     InvalidUsername,
     UsernameTaken,
     UserManager,
@@ -25,6 +26,7 @@ from app.auth.schemas import (
     UserCreate,
     UserRead,
 )
+from app.rate_limit import client_key
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,6 +47,9 @@ async def register(
     user_manager: UserManager = Depends(get_user_manager),
     strategy: Strategy = Depends(auth_backend.get_strategy),
 ):
+    # The only unauthenticated route that both writes a row and pays for an
+    # argon2 hash, and it had nothing in front of it at all.
+    throttle.check_registration(client_key(request))
     user = await user_manager.create_user(
         payload.username, payload.password, request=request
     )
@@ -58,15 +63,19 @@ async def login(
     user_manager: UserManager = Depends(get_user_manager),
     strategy: Strategy = Depends(auth_backend.get_strategy),
 ):
-    key = canonical(payload.username)
-    throttle.check(key)
+    account = canonical(payload.username)
+    source = client_key(request)
+    # Before the password is verified, so a refused attempt costs no argon2
+    # work — which is the point of the per-source limit rather than an
+    # afterthought of it.
+    throttle.check_login(source, account)
     user = await user_manager.authenticate_username(payload.username, payload.password)
     if user is None or not user.is_active:
-        throttle.record_failure(key)
+        throttle.record_login_failure(source, account)
         # One message for "no such user" and "wrong password" alike: telling
         # them apart is a username oracle and buys the caller nothing.
         raise HTTPException(status_code=400, detail="LOGIN_BAD_CREDENTIALS")
-    throttle.clear(key)
+    throttle.clear_login(source, account)
     await user_manager.on_after_login(user, request)
     return await _signed_in(user, strategy)
 
@@ -116,6 +125,15 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(UsernameTaken)
     async def _username_taken(_request: Request, _exc: UsernameTaken):
         return JSONResponse(status_code=409, content={"detail": "USERNAME_TAKEN"})
+
+    @app.exception_handler(CurrentPasswordWrong)
+    async def _current_password_wrong(_request: Request, _exc: CurrentPasswordWrong):
+        # 403 rather than 400: the request is well formed and the caller is
+        # signed in — what is missing is the authority to do this particular
+        # thing with that session.
+        return JSONResponse(
+            status_code=403, content={"detail": "CURRENT_PASSWORD_WRONG"}
+        )
 
     @app.exception_handler(throttle.TooManyAttempts)
     async def _too_many(_request: Request, exc: throttle.TooManyAttempts):

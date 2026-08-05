@@ -123,13 +123,16 @@ function detailFrom(body: string): string | null {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`${BASE}${path}`, {
-		headers: { 'Content-Type': 'application/json' },
 		// The session lives in an httpOnly cookie, which the browser withholds
 		// by default when the API is a different origin — as it is in dev
 		// (:5173 -> :8000). Without this every request looks signed out there
 		// and works in production, which is the worst way round to find out.
 		credentials: 'include',
-		...init
+		...init,
+		// Merged rather than overwritten by `init`, which spreading alone would
+		// do: a caller adding one header (friend games send the seat credential
+		// in one) would otherwise silently drop the content type off its body.
+		headers: { 'Content-Type': 'application/json', ...init?.headers }
 	});
 	if (!response.ok) {
 		const body = await response.text();

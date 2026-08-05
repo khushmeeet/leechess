@@ -13,14 +13,34 @@ from app.cpl import move_loss
 
 RESULTS = {"1-0", "0-1", "1/2-1/2", "*"}
 
+# Display names end up in PGN tag pairs, which are single-line and quoted.
+# app/pgn.py escapes them at the writer — this rejects the shapes outright so
+# a name nobody could have meant is a 422 rather than something silently
+# mangled on its way into somebody's saved game. Everything a real name needs
+# is allowed; quotes, brackets, backslashes and control characters are not.
+#
+# `{0,24}` rather than `{1,24}`: an explicitly empty name has always meant "no
+# name, show me as my colour", and turning that into a 422 would be a new
+# refusal in the name of a rule about quotes and brackets.
+NAME_PATTERN = r'^[^"\\\[\]\x00-\x1f\x7f]{0,24}$'
+NAME_MAX_LENGTH = 24
+
+# No upload here is legitimately large — the biggest honest body is an
+# imported PGN, and a heavily annotated one still fits many times over. The
+# global ceiling in app/limits.py is the backstop; this is the specific answer.
+MAX_PGN_CHARS = 200_000
+# A real game is a few hundred plies. Well past any of them, and short of the
+# lengths that make the replay loop the expensive part of the request.
+MAX_IMPORTED_PLIES = 1000
+
 
 class GameCreate(BaseModel):
     """Start a live game (no pgn) or import a finished one (pgn set)."""
 
-    pgn: str | None = None
-    mode: str = "local"
-    white: str = "player"
-    black: str = "player"
+    pgn: str | None = Field(default=None, max_length=MAX_PGN_CHARS)
+    mode: str = Field(default="local", max_length=32)
+    white: str = Field(default="player", max_length=NAME_MAX_LENGTH)
+    black: str = Field(default="player", max_length=NAME_MAX_LENGTH)
     # Side the human plays (engine games) — drives progress/summary stats.
     user_color: str = "white"
 
@@ -136,7 +156,7 @@ class LiveCreate(BaseModel):
     # Display name for the creator's seat. Ignored for a signed-in caller —
     # their username is who they are, and letting the body override it would
     # make the name beside the board unverifiable.
-    name: str | None = None
+    name: str | None = Field(default=None, pattern=NAME_PATTERN)
 
     @field_validator("color")
     @classmethod
@@ -147,7 +167,9 @@ class LiveCreate(BaseModel):
 
 
 class LiveJoin(BaseModel):
-    name: str | None = None
+    # Same rules as LiveCreate.name, and this is the one that matters: the
+    # person joining a friend game is the untrusted party in it.
+    name: str | None = Field(default=None, pattern=NAME_PATTERN)
 
 
 class LiveSeatOut(BaseModel):

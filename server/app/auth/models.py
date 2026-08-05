@@ -52,6 +52,17 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # Sessions are stateless JWTs, so there is no server-side record to delete
+    # when they need to stop working. This is the cutoff instead: a token
+    # issued before it is refused (app/auth/backend.py). Changing the password
+    # moves it forward, which is what makes a stolen session end rather than
+    # outlive the theft by up to thirty days.
+    #
+    # Nullable only for rows created before this column existed — NULL means no
+    # cutoff, i.e. exactly the behaviour those sessions already had.
+    sessions_valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=utcnow
+    )
 
     @validates("username")
     def _keep_canonical_in_sync(self, _key: str, value: str) -> str:
