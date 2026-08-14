@@ -125,8 +125,12 @@ def state_of(game: LiveGame, *, seat_color_: str | None = None) -> dict:
         "joinable": game.status == "waiting"
         and (game.white_seat is None or game.black_seat is None),
         # A draw offer is between the two players; a spectator has no part in
-        # it and is not shown one.
+        # it and is not shown one. Same for a rematch: it is the two of them
+        # agreeing to play again, and a watcher is not being asked.
         "draw_offer_from": offer if seat_color_ else None,
+        "rematch_offer_from": (
+            _rematch_offers.get(game.token) if seat_color_ else None
+        ),
         # Seconds until this viewer may claim a game their opponent walked out
         # of; 0 means now, None means there is nothing to claim. Sent as a
         # remaining duration rather than a deadline so the two ends never have
@@ -287,6 +291,7 @@ def forget(token: str) -> None:
     socket goes, and a game that ends still has sockets open on it.
     """
     _draw_offers.pop(token, None)
+    _rematch_offers.pop(token, None)
     _away_since.pop(token, None)
 
 
@@ -316,6 +321,88 @@ def accept_draw(db: Session, game: LiveGame, color: str) -> None:
 def decline_draw(game: LiveGame, color: str) -> None:
     if _draw_offers.get(game.token) not in (None, color):
         _draw_offers.pop(game.token, None)
+
+
+# ── another game on the same link ──────────────────────────────────────────
+#
+# A rematch is the same row played again rather than a new link to send, which
+# is the whole point: the friend already has this one, and asking them to open
+# a second URL after every game is the part that made "play again" feel like
+# starting over.
+#
+# It takes both of them. One player pressing a button must not wipe the other
+# player's board — the result panel is where their saved game's review link
+# is, and they may still be reading it — so the first press is an offer and
+# the second is the agreement, exactly as a draw is. Held in memory beside the
+# draw offers for the same reason: an offer is a moment between two open
+# sockets, not a thing to find still standing after a restart.
+_rematch_offers: dict[str, str] = {}
+
+
+def offer_rematch(db: Session, game: LiveGame, color: str) -> bool:
+    """Ask for another game, or agree to the one being asked for.
+
+    Returns True when this was the second of the two and the board is now
+    reset. One action rather than an offer/accept pair: which one a press
+    means is the server's to work out, and a client that has to be told apart
+    from the other player is a client that can get it wrong.
+    """
+    if game.status != "finished":
+        raise LiveError("This game is not over yet.")
+    if not seated_colors(game):
+        raise LiveError("There is nobody here to play again with.")
+    standing = _rematch_offers.get(game.token)
+    if standing is not None and standing != color:
+        restart(db, game)
+        return True
+    _rematch_offers[game.token] = color
+    return False
+
+
+def decline_rematch(game: LiveGame, color: str) -> None:
+    """Turn down the other player's offer. Declining your own is how the
+    player who asked takes it back, which is the same operation."""
+    _rematch_offers.pop(game.token, None)
+
+
+def seated_colors(game: LiveGame) -> set[str]:
+    return {color for color in COLORS if getattr(game, f"{color}_seat") is not None}
+
+
+def restart(db: Session, game: LiveGame) -> None:
+    """Play the same link again: an empty board, the seats swapped.
+
+    Swapped because the colours have to move. Starting a fresh link handed
+    them out at random each time, so keeping this row's seats where they are
+    would quietly make one player White forever — and a rematch is the one
+    moment where whose turn it is to have White is not a question anybody
+    should have to settle.
+
+    The `{color}_game_id` pair is cleared rather than carried over. Those
+    exist so that forking a finished game twice does not save it twice; the
+    rows they point at belong to their accounts already, saved and analyzed
+    and numbered, and this is a different game that will earn its own.
+    """
+    game.moves_uci = ""
+    game.result = "*"
+    game.end_reason = None
+    game.white_game_id = None
+    game.black_game_id = None
+    for field in ("seat", "user_id", "name"):
+        white = getattr(game, f"white_{field}")
+        setattr(game, f"white_{field}", getattr(game, f"black_{field}"))
+        setattr(game, f"black_{field}", white)
+    # Both seats are held by the two people who just finished a game, so there
+    # is nothing to wait for. A seat that is somehow empty (a game abandoned
+    # before anyone took it) goes back to waiting rather than to a board that
+    # only one side can move on.
+    game.status = "playing" if len(seated_colors(game)) == 2 else "waiting"
+    game.last_activity_at = utcnow()
+    # Every countdown and standing offer belonged to the game that just ended,
+    # including the rematch offer this call is the answer to.
+    forget(game.token)
+    swap_room_colors(game.token)
+    db.commit()
 
 
 # ── the opponent who walked off ────────────────────────────────────────────
@@ -579,6 +666,37 @@ def join_room(token: str, socket: WebSocket, color: str | None) -> None:
     _rooms.setdefault(token, {})[socket] = color
 
 
+def room_color(token: str, socket: WebSocket) -> str | None:
+    """Which side this connection speaks for, right now.
+
+    The room is the authority on that, not the handshake that opened the
+    socket: a rematch moves the seat credentials to the other colour while
+    every socket in the game stays open, so anything holding the colour it
+    resolved at connect is holding a stale one.
+    """
+    return _rooms.get(token, {}).get(socket)
+
+
+def swap_room_colors(token: str) -> None:
+    """Follow a rematch's seat swap in the hub.
+
+    Without this the two players keep the colours they connected as: presence
+    would name the wrong seat, broadcast_per_seat would hand each of them the
+    other one's view of the game, and a move would be applied for the side
+    they used to have.
+    """
+    room = _rooms.get(token)
+    if not room:
+        return
+    # Over a snapshot, and re-checked before each write: this runs in a worker
+    # thread while the loop may be adding or dropping sockets, and a socket
+    # that left in between must not be put back by writing to its key.
+    for socket in list(room):
+        color = room.get(socket)
+        if color is not None and socket in room:
+            room[socket] = "black" if color == "white" else "white"
+
+
 def leave_room(token: str, socket: WebSocket) -> None:
     room = _rooms.get(token)
     if room is None:
@@ -682,6 +800,7 @@ def reset_rooms() -> None:
     with _locks_guard:
         _locks.clear()
     _draw_offers.clear()
+    _rematch_offers.clear()
     _away_since.clear()
 
 

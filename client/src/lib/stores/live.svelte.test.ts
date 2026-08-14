@@ -92,9 +92,21 @@ function state(overrides: Record<string, unknown> = {}) {
 		black: { name: 'Bo', seated: true, present: true, saves: false },
 		joinable: false,
 		draw_offer_from: null,
+		rematch_offer_from: null,
 		claim_wait: null,
 		...overrides
 	};
+}
+
+/** The same game, over — where a rematch starts from. */
+function finished(overrides: Record<string, unknown> = {}) {
+	return state({
+		status: 'finished',
+		result: '1-0',
+		end_reason: 'resignation',
+		moves: ['e2e4', 'e7e5'],
+		...overrides
+	});
 }
 
 /** A connected session holding the white seat, mid-game. */
@@ -278,20 +290,40 @@ describe('reconnecting', () => {
 		}
 	});
 
-	it('does not reconnect after the game is over', async () => {
+	it('stays up after the game is over, so a rematch can still reach it', async () => {
+		// A finished game used to be the end of the socket. The same link can be
+		// played again now, and the other player asking for that arrives over
+		// this connection — so dropping it would leave the offer nowhere to land
+		// and both players pressing a button that did nothing.
 		vi.useFakeTimers();
 		try {
 			const session = await whiteSession();
-			FakeSocket.last!.deliver({
-				type: 'end',
-				reason: 'resignation',
-				state: state({ status: 'finished', result: '1-0', end_reason: 'resignation' })
-			});
+			FakeSocket.last!.deliver({ type: 'end', reason: 'resignation', state: finished() });
+			FakeSocket.last!.close();
+
+			vi.advanceTimersByTime(600);
+
+			expect(session.status).toBe('finished');
+			expect(FakeSocket.opened).toBe(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('gives up on a link that does not exist', async () => {
+		// The one status worth abandoning: a game that was never there, or was
+		// swept, will not start existing on the fifth attempt.
+		vi.useFakeTimers();
+		try {
+			const { ApiError } = await import('$lib/api/client');
+			api.joinLiveGame.mockRejectedValue(new ApiError(404, 'no game with that link'));
+			const session = new LiveSession('tok');
+			await session.start();
 			FakeSocket.last!.close();
 
 			vi.advanceTimersByTime(60_000);
 
-			expect(session.status).toBe('finished');
+			expect(session.status).toBe('gone');
 			expect(FakeSocket.opened).toBe(1);
 		} finally {
 			vi.useRealTimers();
@@ -446,5 +478,122 @@ describe('draws', () => {
 
 		expect(session.game.moves).toEqual([]);
 		expect(FakeSocket.last!.sent).toEqual([]);
+	});
+});
+
+describe('playing the same link again', () => {
+	/** A finished game, from the white seat — where a rematch starts. */
+	async function afterTheGame() {
+		const session = await whiteSession();
+		FakeSocket.last!.deliver({ type: 'end', reason: 'resignation', state: finished() });
+		FakeSocket.last!.deliver({ type: 'saved', game_id: 7, number: 3 });
+		return session;
+	}
+
+	it('asks, and leaves the board alone until the other player answers', async () => {
+		// One press must not clear the other player's result panel — the link to
+		// the game they just had saved is on it, and they may still be reading.
+		const session = await afterTheGame();
+
+		session.offerRematch();
+		FakeSocket.last!.deliver({
+			type: 'rematch-offer',
+			from: 'white',
+			you: 'white',
+			state: finished({ rematch_offer_from: 'white' })
+		});
+
+		expect(FakeSocket.last!.sent).toContainEqual({ type: 'rematch' });
+		expect(session.rematchAsked).toBe(true);
+		expect(session.rematchOffered).toBe(false);
+		expect(session.status).toBe('finished');
+		expect(session.game.moves.map((move) => move.san)).toEqual(['e4', 'e5']);
+	});
+
+	it('shows the other player asking', async () => {
+		const session = await afterTheGame();
+
+		FakeSocket.last!.deliver({
+			type: 'rematch-offer',
+			from: 'black',
+			you: 'white',
+			state: finished({ rematch_offer_from: 'black' })
+		});
+
+		expect(session.rematchOffered).toBe(true);
+		expect(session.rematchAsked).toBe(false);
+	});
+
+	it('starts the next game on the same link, taking the swapped seat', async () => {
+		const session = await afterTheGame();
+		expect(session.saved).not.toBeNull();
+
+		// Both have pressed: the server resets the row and swaps the seats, so
+		// this browser is Black now on the token it already had.
+		FakeSocket.last!.deliver({ type: 'restart', you: 'black', state: state() });
+
+		expect(session.token).toBe('tok');
+		expect(session.color).toBe('black');
+		expect(session.orientation).toBe('black');
+		expect(session.status).toBe('playing');
+		expect(session.game.moves).toEqual([]);
+		expect(session.result).toBe('*');
+		expect(session.rematchOfferFrom).toBeNull();
+		// The previous game's review link belongs to the previous game.
+		expect(session.saved).toBeNull();
+		// And the stored seat follows, or a refresh would come back to the
+		// colour this browser used to hold.
+		expect(seats.saveSeat).toHaveBeenCalledWith('tok', { seat: 'seat-w', color: 'black' });
+	});
+
+	it('will not ask while the game is still being played', async () => {
+		const session = await whiteSession();
+
+		session.offerRematch();
+
+		expect(FakeSocket.last!.sent).not.toContainEqual({ type: 'rematch' });
+	});
+
+	it('lets a spectator neither ask nor answer', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		api.joinLiveGame.mockRejectedValue(new ApiError(409, 'both taken'));
+		const session = new LiveSession('tok');
+		await session.start();
+		FakeSocket.last!.open();
+		FakeSocket.last!.deliver({ type: 'state', you: null, state: finished() });
+
+		session.offerRematch();
+		session.declineRematch();
+
+		expect(FakeSocket.last!.sent).toEqual([]);
+	});
+});
+
+describe('a link that is gone', () => {
+	it('stops reconnecting when the socket says the game was swept', async () => {
+		// A browser holding a stored seat never asks the REST side about the
+		// game, so the socket is the only thing that can tell it. Without that,
+		// the reconnect loop — which runs past the end of a game now, so a
+		// rematch can still arrive — would knock at a dead link forever.
+		vi.useFakeTimers();
+		try {
+			seats.loadSeat.mockReturnValue({ seat: 'seat-w', color: 'white' });
+			const session = new LiveSession('tok');
+			await session.start();
+			FakeSocket.last!.open();
+			FakeSocket.last!.deliver({
+				type: 'error',
+				reason: 'gone',
+				message: 'No game with that link.'
+			});
+			FakeSocket.last!.close();
+
+			vi.advanceTimersByTime(60_000);
+
+			expect(session.status).toBe('gone');
+			expect(FakeSocket.opened).toBe(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

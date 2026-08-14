@@ -106,37 +106,49 @@ test('resigning ends the game for both players', async ({ page, context }) => {
 	await expect(friend.getByTestId('friend-result')).toContainText('You won');
 });
 
-test('play again opens a fresh game, not the one just finished', async ({ page, context }) => {
-	// One friend game to the next is the same route with a different param,
-	// and SvelteKit reuses a page component across exactly that — so the
-	// screen kept the finished game's session, socket and board while the URL
-	// changed underneath it, and the button looked like it did nothing. The
-	// route keys on the token now, which is what this spec is holding down.
-	const first = await hostAGame(page);
-	const friend = await friendPage(context, first);
+test('play again starts the next game on the same link', async ({ page, context }) => {
+	// A rematch is the link the friend already has, played again — nobody has
+	// to send a second URL after every game. It takes both players: the result
+	// panel carries a signed-in player's link to their saved game, and one
+	// press must not clear it while the other is still reading it.
+	const link = await hostAGame(page);
+	const friend = await friendPage(context, link);
 	await expect(page.getByTestId('presence-black')).toHaveText('here');
+
+	const [white, black] = await orientedPlayers(page, friend);
+	await move(white.page, 'e2', 'e4', white.orientation);
+	await expect(black.page.getByTestId('friend-move-list')).toContainText('e4');
 
 	await hold(page, page.getByTestId('friend-resign'));
 	await expect(page.getByTestId('friend-result')).toBeVisible();
+	await expect(friend.getByTestId('friend-result')).toBeVisible();
 
+	// One press asks. The other player's finished game is left exactly as it
+	// was, with the asking shown on it.
+	const hostWasWhite =
+		(await page.getByTestId('friend-seats').getAttribute('data-you')) === 'white';
 	await page.getByTestId('friend-play-again').click();
+	await expect(page.getByTestId('rematch-waiting')).toBeVisible();
+	await expect(friend.getByTestId('rematch-offer')).toBeVisible();
+	await expect(friend.getByTestId('friend-result')).toBeVisible();
 
-	// A different link, and a game that has not been played: the result panel
-	// is gone and there is an invite to send again.
-	await expect(page).not.toHaveURL(first);
-	await expect(page.getByTestId('friend-invite')).toBeVisible();
+	// The second press starts it — same URL, empty board, colours swapped.
+	await friend.getByTestId('friend-play-again').click();
+
+	await expect(page).toHaveURL(link);
 	await expect(page.getByTestId('friend-result')).toHaveCount(0);
-	const second = await page.getByTestId('friend-link').inputValue();
-	expect(second).not.toBe(first);
+	await expect(friend.getByTestId('friend-result')).toHaveCount(0);
+	await expect(page.getByTestId('friend-moves')).toContainText('No moves yet');
+	await expect(page.getByTestId('friend-seats')).toHaveAttribute(
+		'data-you',
+		hostWasWhite ? 'black' : 'white'
+	);
 
-	// And it is a real game at the far end of that link, not just a new URL:
-	// the friend opens it and takes the seat this browser did not.
-	await friend.close();
-	const rematch = await friendPage(context, second);
-	await expect(rematch.getByTestId('friend-game')).toBeVisible();
-	await expect(page.getByTestId('presence-white')).toHaveText('here');
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
-	await expect(page.getByTestId('friend-invite')).toHaveCount(0);
+	// And it is a game rather than a reset screen: whoever holds White now
+	// moves, and it crosses to the other board.
+	const [nowWhite, nowBlack] = await orientedPlayers(page, friend);
+	await move(nowWhite.page, 'd2', 'd4', nowWhite.orientation);
+	await expect(nowBlack.page.getByTestId('friend-move-list')).toContainText('d4');
 });
 
 test('a friend game is a board and nothing else', async ({ page, context }) => {

@@ -29,6 +29,10 @@ export interface LiveState {
 	joinable: boolean;
 	/** The colour that has a draw offer standing, for the two players only. */
 	draw_offer_from: 'white' | 'black' | null;
+	/** The colour that has asked to play this link again, once the game is
+	 * over. Also the two players' business only — a watcher is not being
+	 * asked. Both of them pressing is what restarts the board. */
+	rematch_offer_from: 'white' | 'black' | null;
 	/** Seconds until this player may claim a game their opponent walked out
 	 * of; 0 means now, null means there is nothing to claim. A remaining
 	 * duration rather than a deadline, so the two ends never have to agree

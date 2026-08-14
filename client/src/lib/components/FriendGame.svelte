@@ -120,6 +120,10 @@
 
 	const endLine = $derived(live.endReason ? `by ${live.endReason}` : '');
 
+	const opponentName = $derived(
+		seatLabel(live.opponent, live.color === 'white' ? 'black' : 'white')
+	);
+
 	// ── The link ───────────────────────────────────────────────────────────
 
 	const link = $derived(liveGameLink(token));
@@ -505,14 +509,71 @@
 							</div>
 						{/if}
 						{#if live.status === 'finished'}
+							<!-- Another game on the link they already have. It takes
+							     both players: this panel is where a signed-in player's
+							     review link sits, and one press must not clear it out
+							     from under someone still reading it. -->
+							{#if live.rematchAsked}
+								<div class="flex gap-2" data-testid="rematch-waiting">
+									<button
+										type="button"
+										disabled
+										data-testid="friend-play-again"
+										class="flex-1 rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase opacity-60"
+									>
+										Waiting for {opponentName}
+									</button>
+									<button
+										type="button"
+										onclick={() => live.declineRematch()}
+										data-testid="rematch-cancel"
+										class="rounded-xs border border-line bg-card px-3 py-2 text-sm text-muted hover:bg-paper hover:text-ink"
+									>
+										Cancel
+									</button>
+								</div>
+							{:else if live.rematchOffered}
+								<div class="flex flex-col gap-2" data-testid="rematch-offer">
+									<p class="text-sm text-body">{opponentName} wants to play again.</p>
+									<div class="flex gap-2">
+										<button
+											type="button"
+											onclick={() => live.offerRematch()}
+											data-testid="friend-play-again"
+											class="flex-1 rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+										>
+											Play again
+										</button>
+										<button
+											type="button"
+											onclick={() => live.declineRematch()}
+											data-testid="rematch-decline"
+											class="rounded-xs border border-line bg-card px-3 py-2 text-sm text-muted hover:bg-paper hover:text-ink"
+										>
+											No thanks
+										</button>
+									</div>
+								</div>
+							{:else}
+								<button
+									type="button"
+									onclick={() => live.offerRematch()}
+									data-testid="friend-play-again"
+									class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+								>
+									Play again — same link
+								</button>
+							{/if}
+							<!-- The way out when the person on the other end has gone
+							     for good: a rematch needs them, a new link does not. -->
 							<button
 								type="button"
 								onclick={playAgain}
 								disabled={rematchBusy}
-								data-testid="friend-play-again"
-								class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft disabled:opacity-50"
+								data-testid="friend-fresh-link"
+								class="text-xs text-muted underline underline-offset-2 hover:text-ink disabled:opacity-50"
 							>
-								{rematchBusy ? 'Starting…' : 'Play again — new link'}
+								{rematchBusy ? 'Starting…' : 'or start a fresh link'}
 							</button>
 							{#if rematchFailed}
 								<p class="text-sm text-err" role="alert" data-testid="friend-rematch-failed">
