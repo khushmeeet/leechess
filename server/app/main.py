@@ -1,17 +1,19 @@
+import asyncio
+import contextlib
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import chess
-import chess.engine
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.analysis import reset_stale_analyses, stockfish_binary
+from app.analysis import reset_stale_analyses
 from app.auth import router as auth_router
 from app.auth.backend import fastapi_users
+from app.auth.config import cookie_secure
 
 # Imported for its side effect: registering the users table on Base.metadata
 # before create_all runs below.
@@ -20,9 +22,19 @@ from app.auth.schemas import UserRead, UserUpdate
 from app.db import Base, engine
 from app.endgame_drills import seed_catalog
 from app.legacy_ownership import claim_legacy_rows
+from app.limits import BodySizeLimit
 from app.live import sweep_abandoned
 from app.routers import endgames, games, live, progress, puzzles, testing, wikibook
 from app.seeding import maybe_autoseed
+
+logger = logging.getLogger(__name__)
+
+# How often the abandoned-game sweep runs while the process is up. It used to
+# run at boot and never again, which is fine for a machine fly.toml stops when
+# idle and useless for one that stays up — the rows it exists to reclaim are
+# created by anonymous callers, so "we restart often enough" is not a property
+# to lean on.
+SWEEP_EVERY_SECONDS = float(os.environ.get("LEECHESS_SWEEP_INTERVAL", str(6 * 60 * 60)))
 
 
 @asynccontextmanager
@@ -45,7 +57,28 @@ async def lifespan(app: FastAPI):
     # into Game rows when they ended, so what is left is links nobody took up
     # and boards both players walked away from.
     sweep_abandoned()
-    yield
+    sweeper = asyncio.create_task(_sweep_periodically())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweeper
+
+
+async def _sweep_periodically() -> None:
+    """Keep sweeping for as long as the process lives.
+
+    In a thread via run_in_executor, not on the loop: sweep_abandoned is
+    blocking database work, and it can fork games into Game rows, which is not
+    something to do on the one loop serving every live socket.
+    """
+    while True:
+        await asyncio.sleep(SWEEP_EVERY_SECONDS)
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, sweep_abandoned)
+        except Exception:  # a failed sweep must not end the loop
+            logger.exception("the abandoned-game sweep failed; will retry")
 
 
 app = FastAPI(title="leechess", lifespan=lifespan)
@@ -101,6 +134,15 @@ def _migrate_existing_tables(bind=None) -> None:
         # happen to have no password, and authenticate already refuses those.
         if "is_guest" in columns_of("users"):
             conn.execute(text("ALTER TABLE users DROP COLUMN is_guest"))
+            conn.commit()
+
+        # The session cutoff a password change moves forward (app/auth/
+        # backend.py). Added nullable because SQLite cannot ADD COLUMN with a
+        # non-constant default, and NULL is the right value anyway: an existing
+        # session was minted before any of this and should keep working until
+        # its owner changes their password.
+        if "sessions_valid_from" not in columns_of("users"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN sessions_valid_from DATETIME"))
             conn.commit()
 
         # Games used to be shown by row id, which counts everybody's games at
@@ -189,15 +231,69 @@ def _move_schedules_off_the_content_rows(conn, columns_of) -> None:
 _migrate_existing_tables()
 
 
+# One header, spelled out, because most of it is load-bearing and the one
+# concession in it is worth being honest about.
+#
+# `script-src` has to carry 'unsafe-inline': app.html runs an inline script to
+# set the theme before first paint, and SvelteKit's own bootstrap is inline and
+# rebuilt (with a new hash) on every build, so neither a hash nor a nonce is
+# available to a server that only hands out static files. What the directive
+# still buys is that no *external* origin can be a script source, which is the
+# half a stolen page tries to use.
+#
+# 'wasm-unsafe-eval' is stockfish.wasm; worker-src is the Web Worker it runs
+# in. The rest is the part that actually holds: nothing may frame this app,
+# no <base> may be injected, no plugin content, forms may only post here, and
+# `connect-src 'self'` means script that does get in has nowhere to send what
+# it finds.
+CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+        "object-src 'none'",
+        "form-action 'self'",
+    )
+)
+
+
 @app.middleware("http")
-async def cross_origin_isolation_headers(request: Request, call_next):
-    """Required for SharedArrayBuffer, which multi-threaded stockfish.wasm
-    depends on. Applies to every response so the static frontend mount
+async def security_headers(request: Request, call_next):
+    """COOP/COEP are required for SharedArrayBuffer, which multi-threaded
+    stockfish.wasm depends on. The rest is the ordinary set this app was
+    serving none of. Applied to every response so the static frontend mount
     (added at deploy time) is covered too."""
     response = await call_next(request)
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Review URLs carry a game id, and a friend link *is* the credential for a
+    # game — neither belongs in a Referer sent to wikibooks.org.
+    response.headers["Referrer-Policy"] = "no-referrer"
+    # frame-ancestors covers this for anything current; kept for the browsers
+    # that only understand the old spelling.
+    response.headers["X-Frame-Options"] = "DENY"
+    if cookie_secure():
+        # Tied to the same switch as the session cookie, so `make dev` and the
+        # browser suite — both plain http on localhost — are not told to pin
+        # themselves to https for the next two years.
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains"
+        )
     return response
+
+
+# Added after the header middleware, which puts it *outside* it (Starlette
+# builds the stack in reverse): an over-long body is refused before anything
+# downstream has a chance to read it into memory.
+app.add_middleware(BodySizeLimit)
 
 
 # Only the dev SPA and the preview server the browser suite builds. A deploy
@@ -247,27 +343,13 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/debug/engine")
-def debug_engine(fen: str = chess.STARTING_FEN, depth: int = 12) -> dict:
-    """Confirms native Stockfish works via python-chess wherever the server
-    runs (Phase 0 plumbing check — becomes the analysis job in Phase 1)."""
-    binary = stockfish_binary()
-    if binary is None:
-        raise HTTPException(status_code=500, detail="stockfish not in PATH")
-    try:
-        board = chess.Board(fen)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="invalid FEN")
-    with chess.engine.SimpleEngine.popen_uci(binary) as sf:
-        info = sf.analyse(board, chess.engine.Limit(depth=min(depth, 20)))
-    score = info["score"].white()
-    return {
-        "binary": binary,
-        "depth": info.get("depth"),
-        "score_white": str(score),
-        "cp": score.score(mate_score=100_000),
-        "best_move": str(info["pv"][0]) if info.get("pv") else None,
-    }
+# GET /debug/engine used to live here: a Phase-0 check that native Stockfish
+# worked, taking a caller-supplied FEN and search depth. It outlived its
+# purpose (the analysis job is the real answer) and was a poor thing to leave
+# reachable — no account needed, a native engine process spawned per call, and
+# none of the concurrency ceiling app/analysis.py is careful to put around
+# exactly that work. `make test` covers the engine, and GET /healthz covers
+# "is it up".
 
 
 # In production the SvelteKit SPA build is served from here (one Fly machine,

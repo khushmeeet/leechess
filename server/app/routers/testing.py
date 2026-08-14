@@ -18,9 +18,11 @@ import os
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app import analysis
+from app import analysis, live
+from app.auth import throttle
 from app.db import Base, get_db
 from app.endgame_drills import seed_drills
+from app.routers import live as live_router
 
 router = APIRouter(prefix="/testing", tags=["testing"])
 
@@ -46,11 +48,22 @@ def _no_analysis_in_flight():
 
 @router.post("/reset")
 def reset(db: Session = Depends(get_db)) -> dict:
-    """Empty every table, then reseed the fixed endgame-drill catalog.
+    """Empty every table and every in-process counter, then reseed the fixed
+    endgame-drill catalog.
 
     Tables are walked from Base.metadata rather than listed here, so a model
     added later is cleared too instead of silently leaking between tests.
+
+    The counters matter as much as the tables. Rate limits live in module
+    state, which outlives a truncate — so without this the suite spends one
+    shared allowance across every spec in the file and the run falls over
+    partway through with 429s that have nothing to do with what is being
+    tested. tests/conftest.py resets the same state per pytest test, for the
+    same reason.
     """
+    throttle.reset()
+    live_router.reset_rate_limit()
+    live.reset_rooms()
     deleted = {}
     # Wait for any analysis job still running from the previous test. SQLite
     # hands out row ids from max(rowid)+1, so after a truncate the next game is

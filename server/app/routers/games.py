@@ -13,7 +13,10 @@ from app.auth.models import User
 from app.db import get_db
 from app.models import Game, Move, UserId, utcnow
 from app.puzzle_generation import create_puzzles_for_game
+from app.pgn import MAX_HEADER_VALUE, header_value
 from app.schemas import (
+    MAX_IMPORTED_PLIES,
+    RESULTS,
     GameComplete,
     GameCreate,
     GameCreated,
@@ -64,8 +67,11 @@ def _rebuild_pgn(game: Game) -> str:
         board.push_san(move.san)
     pgn = chess.pgn.Game.from_board(board)
     pgn.headers["Event"] = "leechess casual game"
-    pgn.headers["White"] = game.white
-    pgn.headers["Black"] = game.black
+    # Own-account data, so this is not the injection surface app/live.py's
+    # writer is — but it is the same writer with the same lack of escaping in
+    # python-chess underneath, and a name is a name.
+    pgn.headers["White"] = header_value(game.white)
+    pgn.headers["Black"] = header_value(game.black)
     pgn.headers["Result"] = game.result
     pgn.headers["Date"] = datetime.now(timezone.utc).strftime("%Y.%m.%d")
     return str(pgn)
@@ -94,6 +100,13 @@ def create_game(
     return {**GameOut.model_validate(game).model_dump(), "fen": fen}
 
 
+def _imported_name(value: str | None) -> str:
+    """A player name lifted out of somebody's PGN file, trimmed to something a
+    column and a nav bar can hold. "?" is PGN's own word for unknown."""
+    cleaned = " ".join((value or "").split())[:MAX_HEADER_VALUE]
+    return cleaned or "?"
+
+
 def _import_pgn(payload: GameCreate) -> Game:
     """Phase-0 path: store an already-played game from a full PGN."""
     parsed = chess.pgn.read_game(io.StringIO(payload.pgn))
@@ -109,13 +122,25 @@ def _import_pgn(payload: GameCreate) -> Game:
 
     game = Game(
         pgn=payload.pgn,
-        white=parsed.headers.get("White", "?"),
-        black=parsed.headers.get("Black", "?"),
-        result=parsed.headers.get("Result", "*"),
+        # Straight off an uploaded file and into a column with no length of its
+        # own, so bounded here. `result` is checked against the known set rather
+        # than trusted: it is what the review list and the win/loss counts read.
+        white=_imported_name(parsed.headers.get("White")),
+        black=_imported_name(parsed.headers.get("Black")),
+        result=(
+            parsed.headers.get("Result", "*")
+            if parsed.headers.get("Result") in RESULTS
+            else "*"
+        ),
         mode=payload.mode,
     )
     board = parsed.board()
     for ply, move in enumerate(parsed.mainline_moves(), start=1):
+        if ply > MAX_IMPORTED_PLIES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"PGN has more than {MAX_IMPORTED_PLIES} plies",
+            )
         fen_before = board.fen()
         san = board.san(move)
         board.push(move)

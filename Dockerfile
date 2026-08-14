@@ -31,4 +31,11 @@ ENV PATH="/app/.venv/bin:/usr/games:$PATH" \
     LEECHESS_DB_URL="sqlite:////data/leechess.db"
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --forwarded-allow-ips: uvicorn only honours X-Forwarded-For from 127.0.0.1 by
+# default, and Fly's proxy is not on loopback — so without this every request
+# arrives wearing the proxy's address and every per-caller rate limit in the
+# app collapses into one global bucket (which it did). '*' is safe here for the
+# reason it usually is not: fly-proxy is the only route to this port, and it
+# overwrites the header rather than appending to whatever a client sent.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--forwarded-allow-ips", "*"]

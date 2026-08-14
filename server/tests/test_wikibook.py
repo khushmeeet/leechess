@@ -229,3 +229,53 @@ def test_line_disabled_by_kill_switch(client, monkeypatch):
     response = client.get("/wikibook/line", params={"moves": "e4"})
     assert response.status_code == 200
     assert response.json()["pages"] == []
+
+
+def test_the_line_route_needs_an_account(anon_client, _wikibook_on):
+    """It only ever feeds the Review screen, which needs one anyway. Open, it
+    was a way for anyone at all to make this server issue a chain of
+    ten-second requests to Wikimedia from leechess' own address — and to write
+    a cache row per invented line while doing it."""
+    assert anon_client.get("/wikibook/line", params={"moves": "e4"}).status_code == 401
+
+
+def test_one_request_spends_a_fixed_budget_of_upstream_fetches(
+    client, monkeypatch, _wikibook_on
+):
+    """The walk is sequential and each fetch has a ten-second timeout, so an
+    uncapped one could hold a worker thread for minutes — and forty of those is
+    the whole threadpool that serves every other route."""
+    fetched: list[str] = []
+
+    def counting_fetch(title: str):
+        fetched.append(title)
+        return (title, "<p>theory</p>")  # every page exists: the worst case
+
+    monkeypatch.setattr(wikibook, "fetch_page", counting_fetch)
+
+    response = client.get("/wikibook/line", params={"moves": ",".join(["Nf3"] * 30)})
+
+    assert response.status_code == 200
+    assert len(fetched) == wikibook.MAX_FETCHES_PER_REQUEST
+
+
+def test_cached_plies_are_free_and_do_not_spend_the_budget(
+    client, monkeypatch, _wikibook_on
+):
+    """So a line somebody is actually reviewing fills in over a few visits and
+    is then instant, rather than being permanently truncated."""
+    fetched: list[str] = []
+
+    def counting_fetch(title: str):
+        fetched.append(title)
+        return (title, "<p>theory</p>")
+
+    monkeypatch.setattr(wikibook, "fetch_page", counting_fetch)
+    line = ",".join(["Nf3"] * 30)
+
+    first = len(client.get("/wikibook/line", params={"moves": line}).json()["pages"])
+    fetched.clear()
+    second = len(client.get("/wikibook/line", params={"moves": line}).json()["pages"])
+
+    assert second == first + wikibook.MAX_FETCHES_PER_REQUEST
+    assert len(fetched) == wikibook.MAX_FETCHES_PER_REQUEST

@@ -16,7 +16,7 @@ import logging
 import time
 
 import chess
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
@@ -25,6 +25,7 @@ from app import live
 from app.auth.backend import current_active_user_optional
 from app.auth.models import User
 from app.db import SessionLocal, get_db
+from app.rate_limit import SlidingWindow, client_key
 from app.schemas import LiveCreate, LiveJoin, LiveSeated, LiveStateOut
 
 logger = logging.getLogger(__name__)
@@ -53,24 +54,37 @@ session_factory = SessionLocal
 # survive a restart.
 CREATE_WINDOW_SECONDS = 60
 MAX_CREATES_PER_WINDOW = 20
-_creates: dict[str, list[float]] = {}
+_creates = SlidingWindow(
+    window_seconds=CREATE_WINDOW_SECONDS, max_events=MAX_CREATES_PER_WINDOW
+)
+
+# A game is two players and whoever they showed the link to. Well past that,
+# and far short of the number that makes one token's broadcast a fan-out worth
+# scripting.
+MAX_SOCKETS_PER_GAME = 16
+# Everything the machine will hold at once, across every game. uvicorn will
+# accept far more connections than this app has any use for, and each one is a
+# room entry, a task, and a share of the broadcast loop.
+MAX_LIVE_SOCKETS = 400
+# One socket's budget. A playing client sends a move every several seconds and
+# a heartbeat every twenty-five; a client resyncing hard after a wake-up sends
+# a short burst. This is generous for both and useless for a flood.
+SOCKET_MESSAGE_WINDOW_SECONDS = 10.0
+MAX_SOCKET_MESSAGES_PER_WINDOW = 60
 
 
 def _rate_limit_create(request: Request) -> None:
-    key = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    recent = [at for at in _creates.get(key, []) if now - at < CREATE_WINDOW_SECONDS]
-    if len(recent) >= MAX_CREATES_PER_WINDOW:
+    key = client_key(request)
+    if _creates.exceeded(key):
         raise HTTPException(
             status_code=429, detail="Too many games started — wait a minute."
         )
-    recent.append(now)
-    _creates[key] = recent
+    _creates.record(key)
 
 
 def reset_rate_limit() -> None:
     """Test support — module state outlives the app instance."""
-    _creates.clear()
+    _creates.reset()
 
 
 def _display_name(user: User | None, offered: str | None) -> str | None:
@@ -117,12 +131,24 @@ def create_live_game(
 def get_live_game(
     token: str,
     seat: str | None = Query(default=None),
+    x_live_seat: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> LiveStateOut:
     """The game as it stands. Open to anyone with the link — that is what
-    makes it watchable — but a seat token is what adds the private parts."""
+    makes it watchable — but a seat token is what adds the private parts.
+
+    The credential comes in a header. It used to come in the query string,
+    where it was written into every access log, proxy log and Referer that
+    touched the request — a credential in a URL is a credential in a logfile.
+    The query parameter is still read so that a browser holding the previous
+    bundle keeps its seat across the deploy that ships this; the client stopped
+    sending it (client/src/lib/api/live.ts).
+    """
     game = _load(db, token)
-    return LiveStateOut(**live.state_of(game, seat_color_=live.seat_color(game, seat)))
+    credential = x_live_seat or seat
+    return LiveStateOut(
+        **live.state_of(game, seat_color_=live.seat_color(game, credential))
+    )
 
 
 @router.post("/{token}/join", response_model=LiveSeated)
@@ -133,20 +159,28 @@ def join_live_game(
     user: User | None = Depends(current_active_user_optional),
 ) -> LiveSeated:
     """Take the open seat. 409 once both are taken — the caller watches
-    instead, which the client handles without asking anything of them."""
-    game = _load(db, token)
-    try:
-        seat, color = live.join_game(
-            db, game, name=_display_name(user, payload.name), user_id=user.id if user else None
-        )
-    except live.LiveError as error:
-        raise HTTPException(status_code=409, detail=str(error))
-    return LiveSeated(
-        token=game.token,
-        seat=seat,
-        color=color,
-        state=LiveStateOut(**live.state_of(game, seat_color_=color)),
-    )
+    instead, which the client handles without asking anything of them.
+
+    Under the game's lock, and the row is re-read inside it. Without that this
+    was a read-modify-write two callers could interleave: both saw the seat
+    open, both were handed a credential, and only the second was written — so
+    the first was told it had a seat, stored one, and then had every move
+    refused as a spectator's. The move path has taken this lock all along; the
+    one place a seat is *decided* was the place that did not.
+    """
+    with live.lock_for(token):
+        game = _load(db, token)
+        try:
+            seat, color = live.join_game(
+                db,
+                game,
+                name=_display_name(user, payload.name),
+                user_id=user.id if user else None,
+            )
+        except live.LiveError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+        state = live.state_of(game, seat_color_=color)
+    return LiveSeated(token=game.token, seat=seat, color=color, state=LiveStateOut(**state))
 
 
 # ── the socket ─────────────────────────────────────────────────────────────
@@ -249,6 +283,69 @@ def _saved_games(token: str) -> dict[str, dict]:
         db.close()
 
 
+# What the client names when it offers the seat credential as a WebSocket
+# subprotocol: ["leechess.seat", "<the seat token>"]. A subprotocol travels in
+# a handshake header, so unlike a query parameter it stays out of access logs
+# and Referers — and it is the only channel available, since a browser's
+# WebSocket constructor cannot set headers.
+SEAT_SUBPROTOCOL = "leechess.seat"
+
+
+class _MessageBudget:
+    """One socket's allowance, in messages per window.
+
+    Per connection rather than per address or per game, and a plain list rather
+    than the shared limiter, because it lives and dies with the socket — there
+    is no key to leak and nothing to sweep. Every message here costs a database
+    read dispatched into the threadpool that also serves every HTTP route, so
+    an anonymous spectator sending `sync` in a loop is not a self-inflicted
+    problem; it is everyone's.
+    """
+
+    def __init__(self) -> None:
+        self._at: list[float] = []
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        self._at = [at for at in self._at if now - at < SOCKET_MESSAGE_WINDOW_SECONDS]
+        if len(self._at) >= MAX_SOCKET_MESSAGES_PER_WINDOW:
+            return False
+        self._at.append(now)
+        return True
+
+
+def _offered_subprotocols(websocket: WebSocket) -> list[str]:
+    """The subprotocols the client actually named, however it spelled them.
+
+    `scope["subprotocols"]` is not reliably one entry per protocol: uvicorn
+    fills it from `headers.get_all("Sec-WebSocket-Protocol")`, and a browser
+    sends the whole list as a single comma-separated header — so two offered
+    protocols arrive as one string. Starlette's TestClient passes them through
+    already split, which is exactly the sort of difference that makes a unit
+    test pass against a transport the deployed app does not use.
+    """
+    offered: list[str] = []
+    for value in websocket.scope.get("subprotocols") or ():
+        offered.extend(part.strip() for part in str(value).split(",") if part.strip())
+    return offered
+
+
+def _seat_from_handshake(
+    websocket: WebSocket, query_seat: str | None
+) -> tuple[str | None, str | None]:
+    """(the credential, the subprotocol to echo back).
+
+    A browser closes the connection if it offered subprotocols and the server
+    accepted without choosing one, so an offer has to be answered.
+    """
+    offered = _offered_subprotocols(websocket)
+    if len(offered) >= 2 and offered[0] == SEAT_SUBPROTOCOL:
+        return offered[1], SEAT_SUBPROTOCOL
+    # No offer: a spectator, or a browser still running the bundle from before
+    # the credential moved out of the URL. See get_live_game.
+    return query_seat, None
+
+
 @router.websocket("/{token}/ws")
 async def live_socket(
     websocket: WebSocket, token: str, seat: str | None = Query(default=None)
@@ -260,7 +357,23 @@ async def live_socket(
     after the machine was replaced mid-game, which fly.toml allows — needs no
     special path on either side. It is the ordinary one.
     """
-    await websocket.accept()
+    seat, subprotocol = _seat_from_handshake(websocket, seat)
+    await websocket.accept(subprotocol=subprotocol)
+
+    # Checked after accepting rather than by refusing the handshake, so the
+    # client is told why instead of seeing a bare connection failure. Anyone
+    # may open one of these — no account, no seat, just the link — so "as many
+    # as you like" was a standing invitation.
+    if (
+        live.total_sockets() >= MAX_LIVE_SOCKETS
+        or live.room_size(token) >= MAX_SOCKETS_PER_GAME
+    ):
+        await websocket.send_json(
+            {"type": "error", "message": "Too many people are watching this game."}
+        )
+        await websocket.close()
+        return
+
     resolved = await run_in_threadpool(_seat_of, token, seat)
     if resolved is MISSING:
         await websocket.send_json(
@@ -296,8 +409,27 @@ async def live_socket(
         # Presence changed for everyone else the moment this socket opened.
         await _broadcast_state(token, exclude=websocket)
 
+        budget = _MessageBudget()
         while True:
             message = await websocket.receive_json()
+            if not budget.allow():
+                # Closed rather than throttled in place: nothing legitimate
+                # sends at this rate, and a client held open at the limit would
+                # go on costing a database read per message. The reconnect the
+                # client already does for a dropped socket is the way back.
+                await websocket.send_json(
+                    {"type": "error", "message": "Too many messages — slow down."}
+                )
+                await websocket.close()
+                return
+            if not isinstance(message, dict):
+                # receive_json will hand back whatever JSON arrived, list or
+                # string included, and `.get` on those is an AttributeError
+                # that reads as a server bug in the log.
+                await websocket.send_json(
+                    {"type": "error", "message": "That is not a message."}
+                )
+                continue
             action = message.get("type")
             if action == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -314,10 +446,18 @@ async def live_socket(
                 )
                 continue
 
-            try:
-                event = await run_in_threadpool(
-                    _apply, token, color, action, message.get("uci")
+            uci = message.get("uci")
+            if uci is not None and not isinstance(uci, str):
+                # chess.Move.from_uci raises TypeError rather than ValueError
+                # on a non-string, which sails past _apply's handler and kills
+                # the socket through the catch-all below.
+                await websocket.send_json(
+                    {"type": "error", "message": "That is not a move."}
                 )
+                continue
+
+            try:
+                event = await run_in_threadpool(_apply, token, color, action, uci)
             except live.LiveError as error:
                 # The mover's problem alone, and the state goes with it so a
                 # client that had drifted is put back in step.

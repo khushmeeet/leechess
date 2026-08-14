@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
 	createLiveGame: vi.fn(),
 	getLiveGame: vi.fn(),
 	liveSocketUrl: vi.fn(() => 'ws://test/live/tok/ws'),
+	liveSocketProtocols: vi.fn((seat?: string | null) => (seat ? ['leechess.seat', seat] : [])),
 	liveGameLink: vi.fn()
 }));
 
@@ -45,7 +46,10 @@ class FakeSocket {
 	onclose: (() => void) | null = null;
 	onerror: (() => void) | null = null;
 
-	constructor(public url: string) {
+	constructor(
+		public url: string,
+		public protocols: string | string[] = []
+	) {
 		FakeSocket.last = this;
 		FakeSocket.opened += 1;
 	}
@@ -147,6 +151,29 @@ describe('taking a seat', () => {
 		expect(session.isSpectator).toBe(true);
 		// Still connects: watching is a thing you can do with a link.
 		expect(FakeSocket.opened).toBe(1);
+	});
+
+	it('sends the seat as a subprotocol, never in the URL', async () => {
+		// The seat is the only thing that authorizes a move, and a credential in
+		// a query string is a credential in every access log and Referer that
+		// touches the request. A browser cannot set headers on a WebSocket, so
+		// the subprotocol list is the channel.
+		seats.loadSeat.mockReturnValue({ seat: 'seat-w', color: 'white' });
+		const session = new LiveSession('tok');
+		await session.start();
+
+		expect(FakeSocket.last?.protocols).toEqual(['leechess.seat', 'seat-w']);
+		expect(FakeSocket.last?.url).not.toContain('seat-w');
+		expect(api.liveSocketUrl).toHaveBeenCalledWith('tok');
+	});
+
+	it('offers no subprotocol when there is no seat to prove', async () => {
+		const { ApiError } = await import('$lib/api/client');
+		api.joinLiveGame.mockRejectedValue(new ApiError(409, 'both taken'));
+		const session = new LiveSession('tok');
+		await session.start();
+
+		expect(FakeSocket.last?.protocols).toEqual([]);
 	});
 });
 
