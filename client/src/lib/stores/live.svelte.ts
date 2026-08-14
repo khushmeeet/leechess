@@ -57,6 +57,9 @@ export class LiveSession {
 	white = $state<LiveSeat>(emptySeat());
 	black = $state<LiveSeat>(emptySeat());
 	drawOfferFrom = $state<'white' | 'black' | null>(null);
+	/** Who has asked to play this link again. Both players pressing is what
+	 * starts the next game; the first press is the asking. */
+	rematchOfferFrom = $state<'white' | 'black' | null>(null);
 	/** Set when the server refused something — an illegal move, a move out of
 	 * turn. Cleared on the next successful action. */
 	error = $state<string | null>(null);
@@ -179,9 +182,11 @@ export class LiveSession {
 	}
 
 	private scheduleReconnect(): void {
-		// A finished game has nothing left to deliver, and a link that does not
-		// exist will not start existing.
-		if (this.closed || this.status === 'finished' || this.status === 'gone') return;
+		// A link that does not exist will not start existing. A finished game is
+		// a different matter now that the same link can be played again: the
+		// other player asking for that is still to come, so the socket is kept
+		// up until the screen itself goes away.
+		if (this.closed || this.status === 'gone') return;
 		const delay = RECONNECT_DELAYS[Math.min(this.attempt, RECONNECT_DELAYS.length - 1)];
 		this.attempt += 1;
 		this.reconnectTimer = setTimeout(() => this.connect(), delay);
@@ -219,6 +224,15 @@ export class LiveSession {
 			return;
 		}
 		if (type === 'error') {
+			// The one error worth giving up on. A browser holding a stored seat
+			// never asks the REST side about the game at all, so this is the only
+			// way it hears that the link was swept — and without it the reconnect
+			// loop, which now keeps running past the end of a game so a rematch
+			// can arrive, would go on knocking at a game that is gone.
+			if (message.reason === 'gone') {
+				this.status = 'gone';
+				return;
+			}
 			this.error = (message.message as string) ?? 'That move was refused.';
 			// The state rides along with a refusal, so a board that had drifted
 			// is put back rather than left showing something that never happened.
@@ -227,7 +241,29 @@ export class LiveSession {
 		}
 		if (message.state) {
 			if (type === 'move') this.error = null;
+			// Which of the two seats is this browser's is the one thing it
+			// cannot re-derive from a state, and a rematch swaps it while the
+			// socket stays open — so the server says so alongside every state
+			// it sends, and this believes it over anything remembered.
+			this.adoptColor(message.you);
 			this.apply(message.state as LiveState);
+		}
+	}
+
+	/** Take the server's word for which side this browser plays.
+	 *
+	 * Also repairs a stored seat that had drifted: the colour in localStorage
+	 * was written when the seat was claimed and nothing ever corrected it, so
+	 * a browser holding a stale one used to render the board the wrong way up
+	 * and refuse its own legal moves.
+	 */
+	private adoptColor(you: unknown): void {
+		if (you === undefined) return; // a message that does not say
+		const color = you === 'white' || you === 'black' ? you : null;
+		if (color === this.color) return;
+		this.color = color;
+		if (color !== null && this.seat !== null) {
+			saveSeat(this.token, { seat: this.seat, color });
 		}
 	}
 
@@ -256,6 +292,7 @@ export class LiveSession {
 		this.white = state.white;
 		this.black = state.black;
 		this.drawOfferFrom = state.draw_offer_from;
+		this.rematchOfferFrom = state.rematch_offer_from;
 		this.setClaimWait(state.claim_wait);
 
 		// The opponent's move, or one of ours the server had not confirmed yet.
@@ -265,8 +302,14 @@ export class LiveSession {
 		}
 		if (state.status === 'finished' && !wasFinished) {
 			soundPrefs.play('game-end');
-			this.stopHeartbeat();
 			this.stopClaimCountdown();
+		}
+		// The same link, played again. Where the last game was saved, and any
+		// refusal left over from it, belong to a game that is finished — and
+		// this is a different one, which will save itself somewhere else.
+		if (wasFinished && state.status !== 'finished') {
+			this.saved = null;
+			this.error = null;
 		}
 	}
 
@@ -302,6 +345,34 @@ export class LiveSession {
 		if (this.isSpectator) return;
 		this.drawOfferFrom = null;
 		this.send({ type: 'draw-decline' });
+	}
+
+	/** This browser has asked for another game and is waiting on the answer. */
+	get rematchAsked(): boolean {
+		return this.rematchOfferFrom !== null && this.rematchOfferFrom === this.color;
+	}
+
+	/** The other player has asked, so pressing it starts the next game. */
+	get rematchOffered(): boolean {
+		return this.rematchOfferFrom !== null && this.rematchOfferFrom !== this.color;
+	}
+
+	/** Ask to play this same link again, or agree to the asking — the server
+	 * works out which this press is.
+	 *
+	 * It takes both of them on purpose. The result panel is where a signed-in
+	 * player's link to their saved game is, and one player must not be able to
+	 * clear it out from under the other while they are still reading it. */
+	offerRematch(): void {
+		if (this.isSpectator || this.status !== 'finished') return;
+		this.send({ type: 'rematch' });
+	}
+
+	/** Turn down their offer, or take back your own — the same operation. */
+	declineRematch(): void {
+		if (this.isSpectator) return;
+		this.rematchOfferFrom = null;
+		this.send({ type: 'rematch-decline' });
 	}
 
 	/** Take a game the opponent walked out of. The server re-checks the wait

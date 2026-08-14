@@ -203,6 +203,9 @@ class LiveStateOut(BaseModel):
     joinable: bool
     # Set on the response to whoever has a seat — never broadcast.
     draw_offer_from: str | None = None
+    # The colour that has asked to play the same link again, once the game is
+    # over. Also a seated player's business only.
+    rematch_offer_from: str | None = None
     # Seconds until this viewer may claim a game their opponent left; 0 means
     # now, None means there is nothing to claim.
     claim_wait: float | None = None

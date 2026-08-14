@@ -255,6 +255,17 @@ def _apply(token: str, color: str, action: str, uci: str | None) -> dict:
             elif action == "claim":
                 live.claim_abandoned(db, game, color)
                 event = {"type": "end", "reason": "abandonment"}
+            elif action == "rematch":
+                # Whether this was the asking or the agreeing is the server's
+                # to work out — see live.offer_rematch — so the two outcomes
+                # are two events rather than two actions.
+                if live.offer_rematch(db, game, color):
+                    event = {"type": "restart"}
+                else:
+                    event = {"type": "rematch-offer", "from": color}
+            elif action == "rematch-decline":
+                live.decline_rematch(game, color)
+                event = {"type": "rematch-decline", "from": color}
             else:
                 raise live.LiveError(f"Unknown action {action!r}.")
             return event
@@ -376,8 +387,11 @@ async def live_socket(
 
     resolved = await run_in_threadpool(_seat_of, token, seat)
     if resolved is MISSING:
+        # `reason` so the client can tell this from a refused move and stop
+        # trying: everything else it is told over this socket is worth
+        # reconnecting for, and a link that was swept is not.
         await websocket.send_json(
-            {"type": "error", "message": "No game with that link."}
+            {"type": "error", "reason": "gone", "message": "No game with that link."}
         )
         await websocket.close()
         return
@@ -412,6 +426,15 @@ async def live_socket(
         budget = _MessageBudget()
         while True:
             message = await websocket.receive_json()
+            # A rematch swaps the seats underneath every socket in the game
+            # while they all stay open, so the side this connection speaks for
+            # is read back from the room rather than trusted from the
+            # handshake — otherwise this player's next move would be applied
+            # for the colour they used to have. A watcher stays a watcher, and
+            # so does a socket the broadcast loop has already given up on.
+            seated = live.room_color(token, websocket)
+            if seated is not None:
+                color = seated
             if not budget.allow():
                 # Closed rather than throttled in place: nothing legitimate
                 # sends at this rate, and a client held open at the limit would
@@ -473,7 +496,11 @@ async def live_socket(
             # view would hand both to everyone watching.
             states = await run_in_threadpool(_states_by_seat, token)
             await live.broadcast_per_seat(
-                token, {side: {**event, "state": s} for side, s in states.items()}
+                token,
+                {
+                    side: {**event, "you": side, "state": s}
+                    for side, s in states.items()
+                },
             )
             if states[None]["status"] == "finished":
                 await _announce_saved(token)
@@ -515,6 +542,7 @@ def state_unavailable() -> dict:
         "black": {"name": None, "seated": False, "present": False, "saves": False},
         "joinable": False,
         "draw_offer_from": None,
+        "rematch_offer_from": None,
         "claim_wait": None,
     }
 
@@ -541,7 +569,13 @@ async def _broadcast_state(token: str, *, exclude: WebSocket | None = None) -> N
     states = await run_in_threadpool(_states_by_seat, token)
     await live.broadcast_per_seat(
         token,
-        {seat: {"type": "presence", "state": state} for seat, state in states.items()},
+        # `you` rides along with every state a client is sent, so that the one
+        # thing it cannot re-derive — which of these two seats is its own —
+        # never has to be remembered across a rematch's swap.
+        {
+            seat: {"type": "presence", "you": seat, "state": state}
+            for seat, state in states.items()
+        },
         exclude=exclude,
     )
 
