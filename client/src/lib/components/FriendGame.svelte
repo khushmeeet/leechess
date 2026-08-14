@@ -120,9 +120,72 @@
 
 	const endLine = $derived(live.endReason ? `by ${live.endReason}` : '');
 
+	/** The score as it is written down: an en dash, and a halved point rather
+	 * than the server's `1/2-1/2`. */
+	const scoreLine = $derived(live.result === '1/2-1/2' ? '½–½' : live.result.replace('-', '–'));
+
 	const opponentName = $derived(
 		seatLabel(live.opponent, live.color === 'white' ? 'black' : 'white')
 	);
+
+	// ── What the rail leads with ───────────────────────────────────────────
+	// One line, and it is the only thing in the sidebar set in the display
+	// face. Everything under it — the two names, the move list, the buttons —
+	// is reference: it is either the same on every screen of every game or it
+	// only changes when somebody presses something. This changes with each
+	// move, and it is what a player glancing back at the tab is looking for,
+	// so it gets the size, the colour, and the top of the column. The rest was
+	// boxed at the same weight, which is what left the screen with four panels
+	// and no answer to "what now?".
+
+	interface Lead {
+		text: string;
+		note: string | null;
+		/** The one colour on the rail, and it means something: accent is a
+		 * board waiting on you, err is trouble, muted is a board waiting on
+		 * somebody else. */
+		tone: string;
+		testid?: string;
+	}
+
+	const lead = $derived.by<Lead>(() => {
+		if (live.status === 'connecting') {
+			return { text: 'Opening the game…', note: null, tone: 'text-muted' };
+		}
+		if (!live.connected && live.status !== 'finished') {
+			return {
+				text: 'Reconnecting…',
+				note: 'The game is safe — this board will catch up.',
+				tone: 'text-err',
+				testid: 'friend-reconnecting'
+			};
+		}
+		if (live.status === 'finished') {
+			return {
+				text: resultTitle,
+				note: endLine ? `${scoreLine} ${endLine}` : scoreLine,
+				tone: 'text-ink'
+			};
+		}
+		if (live.status === 'waiting') {
+			return {
+				text: 'Waiting for your friend',
+				note: live.color
+					? `Whoever opens the link plays ${live.color === 'white' ? 'Black' : 'White'}.`
+					: 'Whoever opens the link takes the free seat.',
+				tone: 'text-muted'
+			};
+		}
+		if (live.isSpectator) {
+			return {
+				text: `${game.turnColor === 'white' ? 'White' : 'Black'} to move`,
+				note: "Both seats are taken — you're watching.",
+				tone: 'text-ink'
+			};
+		}
+		if (live.myTurn) return { text: 'Your move', note: null, tone: 'text-accent' };
+		return { text: `Waiting for ${opponentName}`, note: null, tone: 'text-muted' };
+	});
 
 	// ── The link ───────────────────────────────────────────────────────────
 
@@ -249,7 +312,7 @@
 								<img src={logo} alt="" class="h-10 w-10 flex-none" />
 								<div class="min-w-0">
 									<p class="text-[10px] font-semibold tracking-[0.09em] text-faint uppercase">
-										{live.result === '1/2-1/2' ? '½–½' : live.result.replace('-', '–')}
+										{scoreLine}
 										{endLine}
 									</p>
 									<h2 class="mt-0.5 font-display text-2xl leading-tight text-ink">
@@ -280,44 +343,97 @@
 				</div>
 			</div>
 
-			<aside class="flex flex-col gap-4">
+			<aside class="flex flex-col gap-5">
+				<!-- The one line that answers "what now?", unboxed and in the
+				     display face so it reads before anything else in the column.
+				     See the `lead` derivation for why it is the only thing here
+				     that gets that treatment. -->
+				<section data-testid="friend-status" role="status" aria-live="polite">
+					<div class="flex items-start gap-2.5">
+						{#if live.myTurn}
+							<!-- Drawn on your own move and in no other state. A marker
+							     that appears rather than one that changes colour cannot
+							     be misread, and there is only one thing worth
+							     interrupting someone for on this screen. -->
+							<span
+								class="mt-2.5 h-2 w-2 flex-none rounded-full bg-accent shadow-[0_0_0_3px_var(--color-accent-soft)]"
+								aria-hidden="true"
+							></span>
+						{/if}
+						<div class="min-w-0">
+							<h2 class="font-display text-2xl leading-tight {lead.tone}" data-testid={lead.testid}>
+								{lead.text}
+							</h2>
+							{#if lead.note}
+								<p class="mt-1 text-sm text-muted">{lead.note}</p>
+							{/if}
+						</div>
+					</div>
+					{#if live.error}
+						<p class="mt-2 text-sm text-err" role="alert" data-testid="friend-error">
+							{live.error}
+						</p>
+					{/if}
+				</section>
+
 				<!-- Who is here, and whether their game is being kept. The second
 				     half matters more than it looks: it is the only difference
 				     between the two ways of playing, and there is no second
-				     chance to mention it. -->
+				     chance to mention it.
+
+				     A hairline rather than a card. Two names and their presence
+				     are reference — they answer a question asked once a game —
+				     and boxing them gave them the weight of the line above, which
+				     is the one that changes every move. The side to move carries
+				     the accent rail: the sentence is up there, the mark is down
+				     here on the name it belongs to. -->
 				<!-- data-you is the machine-readable version of the "(you)" beside a
 				     name: which side this browser holds, or absent when watching. -->
 				<section
-					class="rounded-xs border border-line bg-card p-3 text-sm"
+					class="border-t border-line pt-3 text-sm"
 					data-testid="friend-seats"
 					data-you={live.color ?? undefined}
 				>
 					{#each [{ seat: live.black, color: 'black' as const }, { seat: live.white, color: 'white' as const }] as { seat, color } (color)}
-						<div class="flex items-center gap-2 py-0.5">
+						{@const toMove = live.status === 'playing' && game.turnColor === color}
+						<div
+							class="flex items-center gap-2 border-l-2 py-1.5 pl-2.5 {toMove
+								? 'border-accent'
+								: 'border-transparent'}"
+						>
 							<span
 								class="h-3 w-3 flex-none rounded-full border border-line"
 								style="background: {color === 'white' ? '#f4efe4' : '#2b2620'}"
 								aria-hidden="true"
 							></span>
-							<span class="min-w-0 flex-1 truncate text-ink">
+							<span class="min-w-0 truncate {toMove ? 'font-semibold text-ink' : 'text-muted'}">
 								{seatLabel(seat, color)}
-								{#if color === live.color}<span class="text-faint">(you)</span>{/if}
+								{#if color === live.color}<span class="font-normal text-faint">(you)</span>{/if}
 							</span>
-							{#if !seat.seated}
-								<span class="text-[11px] text-faint">waiting</span>
-							{:else}
+							{#if toMove}
 								<span
-									class="text-[11px] {seat.present ? 'text-ok' : 'text-faint'}"
-									data-testid="presence-{color}"
+									class="flex-none text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
 								>
-									{seat.present ? 'here' : 'away'}
+									to move
 								</span>
 							{/if}
+							<span class="ml-auto flex-none pl-1 text-[11px]">
+								{#if !seat.seated}
+									<span class="text-faint">waiting</span>
+								{:else}
+									<span
+										class={seat.present ? 'text-ok' : 'text-faint'}
+										data-testid="presence-{color}"
+									>
+										{seat.present ? 'here' : 'away'}
+									</span>
+								{/if}
+							</span>
 						</div>
 					{/each}
 					<p class="mt-2 border-t border-line pt-2 text-[11px] text-muted">
 						{#if live.isSpectator}
-							Both seats are taken — you're watching.
+							Nothing is saved — you're only watching.
 						{:else if live.willSave}
 							Your side is saved and analyzed when the game ends.
 						{:else}
@@ -327,17 +443,17 @@
 				</section>
 
 				{#if live.status === 'waiting'}
+					<!-- The one card on a waiting screen, because sending the link is
+					     the only thing there is to do on it. The sentence about who
+					     gets which colour moved up into the lead — this is the
+					     field and the button. -->
 					<section
 						class="rounded-xs border border-accent-line bg-accent-soft p-3"
 						data-testid="friend-invite"
 					>
-						<h2 class="mb-1 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
+						<h2 class="mb-2 text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
 							Send this link
 						</h2>
-						<p class="mb-2 text-sm text-body">
-							Whoever opens it first plays {live.color === 'white' ? 'Black' : 'White'}. The game
-							starts as soon as they arrive.
-						</p>
 						<div class="flex gap-1">
 							<input
 								type="text"
@@ -351,7 +467,7 @@
 								type="button"
 								onclick={copyLink}
 								data-testid="friend-copy"
-								class="rounded-xs border border-line bg-card px-2 py-1 text-xs whitespace-nowrap hover:bg-paper"
+								class="rounded-xs border border-accent-line bg-card px-3 py-1 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-paper"
 							>
 								{copied ? 'Copied' : 'Copy'}
 							</button>
@@ -363,36 +479,6 @@
 						{/if}
 					</section>
 				{/if}
-
-				<section
-					class="rounded-xs border border-line bg-card p-3 text-sm"
-					data-testid="friend-status"
-				>
-					{#if !live.connected && live.status !== 'finished'}
-						<p class="text-err" data-testid="friend-reconnecting">
-							Reconnecting… the game is safe, this board will catch up.
-						</p>
-					{:else if live.status === 'waiting'}
-						<p class="text-muted">Waiting for your friend to open the link.</p>
-					{:else if live.status === 'finished'}
-						<p class="font-semibold text-ink">Game over — {live.result} {endLine}</p>
-					{:else if live.isSpectator}
-						<p class="text-muted">{game.turnColor === 'white' ? 'White' : 'Black'} to move.</p>
-					{:else}
-						<p
-							class:font-semibold={live.myTurn}
-							class:text-ink={live.myTurn}
-							class:text-muted={!live.myTurn}
-						>
-							{live.myTurn
-								? 'Your move.'
-								: `Waiting for ${seatLabel(live.opponent, live.color === 'white' ? 'black' : 'white')}.`}
-						</p>
-					{/if}
-					{#if live.error}
-						<p class="mt-1 text-err" role="alert" data-testid="friend-error">{live.error}</p>
-					{/if}
-				</section>
 
 				<!-- Your opponent walked off. Without this the only ways out are to
 			     resign, which records a loss you did not suffer, or to walk away
@@ -457,7 +543,13 @@
 					</section>
 				{/if}
 
-				{#if displayPrefs.friendMoveList}
+				<!-- Not before the game starts. It is a tall box by design — a fixed
+				     region beats one that grows a line every move and walks the
+				     resign button down the column — and a tall box of nothing is the
+				     largest thing on the screen at the exact moment the link is the
+				     only thing on it that matters. No moves are possible yet, so
+				     there is nothing to hold open. -->
+				{#if displayPrefs.friendMoveList && (live.status === 'playing' || live.status === 'finished')}
 					<section
 						class="flex min-h-40 flex-1 flex-col rounded-xs border border-line bg-card p-3"
 						data-testid="friend-moves"
@@ -581,9 +673,13 @@
 								</p>
 							{/if}
 						{/if}
+						<!-- The way off this screen, not a thing to do on it. It was a
+						     card the size of the resign button, which made leaving look
+						     like one of the game's moves; a rule and a link says the
+						     same thing without asking for the eye. -->
 						<a
 							href={resolve('/')}
-							class="rounded-xs border border-line bg-card px-3 py-2 text-center text-sm text-muted hover:bg-paper hover:text-ink"
+							class="mt-1 block border-t border-line pt-3 text-center text-sm text-muted underline-offset-2 hover:text-ink hover:underline"
 						>
 							Back to the engine
 						</a>
