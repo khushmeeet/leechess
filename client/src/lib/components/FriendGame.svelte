@@ -187,6 +187,19 @@
 		return { text: `Waiting for ${opponentName}`, note: null, tone: 'text-muted' };
 	});
 
+	/** Their offer, still unanswered.
+	 *
+	 * While it stands it is the only question on the screen, so it is the only
+	 * one with buttons: Resign and Offer draw come off the rail until it is
+	 * answered. Both were wrong to press anyway — offering a draw into a draw
+	 * offer is the same press as Accept made harder to find, and resigning
+	 * gives away a game somebody has just offered to halve. The server keeps
+	 * the offer up until it is answered (a move does not clear it), so nothing
+	 * is stranded: Decline puts the pair straight back. */
+	const drawOffered = $derived(
+		live.status === 'playing' && live.drawOfferFrom !== null && live.drawOfferFrom !== live.color
+	);
+
 	// ── The link ───────────────────────────────────────────────────────────
 
 	const link = $derived(liveGameLink(token));
@@ -512,7 +525,7 @@
 					</section>
 				{/if}
 
-				{#if live.drawOfferFrom && live.drawOfferFrom !== live.color && live.status === 'playing'}
+				{#if drawOffered}
 					<section
 						class="rounded-xs border border-accent-line bg-card p-3 text-sm"
 						data-testid="draw-offer"
@@ -578,7 +591,7 @@
 
 				{#if !live.isSpectator}
 					<section class="flex flex-col gap-2">
-						{#if live.status === 'playing'}
+						{#if live.status === 'playing' && !drawOffered}
 							<div class="flex gap-2">
 								<!-- A person is waiting on the other end of this one, so a
 								     misclick costs them a game as well. -->
