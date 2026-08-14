@@ -106,6 +106,39 @@ test('resigning ends the game for both players', async ({ page, context }) => {
 	await expect(friend.getByTestId('friend-result')).toContainText('You won');
 });
 
+test('play again opens a fresh game, not the one just finished', async ({ page, context }) => {
+	// One friend game to the next is the same route with a different param,
+	// and SvelteKit reuses a page component across exactly that — so the
+	// screen kept the finished game's session, socket and board while the URL
+	// changed underneath it, and the button looked like it did nothing. The
+	// route keys on the token now, which is what this spec is holding down.
+	const first = await hostAGame(page);
+	const friend = await friendPage(context, first);
+	await expect(page.getByTestId('presence-black')).toHaveText('here');
+
+	await hold(page, page.getByTestId('friend-resign'));
+	await expect(page.getByTestId('friend-result')).toBeVisible();
+
+	await page.getByTestId('friend-play-again').click();
+
+	// A different link, and a game that has not been played: the result panel
+	// is gone and there is an invite to send again.
+	await expect(page).not.toHaveURL(first);
+	await expect(page.getByTestId('friend-invite')).toBeVisible();
+	await expect(page.getByTestId('friend-result')).toHaveCount(0);
+	const second = await page.getByTestId('friend-link').inputValue();
+	expect(second).not.toBe(first);
+
+	// And it is a real game at the far end of that link, not just a new URL:
+	// the friend opens it and takes the seat this browser did not.
+	await friend.close();
+	const rematch = await friendPage(context, second);
+	await expect(rematch.getByTestId('friend-game')).toBeVisible();
+	await expect(page.getByTestId('presence-white')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('friend-invite')).toHaveCount(0);
+});
+
 test('a friend game is a board and nothing else', async ({ page, context }) => {
 	const link = await hostAGame(page);
 	await friendPage(context, link);
