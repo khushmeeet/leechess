@@ -509,18 +509,31 @@ def _pgn_of(board: chess.Board, white: str, black: str, result: str) -> str:
 
 
 def _queue_analysis(run, game_id: int) -> None:
-    """Run the analysis job off the event loop.
+    """Run the analysis job off the thread that ended the game.
 
     A live game ends inside a WebSocket handler, where BackgroundTasks (how
     the REST completion path queues this) is not available — and the job is a
-    blocking, engine-bound function, so it must not run on the loop itself.
+    blocking, engine-bound function that opens Stockfish, walks every position
+    of the game, then generates puzzles, explanations and a summary. It must
+    not run on the event loop, and it must not run here either: `finish` is
+    called under the game's lock, from a `run_in_threadpool` worker, with both
+    players waiting on the message that says the game is over.
+
+    This used to ask asyncio for the loop and hand the job to its executor,
+    falling back to running it inline when there wasn't one. There never is
+    one: `asyncio.get_running_loop()` raises in a worker thread, so *every*
+    resignation, draw agreement and checkmate took the fallback and sat on the
+    engine before either player was told the game had ended — the same reason
+    the periodic sweep (which forks games from its own executor thread) did.
+
+    A plain daemon thread, as app/seeding.py starts its seed run: the job
+    already serializes on the engine semaphore, so what these threads mostly
+    do is wait their turn, and one that is still waiting when the machine
+    stops is swept back up by reset_stale_analyses on the next boot.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        run(game_id)  # no loop (tests, sync callers): just do it
-        return
-    loop.run_in_executor(None, run, game_id)
+    threading.Thread(
+        target=run, args=(game_id,), name=f"live-analysis-{game_id}", daemon=True
+    ).start()
 
 
 # ── the hub ────────────────────────────────────────────────────────────────

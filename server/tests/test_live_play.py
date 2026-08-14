@@ -8,6 +8,9 @@ a seat without one gets nothing at all, and neither does the other player's
 account get half of it.
 """
 
+import threading
+import time
+
 import chess
 import pytest
 from sqlalchemy import select
@@ -44,6 +47,22 @@ def _no_real_analysis(monkeypatch):
 @pytest.fixture()
 def analysis_queue(_no_real_analysis):
     return _no_real_analysis
+
+
+def queued_analyses(queue: list[int], expected: int) -> list[int]:
+    """The analysis jobs a finished game started, once they have started.
+
+    Each one goes on its own thread (see live._queue_analysis) so that neither
+    player waits on Stockfish to be told the game is over — which means a test
+    that has just finished a game is racing those threads. Waits for the jobs
+    it expects, and pauses briefly either way, so that asserting *no* job was
+    queued stays a real assertion rather than one that passes by being early.
+    """
+    deadline = time.monotonic() + 5.0
+    while len(queue) < expected and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    return sorted(queue)
 
 
 @pytest.fixture()
@@ -464,7 +483,7 @@ def test_an_anonymous_game_is_kept_nowhere(anon_client, db_session, analysis_que
 
     assert db_session.scalars(select(Game)).all() == []
     assert db_session.scalars(select(LiveGame)).one().status == "finished"
-    assert analysis_queue == []
+    assert queued_analyses(analysis_queue, 0) == []
 
 
 def test_a_signed_in_seat_gets_its_own_saved_game(
@@ -499,7 +518,73 @@ def test_a_signed_in_seat_gets_its_own_saved_game(
     # The player is told where their review is, on their own socket.
     assert saved["game_id"] == game.id
     assert saved["number"] == 1
-    assert analysis_queue == [game.id]
+    assert queued_analyses(analysis_queue, 1) == [game.id]
+
+
+@pytest.mark.parametrize("ending", ["resign", "draw"])
+def test_ending_a_game_does_not_wait_on_the_engine(
+    client, guest_client, monkeypatch, ending
+):
+    """Resigning and agreeing a draw are each two people waiting on one
+    message, and both of them go through `finish`, which starts the analysis
+    job for any seat with an account.
+
+    That job is an engine process, a search of every position in the game, and
+    then puzzles, explanations and a summary — and it used to run *inline*.
+    `_queue_analysis` asked asyncio for a loop to hand it to, and `finish` is
+    only ever reached from a `run_in_threadpool` worker, where there is no
+    running loop — so every game took the "no loop, just do it here" fallback,
+    under the game's lock, on the thread that owed both players the news that
+    the game was over. Resignations took as long as Stockfish did.
+    """
+    # Long enough that taking the old path cannot be mistaken for a slow
+    # machine, short enough that a regression fails rather than hangs.
+    blocked_for = 3.0
+    running = threading.Event()
+    let_go = threading.Event()
+
+    def slow_analysis(game_id: int) -> None:
+        running.set()
+        let_go.wait(blocked_for)
+
+    monkeypatch.setattr("app.analysis.run_game_analysis", slow_analysis)
+
+    created = open_game(client, color="white")
+    joined = join(guest_client, created["token"], name="Bo")
+    token = created["token"]
+
+    try:
+        with client.websocket_connect(
+            f"/live/{token}/ws?seat={created['seat']}"
+        ) as white:
+            white.receive_json()
+            with client.websocket_connect(
+                f"/live/{token}/ws?seat={joined['seat']}"
+            ) as black:
+                black.receive_json()
+                # A game with no moves is never saved, so there would be no job
+                # to block on and the test would pass without proving anything.
+                play(white, "e2e4")
+                play(black, "e7e5")
+
+                asked_at = time.monotonic()
+                if ending == "resign":
+                    white.send_json({"type": "resign"})
+                else:
+                    white.send_json({"type": "draw-offer"})
+                    drain_to(black, "draw-offer")
+                    black.send_json({"type": "draw-accept"})
+                ended = drain_to(white, "end")
+                waited = time.monotonic() - asked_at
+    finally:
+        let_go.set()
+
+    assert ended["state"]["status"] == "finished"
+    assert running.wait(5), "the analysis job never ran at all"
+    assert waited < blocked_for, (
+        f"both players waited {waited:.1f}s to be told the game was over, "
+        "while an analysis job that had not finished held the thread"
+    )
 
 
 def test_two_accounts_each_get_their_own_copy(
@@ -530,7 +615,7 @@ def test_two_accounts_each_get_their_own_copy(
     # Same game, told from two sides: both are #1 to their own account.
     assert black_row.number == white_row.number == 1
     assert black_row.result == white_row.result == "0-1"
-    assert sorted(analysis_queue) == sorted(game.id for game in games)
+    assert queued_analyses(analysis_queue, 2) == sorted(game.id for game in games)
 
     # And each account sees only its own.
     assert [row["id"] for row in client.get("/games").json()] == [white_row.id]
@@ -688,7 +773,7 @@ def test_claiming_an_abandoned_game_wins_it(
     saved = db_session.scalars(select(Game)).one()
     assert saved.user_color == "white"
     assert saved.result == "1-0"
-    assert analysis_queue == [saved.id]
+    assert queued_analyses(analysis_queue, 1) == [saved.id]
 
 
 def test_coming_back_stops_the_clock(client, guest_client):
@@ -806,4 +891,4 @@ def test_the_sweep_keeps_what_was_actually_played(
     assert saved.user_color == "white"
     assert saved.result == "*"
     assert [move.san for move in saved.moves] == ["e4", "e5"]
-    assert analysis_queue == [saved.id]
+    assert queued_analyses(analysis_queue, 1) == [saved.id]
