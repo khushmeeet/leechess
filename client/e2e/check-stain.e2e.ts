@@ -2,10 +2,9 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { move, restoreActiveGame, waitForEngineReady } from './helpers';
 
-// The stain on a checked king's square. It is painted under the pieces, by
+// The stain on a checked king's square. It is a background image on
 // chessground's own check square, so what a spec can see is that square and
-// the state the board published for it to be styled from — the artwork itself
-// is a background image on a pseudo-element.
+// the state the board published for it to be styled from.
 
 /** The board wrapper, which carries how bad the check is. */
 const board = '[data-check]';
@@ -26,14 +25,13 @@ test('a checked king stands in a stain, and mate deepens it', async ({ page }) =
 	await expect(page.locator('cg-board square.check')).toHaveCount(1);
 	await expect(page.locator(board)).toHaveAttribute('data-check', 'check');
 
-	const artwork = () =>
-		page
-			.locator('cg-board square.check')
-			.evaluate((square) => getComputedStyle(square, '::before').backgroundImage);
-	expect(await artwork()).toContain('/board/check.svg');
+	const artwork = await page
+		.locator('cg-board square.check')
+		.evaluate((square) => getComputedStyle(square).backgroundImage);
+	expect(artwork).toContain('/board/check.svg');
 });
 
-test('mate paints the heavier stain, and runs with it', async ({ page }) => {
+test('mate paints the deeper stain', async ({ page }) => {
 	// Scholar's mate — black is mated, so nothing moves again either way.
 	await position(page, {
 		moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6', 'h5f7'],
@@ -44,12 +42,8 @@ test('mate paints the heavier stain, and runs with it', async ({ page }) => {
 	const square = page.locator('cg-board square.check');
 	await expect(square).toHaveCount(1);
 
-	const layers = await square.evaluate((el) => ({
-		pool: getComputedStyle(el, '::before').backgroundImage,
-		runs: getComputedStyle(el, '::after').backgroundImage
-	}));
-	expect(layers.pool).toContain('/board/mate.svg');
-	expect(layers.runs).toContain('/board/mate-drips.svg');
+	const artwork = await square.evaluate((el) => getComputedStyle(el).backgroundImage);
+	expect(artwork).toContain('/board/mate.svg');
 });
 
 test('the stain arrives with the check and leaves with it', async ({ page }) => {
@@ -73,15 +67,28 @@ test('the stain arrives with the check and leaves with it', async ({ page }) => 
 	await expect(page.locator(board)).not.toHaveAttribute('data-check', /check|mate/);
 });
 
-test('the stain is trimmed where it would spill off the board', async ({ page }) => {
-	// 1. e4 d5 2. Bb5+ — the black king is on e8, on the board's edge, and the
-	// user is playing black so the board is seen from that side.
+test('the stain stays inside the square it is on', async ({ page }) => {
+	// 1. e4 d5 2. Bb5+ — the black king is on e8, against the board's edge,
+	// which is where anything drawn wider than the square would show up: on the
+	// page, over the captured-pieces row.
 	await position(page, { moves: ['e2e4', 'd7d5', 'f1b5'], playerColor: 'black' });
-
 	await expect(page.locator(board)).toHaveAttribute('data-check', 'check');
-	// e8 is the bottom edge from black's side, so the bottom quarter goes
-	const clip = await page
-		.locator(board)
-		.evaluate((el) => getComputedStyle(el).getPropertyValue('--check-clip').trim());
-	expect(clip).toBe('inset(0% 0% 25% 0%)');
+
+	const painted = await page.locator('cg-board square.check').evaluate((square) => {
+		const style = getComputedStyle(square);
+		return {
+			square: square.getBoundingClientRect().width,
+			eighth: square.parentElement!.getBoundingClientRect().width / 8,
+			// a background is clipped to its own box; a pseudo-element is not,
+			// and is how the stain would get out of the square again
+			before: getComputedStyle(square, '::before').content,
+			after: getComputedStyle(square, '::after').content,
+			hasArtwork: style.backgroundImage.includes('/board/check.svg')
+		};
+	});
+
+	expect(painted.hasArtwork).toBe(true);
+	expect(painted.square).toBeCloseTo(painted.eighth, 1);
+	expect(painted.before).toBe('none');
+	expect(painted.after).toBe('none');
 });

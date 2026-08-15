@@ -47,90 +47,26 @@ cg-board square.current-premove {
 	background-color: rgba(20, 30, 85, 0.5);
 }
 
-/** Check, and mate, as a hit taken: red soaks into the square the king is
- * standing on and bleeds off its edges. The artwork is in static/board/ —
- * washes of translucent crimson with the pigment stranded at the perimeter,
- * the way a watercolour dries, ragged-edged from an SVG turbulence filter.
+/** Check, and mate, as red soaking into the square the king is standing on.
+ * The artwork is in static/board/ — overlapping washes of dilute crimson with
+ * the pigment stranded at the drying edge the way a watercolour leaves it,
+ * ragged-edged from a pair of chained SVG turbulence displacements.
  *
- * It is painted by the square rather than by an overlay of our own so that it
- * lands *under* the pieces: the king keeps its full contrast standing in the
- * pool, which it would lose under even a partly transparent wash, and every
- * board in the app inherits the effect from the one place chessground already
- * marks the square.
+ * It sits on the square, which is to say under the pieces: the king keeps its
+ * full contrast standing in it. It also stays *within* the square, shaped to
+ * the square rather than round — a round blot leaves the four corners dry and
+ * reads as a sticker laid on top instead of as the square itself having taken
+ * the stain. Mate is the same soak, further through the paper.
  *
- * Two squares wide (inset -50%) because a stain confined to its own square
- * reads as a highlighted square. The king's piece covers nearly all of the
- * square it is on, so the part of this that anyone actually sees is the part
- * that spills onto the neighbours.
- *
- * A pseudo-element and not the square's own background, so that the square
- * itself is left free for whatever else chessground has marked it as. */
-cg-board square.check::before {
-	position: absolute;
-	inset: -50%;
-	clip-path: var(--check-clip, inset(0%));
+ * The SVG's viewport is the square, so the displacement has to leave the
+ * shapes inside it: anything pushed past the edge comes back as a dead
+ * straight line, which is the one thing a soak must never have. */
+cg-board square.check {
 	background: url('/board/check.svg') center / 100% 100% no-repeat;
-	animation: stain-soak 420ms var(--ease-rise) both;
-	content: '';
 }
 
-[data-check='mate'] cg-board square.check::before {
+[data-check='mate'] cg-board square.check {
 	background-image: url('/board/mate.svg');
-}
-
-/** Mate alone gets runs: the pool overflows and gravity takes it down the
- * board. They lengthen out of the bottom of the pool rather than being wiped
- * into view, which is the difference between a drip running and a drip that
- * was always there — hence the origin on the line they start from. */
-[data-check='mate'] cg-board square.check::after {
-	position: absolute;
-	inset: -50%;
-	transform-origin: center 69%;
-	clip-path: var(--check-clip, inset(0%));
-	background: url('/board/mate-drips.svg') center / 100% 100% no-repeat;
-	animation: stain-run 820ms var(--ease-rise) 200ms both;
-	content: '';
-}
-
-/* Spreading from the point of impact, not fading up in place. */
-@keyframes stain-soak {
-	from {
-		transform: scale(0.72);
-		opacity: 0;
-	}
-	to {
-		transform: scale(1);
-		opacity: 1;
-	}
-}
-
-@keyframes stain-run {
-	from {
-		transform: scaleY(0.12);
-		opacity: 0;
-	}
-	to {
-		transform: scaleY(1);
-		opacity: 1;
-	}
-}
-
-@keyframes stain-appear {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
-	}
-}
-
-/* The stain itself is the information, so it still arrives — it just stops
- * moving to get here. */
-@media (prefers-reduced-motion: reduce) {
-	cg-board square.check::before,
-	[data-check='mate'] cg-board square.check::after {
-		animation: stain-appear 160ms var(--ease-rise) both;
-	}
 }
 
 /** Rank/file labels wear the opposite square colour, whatever the palette. */

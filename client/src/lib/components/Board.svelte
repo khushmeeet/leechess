@@ -8,7 +8,7 @@
 	import '$lib/board.css';
 	import '$lib/pieces.css';
 	import { boardVars } from '$lib/boardThemes';
-	import { readCheck, stainClip } from '$lib/boardCheck';
+	import { readCheck } from '$lib/boardCheck';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 
 	type PieceColor = 'white' | 'black';
@@ -143,7 +143,7 @@
 	const bottomColor = $derived<PieceColor>(orientation);
 
 	/** The king standing in it, and how deep — the stain on its square is
-	 * styled off `data-check` and `--check-clip` below (see board.css). */
+	 * styled off `data-check` below (see board.css). */
 	const check = $derived(readCheck(fen));
 
 	function eliminatedLabel(color: PieceColor): string {
@@ -236,9 +236,7 @@
      bad it is — chessground marks the square, but knows only "in check". -->
 <div
 	class="pieces-{boardPrefs.pieceSet} w-full"
-	style="{boardVars(boardPrefs.theme)}{check
-		? `; --check-clip: ${stainClip(check.square, orientation)}`
-		: ''}"
+	style={boardVars(boardPrefs.theme)}
 	data-check={check && (check.mate ? 'mate' : 'check')}
 >
 	{@render eliminatedRow(topColor)}
