@@ -42,17 +42,95 @@ cg-board square.last-move {
 cg-board square.selected {
 	background-color: rgba(20, 85, 30, 0.5);
 }
-cg-board square.check {
-	background: radial-gradient(
-		ellipse at center,
-		rgba(255, 0, 0, 1) 0%,
-		rgba(231, 0, 0, 1) 25%,
-		rgba(169, 0, 0, 0) 89%,
-		rgba(158, 0, 0, 0) 100%
-	);
-}
+
 cg-board square.current-premove {
 	background-color: rgba(20, 30, 85, 0.5);
+}
+
+/** Check, and mate, as a hit taken: red soaks into the square the king is
+ * standing on and bleeds off its edges. The artwork is in static/board/ —
+ * washes of translucent crimson with the pigment stranded at the perimeter,
+ * the way a watercolour dries, ragged-edged from an SVG turbulence filter.
+ *
+ * It is painted by the square rather than by an overlay of our own so that it
+ * lands *under* the pieces: the king keeps its full contrast standing in the
+ * pool, which it would lose under even a partly transparent wash, and every
+ * board in the app inherits the effect from the one place chessground already
+ * marks the square.
+ *
+ * Two squares wide (inset -50%) because a stain confined to its own square
+ * reads as a highlighted square. The king's piece covers nearly all of the
+ * square it is on, so the part of this that anyone actually sees is the part
+ * that spills onto the neighbours.
+ *
+ * A pseudo-element and not the square's own background, so that the square
+ * itself is left free for whatever else chessground has marked it as. */
+cg-board square.check::before {
+	position: absolute;
+	inset: -50%;
+	clip-path: var(--check-clip, inset(0%));
+	background: url('/board/check.svg') center / 100% 100% no-repeat;
+	animation: stain-soak 420ms var(--ease-rise) both;
+	content: '';
+}
+
+[data-check='mate'] cg-board square.check::before {
+	background-image: url('/board/mate.svg');
+}
+
+/** Mate alone gets runs: the pool overflows and gravity takes it down the
+ * board. They lengthen out of the bottom of the pool rather than being wiped
+ * into view, which is the difference between a drip running and a drip that
+ * was always there — hence the origin on the line they start from. */
+[data-check='mate'] cg-board square.check::after {
+	position: absolute;
+	inset: -50%;
+	transform-origin: center 69%;
+	clip-path: var(--check-clip, inset(0%));
+	background: url('/board/mate-drips.svg') center / 100% 100% no-repeat;
+	animation: stain-run 820ms var(--ease-rise) 200ms both;
+	content: '';
+}
+
+/* Spreading from the point of impact, not fading up in place. */
+@keyframes stain-soak {
+	from {
+		transform: scale(0.72);
+		opacity: 0;
+	}
+	to {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes stain-run {
+	from {
+		transform: scaleY(0.12);
+		opacity: 0;
+	}
+	to {
+		transform: scaleY(1);
+		opacity: 1;
+	}
+}
+
+@keyframes stain-appear {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* The stain itself is the information, so it still arrives — it just stops
+ * moving to get here. */
+@media (prefers-reduced-motion: reduce) {
+	cg-board square.check::before,
+	[data-check='mate'] cg-board square.check::after {
+		animation: stain-appear 160ms var(--ease-rise) both;
+	}
 }
 
 /** Rank/file labels wear the opposite square colour, whatever the palette. */
