@@ -356,7 +356,15 @@
 				</div>
 			</div>
 
-			<aside class="flex flex-col gap-5">
+			<!-- py-7 is Board's captured-piece rows: one above the squares and one
+			     below, 1.75rem each, which makes the board column taller than the
+			     board. Without the inset the rail's first and last lines overhang
+			     the squares by that much at either end and the two columns read as
+			     ragged. Insetting by the same amount lines the rail up with the
+			     board's own top and bottom edges — the constant the result
+			     overlay's inset-y-7 already uses to sit inside the squares. Beside
+			     the board only: stacked, there is nothing to line up with. -->
+			<aside class="flex flex-col gap-5 md:py-7">
 				<!-- The one line that answers "what now?", unboxed and in the
 				     display face so it reads before anything else in the column.
 				     See the `lead` derivation for why it is the only thing here
@@ -590,7 +598,12 @@
 				{/if}
 
 				{#if !live.isSpectator}
-					<section class="flex flex-col gap-2">
+					<!-- mt-auto so the rail ends on the board's bottom edge whatever
+					     is above it. It is a no-op while the move list is on screen
+					     — a flex-1 sibling takes the free space before an auto margin
+					     can — and it is what keeps the waiting rail, which has no
+					     move list to stretch, from stopping halfway up the board. -->
+					<section class="mt-auto flex flex-col gap-2">
 						{#if live.status === 'playing' && !drawOffered}
 							<div class="flex gap-2">
 								<!-- A person is waiting on the other end of this one, so a
