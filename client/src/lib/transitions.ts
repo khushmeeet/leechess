@@ -24,7 +24,10 @@ import { fade, fly, type FlyParams, type TransitionConfig } from 'svelte/transit
  * that appear mid-game, and the appearance itself is the information. A
  * shorter fade keeps that legible without the travel.
  */
-export function rise(node: Element, { duration = 200, y = 4 }: FlyParams = {}): TransitionConfig {
-	if (prefersReducedMotion.current) return fade(node, { duration: Math.min(duration, 150) });
-	return fly(node, { y, duration, opacity: 0 });
+export function rise(
+	node: Element,
+	{ duration = 200, y = 4, delay = 0 }: FlyParams = {}
+): TransitionConfig {
+	if (prefersReducedMotion.current) return fade(node, { duration: Math.min(duration, 150), delay });
+	return fly(node, { y, duration, delay, opacity: 0 });
 }
