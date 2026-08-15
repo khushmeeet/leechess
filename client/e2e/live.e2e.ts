@@ -45,8 +45,8 @@ test('a link is all it takes to start playing', async ({ page, context }) => {
 
 	// No sign-up, no name, no lobby — opening the link took the other seat.
 	await expect(friend.getByTestId('friend-game')).toBeVisible();
-	await expect(page.getByTestId('presence-white')).toHaveText('here');
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-white')).toHaveText('joined');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 	await expect(page.getByTestId('friend-invite')).toHaveCount(0);
 	expect(errors).toEqual([]);
 });
@@ -54,7 +54,7 @@ test('a link is all it takes to start playing', async ({ page, context }) => {
 test('moves cross between the two players', async ({ page, context }) => {
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	const [white, black] = await orientedPlayers(page, friend);
 	const blackBefore = await boardPosition(black.page);
@@ -79,12 +79,16 @@ test('moves cross between the two players', async ({ page, context }) => {
 test('the board refuses a move that is not yours to make', async ({ page, context }) => {
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 	const [, black] = await orientedPlayers(page, friend);
 
 	// It is White's move, so Black's board must not move a Black piece — the
 	// clicks are issued for real and the position has to be unchanged after.
-	await expect(black.page.getByTestId('friend-status')).toContainText('Waiting for');
+	// Whose turn it is is read off the seat rows: the rail says nothing above
+	// them during an ordinary turn, so this is the assertion that the spec is
+	// on the right screen at the right moment.
+	await expect(black.page.getByTestId('seat-white')).toContainText('to move');
+	await expect(black.page.getByTestId('seat-black')).not.toContainText('to move');
 	const before = await boardPosition(black.page);
 	await clickSquares(black.page, 'e7', 'e5', black.orientation);
 	await black.page.waitForTimeout(500);
@@ -95,25 +99,51 @@ test('the board refuses a move that is not yours to make', async ({ page, contex
 test('resigning ends the game for both players', async ({ page, context }) => {
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
+
+	// The way off this screen keeps to the end of the game: with a person
+	// waiting on the other end there is nothing to leave for, and an exit
+	// under Hold to resign is a slip away from abandoning them.
+	await expect(page.getByTestId('friend-leave')).toHaveCount(0);
 
 	await hold(page, page.getByTestId('friend-resign'));
 
+	// The board says it, over the position it happened on.
 	await expect(page.getByTestId('friend-result')).toBeVisible();
 	await expect(friend.getByTestId('friend-result')).toBeVisible();
-	// The resigner lost; their opponent won. Both are told, on their own screen.
 	await expect(page.getByTestId('friend-result')).toContainText('You lost');
-	await expect(friend.getByTestId('friend-result')).toContainText('You won');
+
+	// The resigner lost; their opponent won. Both are told, on their own screen
+	// — and the rail is where it is written down.
+	await expect(page.getByTestId('friend-status')).toContainText('You lost');
+	await expect(friend.getByTestId('friend-status')).toContainText('You won');
+	await expect(page.getByTestId('friend-status')).toContainText('by resignation');
+
+	// And the score is written where the game was played out: a point beside
+	// each name, in the slot that carried their presence a moment ago.
+	const hostIsWhite = (await page.getByTestId('friend-seats').getAttribute('data-you')) === 'white';
+	await expect(page.getByTestId(hostIsWhite ? 'score-white' : 'score-black')).toHaveText('0');
+	await expect(page.getByTestId(hostIsWhite ? 'score-black' : 'score-white')).toHaveText('1');
+
+	// And now both have the way out, whichever end of the resignation they
+	// were on.
+	await expect(page.getByTestId('friend-leave')).toBeVisible();
+	await expect(friend.getByTestId('friend-leave')).toBeVisible();
+
+	// The overlay says the result and nothing else: what became of the game and
+	// what to do about it are the rail's, said once each.
+	await expect(page.getByTestId('friend-result')).not.toContainText('saved');
+	await expect(page.getByTestId('friend-result')).not.toContainText('Play again');
 });
 
 test('play again starts the next game on the same link', async ({ page, context }) => {
 	// A rematch is the link the friend already has, played again — nobody has
-	// to send a second URL after every game. It takes both players: the result
-	// panel carries a signed-in player's link to their saved game, and one
-	// press must not clear it while the other is still reading it.
+	// to send a second URL after every game. It takes both players: the rail
+	// carries a signed-in player's link to their saved game, and one press
+	// must not clear it while the other is still reading it.
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	const [white, black] = await orientedPlayers(page, friend);
 	await move(white.page, 'e2', 'e4', white.orientation);
@@ -131,13 +161,18 @@ test('play again starts the next game on the same link', async ({ page, context 
 	await expect(page.getByTestId('rematch-waiting')).toBeVisible();
 	await expect(friend.getByTestId('rematch-offer')).toBeVisible();
 	await expect(friend.getByTestId('friend-result')).toBeVisible();
+	await expect(friend.getByTestId('friend-status')).toContainText('by resignation');
 
-	// The second press starts it — same URL, empty board, colours swapped.
+	// The second press starts it — same URL, empty board, colours swapped. The
+	// finished game is gone from both: no overlay, no verdict in the rail, no
+	// score beside a name.
 	await friend.getByTestId('friend-play-again').click();
 
 	await expect(page).toHaveURL(link);
 	await expect(page.getByTestId('friend-result')).toHaveCount(0);
 	await expect(friend.getByTestId('friend-result')).toHaveCount(0);
+	await expect(page.getByTestId('friend-status')).toHaveCount(0);
+	await expect(page.getByTestId('score-white')).toHaveCount(0);
 	await expect(page.getByTestId('friend-moves')).toContainText('No moves yet');
 	await expect(page.getByTestId('friend-seats')).toHaveAttribute(
 		'data-you',
@@ -167,7 +202,7 @@ test('a friend game is a board and nothing else', async ({ page, context }) => {
 test('an anonymous game keeps nothing, and says so before it ends', async ({ page, context }) => {
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	// Stated on the board while the game is on, not discovered afterwards on
 	// an empty Review screen.
@@ -175,8 +210,10 @@ test('an anonymous game keeps nothing, and says so before it ends', async ({ pag
 
 	await hold(page, page.getByTestId('friend-resign'));
 
-	await expect(page.getByTestId('friend-result')).toContainText('Nothing was saved');
-	await expect(friend.getByTestId('friend-result')).toContainText('Nothing was saved');
+	// Same line, same place, now in the past tense: what was a promise while
+	// the game was on is what became of it once it ended.
+	await expect(page.getByTestId('friend-seats')).toContainText('Nothing was saved');
+	await expect(friend.getByTestId('friend-seats')).toContainText('Nothing was saved');
 	await expect(page.getByTestId('friend-review-link')).toHaveCount(0);
 });
 
@@ -186,7 +223,7 @@ test('an opponent who leaves can be claimed, not just resigned to', async ({ pag
 	// or to walk away and let it be swept.
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	// Somebody has to move first: an unplayed game is aborted, not won.
 	const [white, black] = await orientedPlayers(page, friend);
@@ -204,8 +241,8 @@ test('an opponent who leaves can be claimed, not just resigned to', async ({ pag
 	await expect(page.getByTestId('claim-win')).toBeVisible({ timeout: 20_000 });
 	await page.getByTestId('claim-win').click();
 
-	await expect(page.getByTestId('friend-result')).toBeVisible();
-	await expect(page.getByTestId('friend-result')).toContainText('abandonment');
+	await expect(page.getByTestId('friend-status')).toContainText('You won');
+	await expect(page.getByTestId('friend-status')).toContainText('by abandonment');
 });
 
 test('leaving a finished friend game goes to the welcome screen', async ({ page, context }) => {
@@ -216,7 +253,7 @@ test('leaving a finished friend game goes to the welcome screen', async ({ page,
 	// off it — which looks exactly like zen mode with the controls stuck.
 	const link = await hostAGame(page);
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	await hold(friend, friend.getByTestId('friend-resign'));
 	await expect(page.getByTestId('friend-result')).toBeVisible();
@@ -264,7 +301,7 @@ test('a signed-in player gets the game in their review', async ({ page, context 
 
 	await expect(page.getByTestId('friend-seats')).toContainText('saved and analyzed');
 	const friend = await friendPage(context, link);
-	await expect(page.getByTestId('presence-black')).toHaveText('here');
+	await expect(page.getByTestId('presence-black')).toHaveText('joined');
 
 	// A game with no moves is not one to look back at, so play one first.
 	const [white, black] = await orientedPlayers(page, friend);
