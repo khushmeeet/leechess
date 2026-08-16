@@ -42,17 +42,48 @@ cg-board square.last-move {
 cg-board square.selected {
 	background-color: rgba(20, 85, 30, 0.5);
 }
-cg-board square.check {
-	background: radial-gradient(
-		ellipse at center,
-		rgba(255, 0, 0, 1) 0%,
-		rgba(231, 0, 0, 1) 25%,
-		rgba(169, 0, 0, 0) 89%,
-		rgba(158, 0, 0, 0) 100%
-	);
-}
+
 cg-board square.current-premove {
 	background-color: rgba(20, 30, 85, 0.5);
+}
+
+/** Check, and mate, as a red glow on the square the king is standing on —
+ * light coming off the square rather than pigment sitting on it, which is what
+ * separates this from every stain that isn't it.
+ *
+ * It is a background on the square, so two things come free: it paints *under*
+ * the pieces, leaving the king at full contrast, and it cannot escape its own
+ * square, because a background is clipped to its box.
+ *
+ * The stops run past 100%, deliberately. The falloff is scaled wider than the
+ * square (130%) so what lands inside is the near half of a much larger bloom —
+ * a glow that fills the square instead of a ring that fades out inside it. The
+ * tail beyond the edge is simply clipped, which is the point.
+ *
+ * The numbers are the ones chosen on the comparison sheet: intensity 85% is
+ * already folded into every alpha, and saturation 95% into every colour, so
+ * this needs no filter at runtime. Mate is the same glow at a higher
+ * intensity — the same light, turned up. */
+cg-board square.check {
+	background: radial-gradient(
+		circle,
+		rgba(248, 72, 51, 0.765) 0%,
+		rgba(218, 18, 22, 0.612) 41.6%,
+		rgba(183, 6, 14, 0.34) 75.4%,
+		rgba(144, 2, 9, 0.119) 104%,
+		rgba(144, 2, 9, 0) 130%
+	);
+}
+
+[data-check='mate'] cg-board square.check {
+	background: radial-gradient(
+		circle,
+		rgba(248, 72, 51, 1) 0%,
+		rgba(218, 18, 22, 0.828) 41.6%,
+		rgba(183, 6, 14, 0.46) 75.4%,
+		rgba(144, 2, 9, 0.161) 104%,
+		rgba(144, 2, 9, 0) 130%
+	);
 }
 
 /** Rank/file labels wear the opposite square colour, whatever the palette. */

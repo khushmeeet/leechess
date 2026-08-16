@@ -8,6 +8,7 @@
 	import '$lib/board.css';
 	import '$lib/pieces.css';
 	import { boardVars } from '$lib/boardThemes';
+	import { readCheck } from '$lib/boardCheck';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 
 	type PieceColor = 'white' | 'black';
@@ -141,6 +142,10 @@
 	const topColor = $derived<PieceColor>(orientation === 'white' ? 'black' : 'white');
 	const bottomColor = $derived<PieceColor>(orientation);
 
+	/** The king standing in it, and how deep — the stain on its square is
+	 * styled off `data-check` below (see board.css). */
+	const check = $derived(readCheck(fen));
+
 	function eliminatedLabel(color: PieceColor): string {
 		const pieces = eliminated[color];
 		return `${color === 'white' ? 'White' : 'Black'} eliminated pieces: ${pieces.length ? pieces.join(', ') : 'none'}`;
@@ -151,6 +156,10 @@
 			fen,
 			turnColor,
 			lastMove,
+			// always present, never omitted: chessground only clears a previous
+			// check when the key is there, so leaving it out on the move that
+			// escapes would strand the stain on the board
+			check: check?.color,
 			orientation,
 			viewOnly,
 			movable: {
@@ -222,8 +231,14 @@
 {/snippet}
 
 <!-- Outer div owns the user's board prefs; chessground mutates the inner
-     element's classes, so Svelte must never re-render attributes on it. -->
-<div class="pieces-{boardPrefs.pieceSet} w-full" style={boardVars(boardPrefs.theme)}>
+     element's classes, so Svelte must never re-render attributes on it.
+     data-check is what tells the stain on the king's square (board.css) how
+     bad it is — chessground marks the square, but knows only "in check". -->
+<div
+	class="pieces-{boardPrefs.pieceSet} w-full"
+	style={boardVars(boardPrefs.theme)}
+	data-check={check && (check.mate ? 'mate' : 'check')}
+>
 	{@render eliminatedRow(topColor)}
 	<div class="relative aspect-square w-full">
 		<div bind:this={el} class="h-full w-full"></div>
