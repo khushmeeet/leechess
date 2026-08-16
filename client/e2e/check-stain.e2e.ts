@@ -6,7 +6,9 @@ import { move, restoreActiveGame, waitForEngineReady } from './helpers';
 // chessground's own check square, so what a spec can see is that square and
 // the state the board published for it to be styled from.
 
-/** The board wrapper, which carries how bad the check is. */
+/** The board wrapper, while it is carrying how bad the check is. The attribute
+ * is absent entirely when nobody is in check, so this selector matching
+ * nothing is itself the "no check" assertion. */
 const board = '[data-check]';
 
 /** The glow, as the browser resolves it. Both states share these colours and
@@ -60,7 +62,10 @@ test('the glow arrives with the check and leaves with it', async ({ page }) => {
 
 	const lit = page.locator('cg-board square.check');
 	await expect(lit).toHaveCount(0);
-	await expect(page.locator(board)).not.toHaveAttribute('data-check', /check|mate/);
+	// Absence, not a falsy value: the board sets data-check to null when nobody
+	// is in check, and Svelte drops the attribute rather than emptying it — so
+	// there is no element here to assert an attribute *on*.
+	await expect(page.locator(board)).toHaveCount(0);
 
 	await move(page, 'd8', 'h4', 'black');
 	await expect(lit).toHaveCount(1);
@@ -70,7 +75,7 @@ test('the glow arrives with the check and leaves with it', async ({ page }) => {
 	// does if the board keeps telling chessground about check on *every*
 	// position: a board that only ever set it would strand this one here.
 	await expect(lit).toHaveCount(0);
-	await expect(page.locator(board)).not.toHaveAttribute('data-check', /check|mate/);
+	await expect(page.locator(board)).toHaveCount(0);
 });
 
 test('the glow stays inside the square it is on', async ({ page }) => {
