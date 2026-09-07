@@ -31,7 +31,12 @@ class ThemePrefs {
 
 	private apply(mode: ThemeMode) {
 		const dark = mode === 'dark' || (mode === 'system' && window.matchMedia(MEDIA_QUERY).matches);
+		const freeze = document.createElement('style');
+		freeze.textContent = '*, *::before, *::after { transition: none !important; }';
+		document.head.append(freeze);
 		document.documentElement.classList.toggle('dark', dark);
+		void document.documentElement.offsetHeight;
+		requestAnimationFrame(() => freeze.remove());
 	}
 
 	setMode(mode: ThemeMode) {

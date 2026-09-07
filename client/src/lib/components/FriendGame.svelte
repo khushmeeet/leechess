@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	// A friend game: a board, and a link to send. Everything the Play screen
 	// wraps around its board — the coach line, the ideas row, the hint ladder,
 	// the takeback offer — is absent here rather than hidden, because all of it
@@ -308,7 +309,7 @@
 
 <div class="flex flex-col gap-4" data-testid="friend-game">
 	{#if live.status === 'gone'}
-		<section class="rounded-xs border border-line bg-card p-4 text-sm" data-testid="friend-gone">
+		<section class="study-panel text-sm" data-testid="friend-gone">
 			<h1 class="mb-1 font-display text-xl">That link has expired</h1>
 			<p class="text-muted">
 				Friend games are cleared once nobody has touched them for a couple of days. Start a new one
@@ -330,10 +331,11 @@
 			{/if}
 		</section>
 	{:else}
-		<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
-			<div class="relative flex max-w-xl self-start">
+		<PageHeading eyebrow="Across the board" title="A game between friends" />
+		<div class="board-layout">
+			<div class="board-column relative flex self-start">
 				{#if displayPrefs.friendEvalBar && !live.isSpectator}
-					<div class="absolute top-7 right-full bottom-7 mr-2 w-14">
+					<div class="eval-gutter absolute top-7 bottom-7 left-0">
 						<EvalBar cp={currentEval} orientation={live.orientation} />
 					</div>
 				{/if}
@@ -704,16 +706,13 @@
 				     only thing on it that matters. No moves are possible yet, so
 				     there is nothing to hold open. -->
 				{#if displayPrefs.friendMoveList && (live.status === 'playing' || live.status === 'finished')}
-					<section
-						class="flex min-h-40 flex-1 flex-col rounded-xs border border-line bg-card p-3"
-						data-testid="friend-moves"
-					>
+					<section class="flex min-h-40 flex-1 flex-col study-panel" data-testid="friend-moves">
 						<h2 class="mb-2 text-sm font-semibold text-ink">Moves</h2>
 						{#if movePairs.length === 0}
-							<p class="text-sm text-faint">No moves yet.</p>
+							<p class="empty-ledger text-sm text-faint">No moves yet.</p>
 						{:else}
 							<ol
-								class="min-h-0 flex-1 overflow-y-auto text-sm"
+								class="move-ledger min-h-0 flex-1 overflow-y-auto text-sm"
 								data-testid="friend-move-list"
 								bind:this={moveListElement}
 							>

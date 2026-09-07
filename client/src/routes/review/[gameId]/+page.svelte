@@ -301,11 +301,11 @@
 {:else if !game}
 	<p class="text-muted">Loading game…</p>
 {:else}
-	<div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+	<div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 		<!-- Numbered per account, and only once it is finished — an unfinished
 		     game is not one of the account's games yet, so it has no number to
 		     go by. -->
-		<h1 class="font-display text-2xl">
+		<h1 class="page-title">
 			{game.number === null ? 'Unfinished game' : `Game #${game.number}`}
 		</h1>
 		<p class="text-sm text-muted">
@@ -322,11 +322,7 @@
 				{#if practiceError}
 					<span class="text-sm break-all text-err">{practiceError}</span>
 				{/if}
-				<button
-					data-testid="practice-misses"
-					onclick={practice}
-					class="rounded-xs border border-accent-line px-3 py-1.5 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-				>
+				<button data-testid="practice-misses" onclick={practice} class="btn-primary">
 					Practice these misses
 				</button>
 			</div>
@@ -362,14 +358,11 @@
 		</div>
 	{/if}
 
-	<!-- While the board position is in the opening book a third column with
-	     the WikiBook panel appears on the left (xl+); past theory it
-	     disappears and the grid falls back to the usual two columns. The
-	     layout's max-w-5xl can't fit three columns and the full-size board,
-	     so the negative margin breaks the grid out to a wider centered
-	     span (≤80rem) for as long as the panel is up. -->
+	<!-- Opening theory adds a third column on wide screens. The regular
+	     review shares the available width between the board and its notes;
+	     the board itself is also capped by viewport height below. -->
 	<div
-		class="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] md:gap-x-10 {theoryPage
+		class="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,1fr)] md:gap-x-4 {theoryPage
 			? 'xl:mx-[calc((100%-min(80rem,100vw-2rem))/2)] xl:grid-cols-[minmax(240px,300px)_minmax(0,1fr)_minmax(280px,340px)]'
 			: ''}"
 	>
@@ -503,13 +496,13 @@
 				<CplGraph moves={game.moves} {selectedPly} onselect={select} />
 			</div>
 
-			<section class="flex min-h-0 flex-col rounded-xs border border-line bg-card p-3 md:flex-1">
+			<section class="flex min-h-0 flex-col study-panel md:flex-1">
 				<h2 class="mb-2 shrink-0 text-sm font-semibold text-ink">
 					Moves ({game.moves.length} plies)
 				</h2>
 				<ol
 					bind:this={moveListEl}
-					class="relative max-h-96 min-h-0 overflow-y-auto text-sm md:max-h-none md:flex-1"
+					class="move-ledger relative max-h-96 min-h-0 overflow-y-auto text-sm md:max-h-none md:flex-1"
 					data-testid="move-list"
 				>
 					{#each movePairs as pair (pair.number)}
@@ -521,6 +514,7 @@
 										<button
 											onclick={() => select(move.ply)}
 											data-ply={move.ply}
+											aria-current={selectedPly === move.ply ? 'step' : undefined}
 											class="flex w-full items-center gap-1.5 rounded-xs px-1 text-left hover:bg-paper {selectedPly ===
 											move.ply
 												? 'bg-warn-bg font-semibold'

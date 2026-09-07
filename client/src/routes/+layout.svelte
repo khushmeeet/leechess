@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import logo from '$lib/assets/logo.svg';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -85,56 +86,177 @@
 
 <svelte:head><link rel="icon" href={logo} /></svelte:head>
 
-<div class="min-h-screen bg-paper text-ink">
-	<!-- Signed out there is nowhere to navigate to and nothing to configure,
-	     and the welcome screen carries its own wordmark — so the bar would be
-	     an empty duplicate of the page beneath it. Excluded on /welcome rather
-	     than only while signed out: an anonymous player can be sitting on that
-	     screen, having followed a sign-up link out of the app. -->
+<div class="app-shell">
+	<a class="skip-link" href="#main-content">Skip to content</a>
 	{#if session.admitted && !onWelcome && !zen}
-		<nav class="border-b border-line bg-card">
-			<div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-				<a href={resolve('/')} class="flex items-center gap-2">
-					<img src={logo} alt="" class="h-6 w-6" />
-					<span class="font-display text-lg font-bold tracking-tight">leechess</span>
+		<header class="site-header">
+			<div class="header-inner">
+				<a href={resolve('/')} class="wordmark" aria-label="leechess home">
+					<BrandMark class="brand-knight" />
+					<span>leechess</span>
 				</a>
-				{#each links as link (link.href)}
-					<a
-						href={link.href}
-						class="text-sm hover:text-ink {page.url.pathname === link.href
-							? 'border-b border-accent pb-0.5 font-semibold text-ink'
-							: 'text-muted'}"
-					>
-						{link.label}
-					</a>
-				{/each}
-				<div class="ml-auto flex items-center gap-3">
+				<nav class="primary-nav" aria-label="Main navigation">
+					{#each links as link (link.href)}
+						{@const active =
+							link.href === resolve('/')
+								? page.url.pathname === link.href || onInvite
+								: page.url.pathname === link.href || page.url.pathname.startsWith(`${link.href}/`)}
+						<a href={link.href} aria-current={active ? 'page' : undefined}>
+							{link.label}
+						</a>
+					{/each}
+				</nav>
+				<div class="account-controls">
 					{#if session.name}
-						<span class="text-sm text-muted" data-testid="nav-username">
-							Playing as <span class="font-semibold text-ink">{session.name}</span>
+						<span class="account-name" data-testid="nav-username" title={session.name}>
+							{session.name}
 						</span>
 					{/if}
-					<!-- The one thing an anonymous player might want that is not on
-					     the screen they are looking at, so it is on every screen. -->
 					{#if session.anonymous}
-						<a
-							href="{welcome}?mode=signup"
-							data-testid="nav-sign-up"
-							class="rounded-xs border border-accent-line px-2 py-1 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-						>
+						<a href="{welcome}?mode=signup" data-testid="nav-sign-up" class="nav-signup">
 							Sign up
 						</a>
 					{/if}
 					<SettingsMenu />
 				</div>
 			</div>
-		</nav>
+		</header>
 	{/if}
 	<!-- Zen's stage positions itself against the viewport, so the page's own
 	     column would only add a scrollbar behind it. -->
-	<main class={zen ? '' : 'mx-auto max-w-5xl px-4 py-6'}>
+	<main id="main-content" class={zen ? '' : 'app-main'} class:welcome-main={onWelcome}>
 		{#if session.ready}
 			{@render children()}
 		{/if}
 	</main>
 </div>
+
+<style>
+	.site-header {
+		border-bottom: 3px double var(--color-line);
+		background: var(--color-ornament-soft);
+	}
+	.header-inner {
+		display: flex;
+		align-items: center;
+		gap: 1.25rem;
+		max-width: 64rem;
+		min-height: 3rem;
+		margin-inline: auto;
+		padding-inline: 1rem;
+	}
+	.wordmark {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 0.375rem;
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+	.wordmark :global(.brand-knight) {
+		width: 1.5rem;
+		height: 1.875rem;
+	}
+	.primary-nav {
+		display: flex;
+		align-self: stretch;
+		justify-content: center;
+		gap: 0.125rem;
+		margin-inline: auto;
+	}
+	.primary-nav a {
+		position: relative;
+		display: flex;
+		align-items: center;
+		min-height: 2rem;
+		padding: 0.125rem 0.625rem 0;
+		border-bottom: 2px solid transparent;
+		font-size: 0.875rem;
+		font-variant-caps: small-caps;
+		letter-spacing: 0.035em;
+		color: var(--color-body);
+	}
+	.primary-nav a[aria-current='page'] {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+		font-weight: 700;
+	}
+	.primary-nav a[aria-current='page']::after {
+		content: '';
+		position: absolute;
+		bottom: -3px;
+		left: calc(50% - 2px);
+		width: 4px;
+		height: 4px;
+		background: currentColor;
+		transform: rotate(45deg);
+		pointer-events: none;
+	}
+	.primary-nav a:hover {
+		color: var(--color-accent);
+	}
+	.account-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.account-name {
+		max-width: 7rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		font-size: 0.75rem;
+		color: var(--color-muted);
+	}
+	.nav-signup {
+		display: inline-flex;
+		align-items: center;
+		min-height: 1.75rem;
+		padding-inline: 0.5rem;
+		border: 1px solid var(--color-accent-line);
+		border-radius: 1px;
+		font-size: 0.75rem;
+		color: var(--color-accent);
+		white-space: nowrap;
+	}
+	:global(.welcome-main) {
+		padding-block: 1rem;
+	}
+	@media (max-width: 46rem) {
+		.header-inner {
+			flex-wrap: wrap;
+			gap: 0 0.75rem;
+			padding-block-start: 0.375rem;
+		}
+		.primary-nav {
+			order: 3;
+			width: 100%;
+			justify-content: space-between;
+			gap: 0;
+		}
+		.account-controls {
+			margin-inline-start: auto;
+		}
+		.primary-nav a {
+			padding-inline: 0.375rem;
+		}
+	}
+	@media (max-width: 36rem) {
+		.header-inner {
+			padding-inline: 0.75rem;
+		}
+		.wordmark {
+			font-size: 1.375rem;
+		}
+		.primary-nav a {
+			font-size: 0.75rem;
+			font-variant-caps: normal;
+			letter-spacing: 0;
+			padding-inline: 0.125rem;
+		}
+		.account-name {
+			display: none;
+		}
+	}
+</style>

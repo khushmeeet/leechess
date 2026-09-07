@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import MiniBoard from '$lib/components/MiniBoard.svelte';
 	import { ERAS } from '$lib/literature/history';
 	import { GAMES } from '$lib/literature/games';
@@ -27,35 +28,34 @@
 	);
 
 	const chipClass = (active: boolean) =>
-		`rounded-xs border px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] uppercase ${
+		`rounded-xs border px-2 py-0.5 text-xs font-semibold tracking-[0.09em] uppercase ${
 			active
 				? 'border-accent-line bg-accent-soft text-accent'
 				: 'border-line text-muted hover:text-ink'
 		}`;
 </script>
 
-<div class="mb-1 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-	<h1 class="font-display text-2xl">Literature</h1>
-	<nav class="flex gap-4 text-[10px] font-semibold tracking-[0.09em] uppercase">
+<PageHeading eyebrow="The reference shelf" title="Literature">
+	<nav class="flex gap-4 text-xs font-semibold tracking-[0.09em] uppercase">
 		<a class="text-muted hover:text-accent" href="#terms">Terminology</a>
 		<a class="text-muted hover:text-accent" href="#history">History</a>
 		<a class="text-muted hover:text-accent" href="#games">Landmark games</a>
 	</nav>
-</div>
-<p class="mb-8 max-w-2xl text-sm text-muted">
+</PageHeading>
+<p class="mb-4 max-w-2xl text-sm text-muted">
 	The language, the history, and the games every student of the board inherits. Each entry links the
 	source it was written against — follow the ↗ to read further.
 </p>
 
 <section id="terms" class="scroll-mt-6">
-	<div class="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
-		<h2 class="font-display text-xl">Terminology</h2>
+	<div class="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+		<h2 class="section-title">Terminology</h2>
 		<input
 			data-testid="term-search"
 			type="search"
 			placeholder="Search {TERMS.length} terms…"
 			bind:value={query}
-			class="w-60 rounded-xs border border-line bg-card px-3 py-1.5 text-sm placeholder:text-faint focus:border-accent-line focus:outline-none"
+			class="w-60 rounded-xs border border-line bg-card px-3 py-1.5 text-sm placeholder:text-faint focus-visible:outline-2 focus-visible:outline-accent"
 		/>
 	</div>
 
@@ -110,11 +110,11 @@
 </section>
 
 <section id="history" class="mt-12 scroll-mt-6">
-	<h2 class="border-b border-line pb-3 font-display text-xl">A short history</h2>
+	<h2 class="border-b border-line pb-3 section-title">A short history</h2>
 	<ol>
 		{#each ERAS as era (era.period)}
 			<li
-				class="grid gap-1 border-b border-line py-5 md:grid-cols-[160px_1fr] md:gap-6"
+				class="grid gap-1 border-b border-line py-3 md:grid-cols-[160px_1fr] md:gap-6"
 				data-testid="history-era"
 			>
 				<div class="font-display text-lg text-accent">{era.period}</div>
@@ -135,12 +135,12 @@
 
 <section id="games" class="mt-12 scroll-mt-6">
 	<div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-line pb-3">
-		<h2 class="font-display text-xl">Landmark games</h2>
+		<h2 class="section-title">Landmark games</h2>
 		<span class="text-xs text-muted">Diagrams show each game’s final position</span>
 	</div>
-	<div class="mt-5 grid gap-6 md:grid-cols-2">
+	<div class="mt-3 grid gap-3 md:grid-cols-2">
 		{#each GAMES as game (game.id)}
-			<article class="rounded-xs border border-line bg-card p-4" data-testid="game-card">
+			<article class="study-panel" data-testid="game-card">
 				<div class="flex items-baseline justify-between gap-3">
 					<h3 class="font-display text-lg">{game.title}</h3>
 					<span class="font-display text-lg text-accent">{game.year}</span>

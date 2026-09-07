@@ -15,30 +15,23 @@
 	const welcome = resolve('/welcome');
 </script>
 
-<div
-	class="max-w-xl rounded-xs border border-accent-line bg-accent-soft p-4"
-	data-testid="account-gate"
->
-	<h2 class="font-display text-lg">Sign up to save your progress</h2>
-	<p class="mt-1 text-sm text-body">{what}</p>
-	<p class="mt-2 text-xs text-muted">
+<div class="study-panel account-gate max-w-2xl" data-testid="account-gate">
+	<h2 class="section-title">Sign up to save your progress</h2>
+	<p class="mt-2 text-sm leading-normal text-body">{what}</p>
+	<p class="mt-2 max-w-prose text-sm leading-normal text-muted">
 		You're playing as {ANONYMOUS_NAME}, so nothing is being kept. An account is a name and a
 		password — no email, and nothing shared with anyone.
 	</p>
 	<div class="mt-3 flex flex-wrap gap-2 text-sm">
-		<a
-			href="{welcome}?mode=signup"
-			data-testid="gate-sign-up"
-			class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-card"
-		>
+		<a href="{welcome}?mode=signup" data-testid="gate-sign-up" class="btn-primary">
 			Create an account
 		</a>
-		<a
-			href="{welcome}?mode=signin"
-			data-testid="gate-sign-in"
-			class="rounded-xs border border-line bg-card px-3 py-2 hover:bg-paper"
-		>
-			Sign in
-		</a>
+		<a href="{welcome}?mode=signin" data-testid="gate-sign-in" class="btn-secondary"> Sign in </a>
 	</div>
 </div>
+
+<style>
+	.account-gate {
+		border-block-start: 3px solid var(--color-ornament);
+	}
+</style>

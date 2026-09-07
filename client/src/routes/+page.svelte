@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import { onMount } from 'svelte';
 	import Board from '$lib/components/Board.svelte';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
@@ -436,20 +437,22 @@
 		{@render zenControls()}
 	</div>
 {:else}
+	<PageHeading eyebrow="The royal game" title="Practice" />
 	<div class="flex flex-col gap-4">
-		<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-			<div class="relative flex max-w-xl self-start">
+		<div class="board-layout">
+			<div class="board-column relative flex self-start">
 				{#if displayPrefs.showEvalBar}
-					<div class="absolute top-7 right-full bottom-7 mr-2 w-14">
+					<div class="eval-gutter absolute top-7 bottom-7 left-0">
 						<EvalBar cp={session.currentEval} orientation={session.playerColor} />
 					</div>
 				{/if}
 				{@render boardWithResult('relative min-w-0 flex-1')}
 			</div>
 
-			<aside class="flex flex-col gap-4">
-				<section class="rounded-xs border border-line bg-card p-3 text-sm">
-					<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+			<aside class="study-aside">
+				<section class="study-panel text-sm">
+					<h2 class="section-title mb-2">Your practice partner</h2>
+					<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5">
 						<label for="strength" class="text-muted">Strength</label>
 						<select
 							id="strength"
@@ -527,11 +530,8 @@
 					onideahover={(uci) => (hoverUci = uci)}
 				/>
 
-				<section
-					class="flex min-h-56 flex-1 flex-col rounded-xs border border-line bg-card p-3"
-					data-testid="moves-panel"
-				>
-					<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+				<section class="study-panel flex min-h-24 max-h-48 flex-col" data-testid="moves-panel">
+					<h2 class="section-title mb-2 flex flex-wrap items-baseline gap-2">
 						Moves
 						{#if session.engineError}
 							<span class="font-normal text-err">(engine stalled)</span>
@@ -544,16 +544,16 @@
 								Retry
 							</button>
 						{:else}
-							<span class="font-normal text-faint">
+							<span class="font-sans text-xs font-normal text-muted">
 								({session.engineThinking ? 'Stockfish thinking…' : `${game.turnColor} to move`})
 							</span>
 						{/if}
 					</h2>
 					{#if movePairs.length === 0}
-						<p class="text-sm text-faint">No moves yet.</p>
+						<p class="empty-ledger text-sm text-muted">No moves yet.</p>
 					{:else}
 						<ol
-							class="min-h-0 flex-1 overflow-y-auto text-sm"
+							class="move-ledger min-h-0 flex-1 overflow-y-auto text-sm"
 							data-testid="move-list"
 							bind:this={moveListElement}
 						>
@@ -561,7 +561,10 @@
 								<li class="grid grid-cols-[2rem_1fr_1fr] gap-1 py-0.5">
 									<span class="text-faint">{pair.number}.</span>
 									{#each [pair.white, pair.black] as half, i (i)}
-										<span class="flex items-center gap-1.5">
+										<span
+											class="flex items-center gap-1.5 px-1"
+											class:latest-move={half?.ply === game.moves.length}
+										>
 											{#if half}
 												{half.san}
 												{#if session.badges[half.ply - 1]}
@@ -591,18 +594,13 @@
 							<HoldButton
 								oncomplete={() => session.resign()}
 								data-testid="resign"
-								class="flex-1 rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper"
+								class="btn-secondary flex-1"
 							>
 								Hold to resign
 							</HoldButton>
 						</div>
 					{/if}
-					<button
-						onclick={() => session.newGame()}
-						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-					>
-						New game
-					</button>
+					<button onclick={() => session.newGame()} class="btn-primary"> New game </button>
 
 					{#if session.completedGameId !== null}
 						<p class="text-sm text-ok">

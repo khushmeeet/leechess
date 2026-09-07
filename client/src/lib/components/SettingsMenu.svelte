@@ -3,7 +3,7 @@
 	// set apply to every Board live and persist via boardPrefs.
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { BOARD_THEMES, PIECE_SETS, themeSwatch } from '$lib/boardThemes';
+	import { BOARD_THEMES, PIECE_SETS, boardBackground } from '$lib/boardThemes';
 	import { openFriendGame } from '$lib/stores/live.svelte';
 	import { boardPrefs } from '$lib/stores/boardPrefs.svelte';
 	import { displayPrefs } from '$lib/stores/displayPrefs.svelte';
@@ -32,6 +32,7 @@
 
 	let open = $state(false);
 	let root = $state<HTMLElement>();
+	let trigger: HTMLButtonElement;
 	let renameError = $state<string | null>(null);
 	let friendBusy = $state(false);
 	let friendError = $state<string | null>(null);
@@ -84,19 +85,39 @@
 		if (open && root && !root.contains(event.target as Node)) close();
 	}
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') close();
+		if (event.key === 'Escape' && open) {
+			close();
+			trigger.focus();
+		}
 	}
 </script>
 
 <svelte:window onclick={onWindowClick} onkeydown={onKeydown} />
 
+{#snippet selectedMark()}
+	<span class="selection-check" aria-hidden="true">
+		<svg
+			width="10"
+			height="10"
+			viewBox="0 0 12 12"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+		>
+			<path d="m2.5 6 2 2 5-5" />
+		</svg>
+	</span>
+{/snippet}
+
 <div class="relative" bind:this={root}>
 	<button
+		bind:this={trigger}
 		aria-label="Settings"
 		aria-expanded={open}
+		aria-controls="study-settings"
 		data-testid="settings-button"
 		onclick={() => (open ? close() : (open = true))}
-		class="rounded-xs p-1.5 text-muted hover:bg-accent-soft hover:text-ink"
+		class="settings-trigger flex h-8 w-8 items-center justify-center rounded-xs text-muted hover:bg-accent-soft hover:text-ink"
 	>
 		<svg
 			viewBox="0 0 24 24"
@@ -117,6 +138,7 @@
 
 	{#if open}
 		<div
+			id="study-settings"
 			class="settings-panel absolute top-full right-0 z-20 mt-2 flex w-72 flex-col rounded-xs border border-line bg-card p-4 shadow-lg lg:w-auto lg:flex-row lg:items-stretch lg:p-5"
 			data-testid="settings-menu"
 		>
@@ -143,6 +165,7 @@
 				{:else}
 					<input
 						type="text"
+						aria-label="Username"
 						value={session.name ?? ''}
 						placeholder="Your name"
 						maxlength="24"
@@ -249,14 +272,15 @@
 						<button
 							aria-pressed={boardPrefs.themeName === theme.name}
 							onclick={() => boardPrefs.setTheme(theme.name)}
-							class="flex flex-col items-center gap-1"
+							class="relative flex flex-col items-center gap-1"
 						>
 							<span
 								class="h-8 w-full rounded-xs {boardPrefs.themeName === theme.name
 									? 'outline-2 outline-offset-2 outline-accent'
 									: 'outline-1 -outline-offset-1 outline-line'}"
-								style="background: {themeSwatch(theme)}"
+								style="background-image: {boardBackground(theme)}; background-size: cover"
 							></span>
+							{#if boardPrefs.themeName === theme.name}{@render selectedMark()}{/if}
 							<span
 								class="text-[10px] {boardPrefs.themeName === theme.name
 									? 'font-semibold text-ink'
@@ -277,12 +301,13 @@
 						<button
 							aria-pressed={boardPrefs.pieceSet === set.id}
 							onclick={() => boardPrefs.setPieceSet(set.id)}
-							class="flex flex-col items-center gap-0.5 rounded-xs border p-2 {boardPrefs.pieceSet ===
+							class="relative flex flex-col items-center gap-0.5 rounded-xs border p-2 {boardPrefs.pieceSet ===
 							set.id
 								? 'border-accent bg-accent-soft'
 								: 'border-line hover:border-faint'}"
 						>
 							<img src="/pieces/{set.id}/wN.svg" alt="" class="h-8 w-8" />
+							{#if boardPrefs.pieceSet === set.id}{@render selectedMark()}{/if}
 							<span
 								class="text-[10.5px] {boardPrefs.pieceSet === set.id
 									? 'font-semibold text-ink'
@@ -380,6 +405,25 @@
 </div>
 
 <style>
+	.settings-trigger[aria-expanded='true'] {
+		background: var(--color-accent-soft);
+		color: var(--color-accent);
+		box-shadow: inset 0 0 0 1px var(--color-accent-line);
+	}
+	.selection-check {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		display: grid;
+		width: 14px;
+		height: 14px;
+		place-items: center;
+		border: 1px solid var(--color-on-accent);
+		border-radius: 50%;
+		background: var(--color-accent-solid);
+		color: var(--color-on-accent);
+		pointer-events: none;
+	}
 	/* The largest thing in the app that used to simply be there — eight
 	 * sections of it, a frame after the gear is clicked. It grows out of the
 	 * gear instead. The origin is the trigger's corner rather than a guess,
@@ -393,6 +437,15 @@
 	 * would buy nothing. An entrance says where a thing came from; nobody
 	 * needs to be told where the menu they just dismissed went. */
 	.settings-panel {
+		max-width: calc(100vw - 2rem);
+		max-height: calc(100svh - 6rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		border-top: 2px solid var(--color-ornament);
+		box-shadow:
+			0 0 0 3px var(--color-paper),
+			0 0 0 4px var(--color-line),
+			0 12px 24px rgb(0 0 0 / 18%);
 		transform-origin: top right;
 		transition:
 			opacity 180ms var(--ease-rise),

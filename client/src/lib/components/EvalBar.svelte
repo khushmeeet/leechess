@@ -24,7 +24,7 @@
 	const tabPct = $derived(Math.min(94, Math.max(6, boundaryPct)));
 </script>
 
-<div class="relative h-full w-14 shrink-0" title="eval: {label}" data-testid="eval-bar">
+<div class="relative h-full w-full shrink-0" title="eval: {label}" data-testid="eval-bar">
 	<div
 		class="absolute inset-y-0 right-0 w-[10px] overflow-hidden rounded-xs bg-body shadow-[0_0_0_1px_var(--color-line)]"
 	>

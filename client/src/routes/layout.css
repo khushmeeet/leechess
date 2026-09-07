@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
-/* Old Standard TT — the display face of the app's identity ("The Study"):
+/* Old Standard TT — the display face of the Royal Study:
  * wordmark, page headings, big numerals. Latin subset, self-hosted. */
 @font-face {
 	font-family: 'Old Standard TT';
@@ -20,18 +20,28 @@
 
 @theme {
 	--font-display: 'Old Standard TT', 'Iowan Old Style', Palatino, Georgia, serif;
+	--font-sans: 'Segoe UI', Arial, sans-serif;
+	--font-book: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
 
-	/* The Study: aged paper, ink, one mahogany accent, hairline rules. */
-	--color-paper: #f7f2e7;
-	--color-card: #fdfaf1;
-	--color-ink: #2a241c;
-	--color-body: #40382c;
-	--color-muted: #7a7060;
-	--color-faint: #a99e8a;
-	--color-line: #e3d9c3;
-	--color-accent: #8a3a2e;
-	--color-accent-line: #cdab9e;
-	--color-accent-soft: #f8ede4;
+	/* Royal Study: ivory parchment, walnut ink, sealing-wax red and brass.
+	 * These semantic roles are shared by every route and both appearances. */
+	--color-paper: #e9ddbf;
+	--color-card: #f2e7ce;
+	--color-ink: #332719;
+	--color-body: #473822;
+	--color-muted: #655235;
+	--color-faint: #705c3e;
+	--color-line: #bea77c;
+	--color-accent: #702d29;
+	--color-accent-line: #a87b61;
+	--color-accent-soft: #e8d5b5;
+	--color-accent-solid: #702d29;
+	--color-accent-hover: #58231f;
+	--color-on-accent: #fbf0d6;
+	--color-ornament: #805b25;
+	--color-ornament-soft: #dac8a1;
+	--color-board-frame: #805c30;
+	--shadow-panel: none;
 
 	/* Status hues, muted to sit on aged paper. ok/info/warn/mist/err also map
 	 * to the move classifications best/good/inaccuracy/mistake/blunder. */
@@ -56,20 +66,7 @@
 	 * dark mode without dragging the "inaccuracy" hue along with it. */
 	--color-highlight: #b5822e;
 
-	/* CplTrend's per-phase series hues. Categorical (identity, not severity),
-	 * so they sit apart from the status palette — a phase line must never read
-	 * as "blunder". "Overall" isn't here: it draws in --color-ink, because it's
-	 * the aggregate the phases decompose, not a fourth category.
-	 *
-	 * Chosen by running the data-viz validator over both card surfaces
-	 * (#fdfaf1 light, #242019 dark) on the all-pairs list — lines cross, so any
-	 * two can end up adjacent. Both sets clear the lightness band, chroma
-	 * floor, CVD separation, normal-vision floor and 3:1 contrast.
-	 *
-	 * Endgame is teal rather than the violet it used to be: violet and blue
-	 * collapse into each other under protan/deutan once both are stepped bright
-	 * enough for the dark card (ΔE 1.9, against a floor of 6), and no step of
-	 * either hue escapes that. Teal separates from blue in both modes. */
+	/* Categorical chart colors remain distinct from move classifications. */
 	--color-series-opening: #0369a1;
 	--color-series-middlegame: #b45309;
 	--color-series-endgame: #17a06f;
@@ -91,26 +88,55 @@
 	color-scheme: light;
 }
 
-/* Press feedback, on every button in the app. The only motion that is applied
- * this broadly, and it is deliberately below the threshold of notice: the
- * buttons here are pressed tens of times a session — hint rungs, ply steppers,
- * theme swatches, the promotion picker — and at that frequency anything
- * legible as an animation reads as lag instead of as feedback. 2% over 120ms
- * is felt rather than seen, which is the entire job.
- *
- * Not gated on (hover: hover): :active is exactly what a touch press produces,
- * and on a touch device this is the only press feedback there is.
- *
- * Gated on no-preference rather than given a gentler variant, because there is
- * no gentler version of 2% — the honest reduced-motion answer is none. */
 @layer base {
+	body {
+		background: var(--color-paper);
+		color: var(--color-ink);
+		font-family: var(--font-book);
+		font-size: 0.875rem;
+		line-height: 1.45;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+	p {
+		text-wrap: pretty;
+	}
+	button:not(:disabled),
+	summary {
+		cursor: pointer;
+	}
+	button:disabled {
+		cursor: not-allowed;
+	}
+	button,
+	select,
+	input {
+		accent-color: var(--color-accent-solid);
+	}
+	a {
+		text-underline-offset: 0.2em;
+	}
+	::selection {
+		background: var(--color-ornament-soft);
+		color: var(--color-ink);
+	}
+	:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 3px;
+	}
+
 	@media (prefers-reduced-motion: no-preference) {
 		button {
 			transition: transform 120ms var(--ease-rise);
 		}
-
 		button:active:not(:disabled) {
-			transform: scale(0.98);
+			transform: scale(0.96);
 		}
 	}
 }
@@ -136,12 +162,12 @@
 
 .panel-row-label {
 	flex-shrink: 0;
-	font-size: 10px;
+	font-size: 11px;
 	line-height: 1.25rem;
 	font-weight: 600;
 	letter-spacing: 0.09em;
 	text-transform: uppercase;
-	color: var(--color-faint);
+	color: var(--color-muted);
 }
 
 /* Dark mode: same identity, inked on a dark desk instead of aged paper.
@@ -151,16 +177,23 @@
  * needs to be defined. Toggled by adding .dark to <html> — see
  * $lib/stores/themePrefs.svelte.ts and the anti-flash script in app.html. */
 :root.dark {
-	--color-paper: #1b1815;
-	--color-card: #242019;
-	--color-ink: #ede4d3;
-	--color-body: #c7bba3;
-	--color-muted: #8f836c;
-	--color-faint: #5f5647;
-	--color-line: #3a3327;
-	--color-accent: #c1654f;
-	--color-accent-line: #6b4137;
-	--color-accent-soft: #2e211c;
+	--color-paper: #211e17;
+	--color-card: #2c271d;
+	--color-ink: #efe1bf;
+	--color-body: #d6c5a0;
+	--color-muted: #bca984;
+	--color-faint: #b29e79;
+	--color-line: #615035;
+	--color-accent: #e1b180;
+	--color-accent-line: #a27e52;
+	--color-accent-soft: #3a2b20;
+	--color-accent-solid: #794032;
+	--color-accent-hover: #894b39;
+	--color-on-accent: #fbf0d6;
+	--color-ornament: #c2a269;
+	--color-ornament-soft: #443722;
+	--color-board-frame: #a38651;
+	--shadow-panel: none;
 
 	--color-ok: #7fbf95;
 	--color-ok-bg: #1e2b21;
@@ -190,4 +223,304 @@
 	 * dark rendering from the browser itself; without this they stay light
 	 * even once .dark repaints everything around them. */
 	color-scheme: dark;
+}
+
+/* A compact chess manual: book type, aged stock and flat, finely ruled
+ * sections. Keep the working surface above the fold on a laptop. */
+.app-shell {
+	min-height: 100svh;
+	background-image: url('../lib/assets/paper-grain.svg');
+}
+.app-main {
+	width: min(100%, 64rem);
+	margin-inline: auto;
+	padding: 1rem 1rem 1.5rem;
+}
+.page-heading {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.375rem 1rem;
+	margin-block-end: 0.875rem;
+	padding-block-end: 0.5rem;
+	border-bottom: 1px solid var(--color-line);
+}
+.heading-ornament {
+	position: absolute;
+	bottom: -6px;
+	left: 50%;
+	transform: translateX(-50%);
+	background: var(--color-paper);
+	color: var(--color-ornament);
+	pointer-events: none;
+}
+.heading-copy {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.75rem;
+}
+.eyebrow {
+	font-family: var(--font-book);
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-muted);
+}
+.page-heading h1,
+.page-title {
+	font-family: var(--font-display);
+	font-size: 1.625rem;
+	font-weight: 700;
+	line-height: 1.15;
+	letter-spacing: -0.015em;
+	color: var(--color-ink);
+}
+.page-description {
+	max-width: 65ch;
+	margin-block-start: 0.25rem;
+	color: var(--color-muted);
+	font-size: 0.875rem;
+	line-height: 1.45;
+}
+.page-heading-actions {
+	max-width: 100%;
+}
+.study-panel {
+	position: relative;
+	border: 1px solid var(--color-line);
+	border-radius: 1px;
+	background: var(--color-card);
+	padding: 0.75rem;
+}
+.study-panel::after {
+	content: '';
+	position: absolute;
+	inset: 3px;
+	border: 1px solid color-mix(in srgb, var(--color-line) 40%, transparent);
+	pointer-events: none;
+}
+.study-panel > .section-title:first-child {
+	padding-bottom: 0.375rem;
+	border-bottom: 1px solid color-mix(in srgb, var(--color-line) 60%, transparent);
+}
+/* Rules follow each notation row, so wrapping never separates ink from paper. */
+.move-ledger {
+	font-variant-numeric: tabular-nums;
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-line) transparent;
+	overscroll-behavior: contain;
+}
+.move-ledger > li {
+	border-bottom: 1px solid color-mix(in srgb, var(--color-line) 45%, transparent);
+}
+.move-ledger > li > :first-child {
+	border-inline-end: 1px solid color-mix(in srgb, var(--color-accent-line) 50%, transparent);
+}
+.move-ledger .latest-move {
+	background: var(--color-accent-soft);
+	box-shadow: inset 2px 0 var(--color-accent);
+	color: var(--color-ink);
+	font-weight: 600;
+}
+.move-ledger button[aria-current='step'] {
+	box-shadow: inset 2px 0 var(--color-accent);
+}
+/* Notation is a frequent interaction; keep its position fixed when pressed. */
+.move-ledger button:active:not(:disabled) {
+	transform: none;
+}
+.study-aside [role='group'] button[aria-pressed='true'] {
+	box-shadow:
+		inset 0 0 0 2px var(--color-ink),
+		inset 0 0 0 3px color-mix(in srgb, var(--color-paper) 25%, transparent);
+}
+.empty-ledger {
+	flex: 1;
+	min-height: 1.75rem;
+	font-style: italic;
+	background: repeating-linear-gradient(
+		transparent 0 1.4rem,
+		color-mix(in srgb, var(--color-line) 45%, transparent) 1.4rem calc(1.4rem + 1px),
+		transparent calc(1.4rem + 1px) 1.5rem
+	);
+}
+.section-title {
+	font-family: var(--font-display);
+	font-size: 1.125rem;
+	font-weight: 700;
+	line-height: 1.25;
+}
+.btn-primary,
+.btn-secondary {
+	display: inline-flex;
+	min-height: 2rem;
+	align-items: center;
+	justify-content: center;
+	gap: 0.375rem;
+	border: 1px solid var(--color-accent-line);
+	border-radius: 1px;
+	padding: 0.3rem 0.75rem;
+	font-family: var(--font-book);
+	font-size: 0.8125rem;
+	font-weight: 600;
+	line-height: 1.4;
+	text-align: center;
+}
+.btn-primary {
+	border-color: var(--color-accent-solid);
+	background: var(--color-accent-solid);
+	color: var(--color-on-accent);
+	box-shadow:
+		inset 0 0 0 2px var(--color-accent-solid),
+		inset 0 0 0 3px rgb(251 240 214 / 16%);
+}
+.btn-secondary {
+	background: var(--color-card);
+	color: var(--color-body);
+	box-shadow: inset 0 1px color-mix(in srgb, var(--color-paper) 60%, transparent);
+}
+@media (hover: hover) {
+	.btn-primary:hover:not(:disabled) {
+		background: var(--color-accent-hover);
+	}
+	.btn-secondary:hover:not(:disabled) {
+		background: var(--color-accent-soft);
+	}
+}
+.btn-primary:disabled,
+.btn-secondary:disabled {
+	opacity: 0.5;
+}
+.board-layout {
+	display: grid;
+	grid-template-columns: minmax(0, min(36rem, calc(100svh - 10rem))) minmax(17rem, 1fr);
+	align-items: start;
+	gap: 1rem;
+}
+.study-aside {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.625rem;
+}
+.study-aside select {
+	min-width: 0;
+	min-height: 1.875rem;
+}
+.study-aside [role='group'] button {
+	min-height: 1.75rem;
+}
+.study-aside .study-panel {
+	font-size: 0.875rem;
+	line-height: 1.4;
+}
+.study-aside .section-title {
+	margin-block-end: 0.5rem;
+}
+.stat-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.5rem;
+}
+.stat-grid > * {
+	border-block-start: 2px solid var(--color-ornament);
+}
+.stat-grid .font-display {
+	font-size: 1.75rem;
+	font-weight: 700;
+	line-height: 1.1;
+}
+.archive-scroll {
+	overflow-x: auto;
+	border: 1px solid var(--color-line);
+	background: var(--color-card);
+}
+.archive-table {
+	width: 100%;
+	font-size: 0.8125rem;
+}
+.archive-table th {
+	padding: 0.5rem 0.75rem;
+	background: var(--color-ornament-soft);
+	text-align: start;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.archive-table td {
+	padding: 0.5rem 0.75rem;
+}
+.archive-table td:first-child {
+	font-family: var(--font-display);
+	font-size: 1rem;
+}
+.archive-table tbody tr:focus-within {
+	background: var(--color-accent-soft);
+}
+.skip-link {
+	position: fixed;
+	z-index: 100;
+	inset: 0.5rem auto auto 0.5rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--color-card);
+	color: var(--color-ink);
+	transform: translateY(-200%);
+}
+.skip-link:focus {
+	transform: translateY(0);
+}
+/* Always reserve the same gutter: changing guidance must not move the board. */
+.board-column {
+	padding-inline-start: 3rem;
+}
+.eval-gutter {
+	width: 2.5rem;
+}
+.heading-badge {
+	display: inline-block;
+	margin-inline-start: 0.5rem;
+	border: 1px solid var(--color-accent-line);
+	padding: 0.125rem 0.375rem;
+	vertical-align: middle;
+	font-family: var(--font-book);
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	line-height: 1.4;
+	text-transform: uppercase;
+	color: var(--color-accent);
+}
+@media (max-width: 44rem) {
+	.board-layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.75rem;
+	}
+	.board-layout > :first-child {
+		width: 100%;
+		max-width: 32rem;
+		margin-inline: auto;
+	}
+}
+@media (max-width: 36rem) {
+	.app-main {
+		padding: 0.75rem;
+	}
+	.heading-copy > .eyebrow {
+		display: none;
+	}
+	.page-heading {
+		margin-block-end: 0.625rem;
+	}
+	.page-heading h1,
+	.page-title {
+		font-size: 1.5rem;
+	}
+	input:not([type='checkbox']):not([type='radio']),
+	select,
+	textarea {
+		font-size: 1rem;
+	}
 }

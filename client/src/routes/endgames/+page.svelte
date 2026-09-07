@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import AccountGate from '$lib/components/AccountGate.svelte';
@@ -56,29 +57,30 @@
 	const goalLabel = $derived(session.goal === 'win' ? 'Convert the win' : 'Hold the draw');
 	const movableColor = $derived(session.userCanMove ? session.playerColor : undefined);
 	const movesLeft = $derived(Math.max(0, MOVE_CAP - session.playerMoves));
+	const boardVisible = $derived(
+		!account.anonymous &&
+			session.drill !== null &&
+			!['empty', 'error', 'loading'].includes(session.status)
+	);
 </script>
 
-<div class="mb-4 flex items-baseline justify-between">
-	<h1 class="font-display text-2xl">
-		Endgames
-		{#if familyFilter}
-			<span
-				class="ml-2 inline-flex translate-y-[-3px] items-center rounded-xs border border-accent-line px-2 py-0.5 font-sans text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
-			>
-				{familyLabel(familyFilter)}
+<PageHeading
+	eyebrow="The art of the finish"
+	title="Endgames"
+	badge={familyFilter ? familyLabel(familyFilter) : undefined}
+>
+	<div class="flex flex-wrap items-center gap-3">
+		{#if !account.anonymous}
+			<span class="text-sm text-muted" data-testid="drill-session-count">
+				{session.completedCount} drilled this session
 			</span>
 		{/if}
-	</h1>
-	{#if !account.anonymous}
-		<span class="text-sm text-muted" data-testid="drill-session-count">
-			{session.completedCount} drilled this session
-		</span>
-	{/if}
-</div>
+	</div>
+</PageHeading>
 
 {#snippet drillTable()}
 	{#if catalog.length > 0}
-		<section class="mt-8" data-testid="drill-catalog">
+		<section class="drill-catalog" data-testid="drill-catalog">
 			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
 				Your drills — {dueCount} of {catalog.length} due
 			</h2>
@@ -92,13 +94,13 @@
 						</p>
 						{#each catalog.filter((drill) => drill.family === family) as drill (drill.id)}
 							<div
-								class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-3 py-1.5 text-sm {drill.id ===
+								class="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 px-2 py-1 text-xs {drill.id ===
 								session.drill?.id
 									? 'bg-accent-soft'
 									: ''}"
 								data-testid="drill-row"
 							>
-								<span class="truncate">{drill.name}</span>
+								<span>{drill.name}</span>
 								<span class="text-xs text-muted">
 									{drill.goal === 'win' ? 'convert' : 'hold'}
 								</span>
@@ -133,7 +135,7 @@
 		what="Twelve curated positions — Lucena, Philidor, key squares, Vancura — played out against a full-strength engine, and scheduled to come back until the technique sticks."
 	/>
 {:else if session.status === 'empty'}
-	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
+	<div class="max-w-xl study-panel text-sm text-muted">
 		<p class="font-semibold text-ink">No drills due{familyFilter ? ' in this family' : ''}.</p>
 		<p class="mt-1">
 			Drills come back on the same Leitner schedule puzzles use — a technique you converted moves
@@ -145,7 +147,7 @@
 {:else if session.status === 'loading'}
 	<p class="text-sm text-muted">Loading drill…</p>
 {:else if session.drill}
-	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
+	<div class="board-layout">
 		<!-- data-fen lets the e2e suite read the live position and pick a legal
 		     move; a drill has no scripted line for a test to replay. -->
 		<div class="max-w-xl" data-testid="drill-board" data-fen={session.game.fen}>
@@ -160,12 +162,12 @@
 			/>
 		</div>
 
-		<aside class="flex flex-col gap-4">
-			<section class="rounded-xs border border-line bg-card p-3 text-sm">
+		<aside class="study-aside">
+			<section class="study-panel text-sm">
 				<p class="text-[10px] font-semibold tracking-[0.09em] text-muted uppercase">
 					{familyLabel(session.drill.family)}
 				</p>
-				<p class="mt-1 font-semibold" data-testid="drill-heading">{session.drill.name}</p>
+				<p class="section-title mt-2" data-testid="drill-heading">{session.drill.name}</p>
 				<p
 					class="mt-2 inline-flex items-center rounded-xs border border-accent-line px-2 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
 					data-testid="drill-goal"
@@ -179,7 +181,7 @@
 			</section>
 
 			{#if session.status === 'playing'}
-				<section class="rounded-xs border border-line bg-card p-3 text-sm text-muted">
+				<section class="study-panel text-sm text-muted">
 					{#if session.engineError}
 						<div class="flex items-center justify-between gap-2 text-err">
 							<span class="break-all">Engine stalled: {session.engineError}</span>
@@ -230,24 +232,31 @@
 					>
 						Try again
 					</button>
-					<button
-						data-testid="next-drill"
-						onclick={loadNext}
-						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-					>
+					<button data-testid="next-drill" onclick={loadNext} class="btn-primary">
 						Next drill →
 					</button>
 				</div>
 			{/if}
+			{@render drillTable()}
 		</aside>
 	</div>
 {/if}
 
 <!-- Always rendered, including the "nothing due" state — that's exactly when
      you want to see when each drill comes back. -->
-{@render drillTable()}
+{#if !boardVisible}
+	{@render drillTable()}
+{/if}
 
 <style>
+	.drill-catalog {
+		margin-top: 0.75rem;
+	}
+
+	.study-aside .drill-catalog {
+		margin-top: 0;
+	}
+
 	/* Converted / Held / Not converted — the verdict on a technique you just
 	 * spent twenty moves trying to show. Same recipe as the puzzle verdict,
 	 * because it is the same moment. */

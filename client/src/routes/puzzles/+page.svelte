@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import type { DrawShape } from 'chessground/draw';
 	import type { Key } from 'chessground/types';
 	import { page } from '$app/state';
@@ -67,30 +68,26 @@
 	const movableColor = $derived(session.status === 'solving' ? session.playerColor : undefined);
 </script>
 
-<div class="mb-4 flex items-baseline justify-between">
-	<h1 class="font-display text-2xl">
-		Puzzles
-		{#if motifFilter}
-			<span
-				class="ml-2 inline-flex translate-y-[-3px] items-center rounded-xs border border-accent-line px-2 py-0.5 font-sans text-[10px] font-semibold tracking-[0.09em] text-accent uppercase"
-			>
-				{humanizeMotif(motifFilter)}
+<PageHeading
+	eyebrow="The tactics collection"
+	title="Puzzles"
+	badge={motifFilter ? humanizeMotif(motifFilter) : undefined}
+>
+	<div class="flex flex-wrap items-center gap-3">
+		{#if !account.anonymous}
+			<span class="text-sm text-muted" data-testid="session-count">
+				{session.completedCount} completed this session
 			</span>
 		{/if}
-	</h1>
-	{#if !account.anonymous}
-		<span class="text-sm text-muted" data-testid="session-count">
-			{session.completedCount} completed this session
-		</span>
-	{/if}
-</div>
+	</div>
+</PageHeading>
 
 {#if account.anonymous}
 	<AccountGate
 		what="Your own blunders, turned into positions to drill and scheduled by Leitner box — ten minutes, a day, three days, a week, three weeks — plus the generic Lichess pool."
 	/>
 {:else if session.status === 'empty'}
-	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
+	<div class="max-w-xl study-panel text-sm text-muted">
 		<p class="font-semibold text-ink">
 			No puzzles due{motifFilter ? ' for this motif' : ''}.
 		</p>
@@ -104,7 +101,7 @@
 {:else if session.status === 'loading'}
 	<p class="text-sm text-muted">Loading puzzle…</p>
 {:else if session.puzzle}
-	<div class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
+	<div class="board-layout">
 		<div class="max-w-xl">
 			<Board
 				fen={session.fen}
@@ -119,9 +116,9 @@
 			/>
 		</div>
 
-		<aside class="flex flex-col gap-4">
-			<section class="rounded-xs border border-line bg-card p-3 text-sm">
-				<p class="font-semibold" data-testid="puzzle-heading">Puzzle #{session.puzzle.id}</p>
+		<aside class="study-aside">
+			<section class="study-panel text-sm">
+				<p class="section-title" data-testid="puzzle-heading">Puzzle #{session.puzzle.id}</p>
 				<p class="mt-1 text-muted">
 					{#if session.puzzle.source_move_id !== null}
 						From your own game — find what the analysis flagged.
@@ -149,11 +146,7 @@
 						</p>
 					{/if}
 				</div>
-				<button
-					data-testid="next-puzzle"
-					onclick={loadNext}
-					class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
-				>
+				<button data-testid="next-puzzle" onclick={loadNext} class="btn-primary">
 					Next puzzle →
 				</button>
 			{:else}

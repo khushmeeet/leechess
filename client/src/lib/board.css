@@ -8,6 +8,40 @@ cg-board {
 	background-image: var(--board-image);
 }
 
+/* Keep coordinates inside their own squares at every board size. The
+ * library's fixed offsets assume a large board and overflow phone layouts. */
+.cg-wrap coords {
+	font-family: var(--font-sans);
+	font-size: clamp(9px, 1.1vw, 11px);
+	font-weight: 600;
+	opacity: 1;
+}
+
+.cg-wrap coords.ranks {
+	top: 0;
+	left: 3px;
+}
+
+.cg-wrap coords.ranks coord {
+	transform: none;
+	padding-top: 3px;
+}
+
+.cg-wrap coords.files {
+	left: 0;
+	bottom: 0;
+	text-align: right;
+	text-transform: lowercase;
+}
+
+.cg-wrap coords.files coord {
+	padding-right: 4px;
+}
+
+.cg-wrap coords coord {
+	flex: 1 1 0;
+}
+
 cg-board square.move-dest {
 	background: radial-gradient(
 		rgba(20, 85, 30, 0.5) 22%,
@@ -37,7 +71,7 @@ cg-board square.premove-dest:hover {
 	background: rgba(20, 30, 85, 0.2);
 }
 cg-board square.last-move {
-	background-color: rgba(155, 199, 0, 0.41);
+	background-color: rgba(222, 170, 56, 0.48);
 }
 cg-board square.selected {
 	background-color: rgba(20, 85, 30, 0.5);
@@ -87,18 +121,18 @@ cg-board square.check {
 }
 
 /** Rank/file labels wear the opposite square colour, whatever the palette. */
-.orientation-white .ranks :nth-child(odd),
+.orientation-white .ranks :nth-child(even),
 .orientation-white .files :nth-child(even),
-.orientation-black .ranks :nth-child(even),
+.orientation-black .ranks :nth-child(odd),
 .orientation-black .files :nth-child(odd),
 coords.squares:nth-of-type(odd) :nth-child(even),
 coords.squares:nth-of-type(even) :nth-child(odd) {
 	color: var(--sq-dk, #b58863);
 }
 
-.orientation-white .ranks :nth-child(even),
+.orientation-white .ranks :nth-child(odd),
 .orientation-white .files :nth-child(odd),
-.orientation-black .ranks :nth-child(odd),
+.orientation-black .ranks :nth-child(even),
 .orientation-black .files :nth-child(even),
 coords.squares:nth-of-type(odd) :nth-child(odd),
 coords.squares:nth-of-type(even) :nth-child(even) {

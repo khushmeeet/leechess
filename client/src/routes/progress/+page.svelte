@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getProgress, type ProgressSummary } from '$lib/api/client';
@@ -49,8 +50,7 @@
 	}
 </script>
 
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-	<h1 class="font-display text-2xl">Progress</h1>
+<PageHeading eyebrow="A record of your study" title="Progress">
 	<!-- Nothing to window over without an account, and a picker that changes
 	     nothing reads as a broken control rather than a locked one. -->
 	{#if !session.anonymous}
@@ -72,7 +72,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageHeading>
 
 {#if session.anonymous}
 	<AccountGate
@@ -83,7 +83,7 @@
 {:else if !progress}
 	<p class="text-sm text-muted">Loading progress…</p>
 {:else if empty}
-	<div class="max-w-xl rounded-xs border border-line bg-card p-4 text-sm text-muted">
+	<div class="max-w-xl study-panel text-sm text-muted">
 		<p class="font-semibold text-ink">Nothing to chart yet.</p>
 		<p class="mt-1">
 			Play a game — analysis feeds the CPL trend, and solving the puzzles it queues builds your
@@ -94,19 +94,19 @@
 	</div>
 {:else}
 	<!-- streaks: stat tiles, not charts -->
-	<div class="mb-6 flex flex-wrap gap-3" data-testid="streaks">
-		<div class="rounded-xs border border-line bg-card px-4 py-3">
+	<div class="stat-grid mb-4" data-testid="streaks">
+		<div class="study-panel">
 			<p class="font-display text-3xl font-bold tabular-nums">{progress.streak_days}</p>
 			<p class="text-xs text-muted">day streak</p>
 		</div>
-		<div class="rounded-xs border border-line bg-card px-4 py-3">
+		<div class="study-panel">
 			<p class="font-display text-3xl font-bold tabular-nums">{progress.puzzles_solved}</p>
 			<p class="text-xs text-muted">puzzles solved</p>
 		</div>
 		<a
 			href={resolve('/endgames')}
 			data-testid="drills-passed"
-			class="rounded-xs border border-line bg-card px-4 py-3 hover:border-accent"
+			class="study-panel hover:border-accent"
 		>
 			<p class="font-display text-3xl font-bold tabular-nums">{progress.drills_passed}</p>
 			<p class="text-xs text-muted">endgames drilled</p>
@@ -114,10 +114,8 @@
 	</div>
 
 	{#if progress.weakest_motifs.length > 0}
-		<section class="mb-6" data-testid="weakest-motifs">
-			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-				Weakest motifs — drill these
-			</h2>
+		<section class="mb-4" data-testid="weakest-motifs">
+			<h2 class="section-title mb-2">Weakest motifs — drill these</h2>
 			<div class="flex flex-wrap gap-3">
 				{#each progress.weakest_motifs as stat (stat.motif)}
 					<a
@@ -136,11 +134,9 @@
 		</section>
 	{/if}
 
-	<div class="grid gap-6 lg:grid-cols-2">
+	<div class="grid gap-4 lg:grid-cols-2">
 		<section>
-			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-				Success rate by motif
-			</h2>
+			<h2 class="section-title mb-2">Success rate by motif</h2>
 			{#if progress.motifs.length === 0}
 				<p class="text-sm text-muted">
 					No puzzle attempts{days ? ' in this window' : ''} yet — solve a few on the
@@ -148,7 +144,7 @@
 				</p>
 			{:else}
 				<div
-					class="rounded-xs border border-line bg-card p-3"
+					class="study-panel"
 					data-testid="motif-chart"
 					role="img"
 					aria-label="Puzzle success rate per motif"
@@ -182,9 +178,7 @@
 		     vertical smear. min-w-0 lets the grid child shrink to its column so the
 		     chart can measure a real width. -->
 		<section class="min-w-0 lg:col-span-2">
-			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-				CPL per game (lower is better)
-			</h2>
+			<h2 class="section-title mb-2">CPL per game (lower is better)</h2>
 			<CplTrend
 				trend={progress.cpl_trend}
 				onselect={(gameId) => goto(resolve('/review/[gameId]', { gameId: String(gameId) }))}

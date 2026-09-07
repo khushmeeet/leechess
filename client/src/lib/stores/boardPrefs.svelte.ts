@@ -5,10 +5,10 @@ const THEME_KEY = 'leechess.boardTheme';
 const PIECES_KEY = 'leechess.pieceSet';
 
 /** User's board look, shared by every Board on every screen and persisted
- * locally. Defaults to Walnut × Merida — the pairing of the app's visual
+ * locally. Defaults to Antique × Merida — the pairing of the app's visual
  * identity — until the user picks their own in Settings. */
 class BoardPrefs {
-	themeName = $state<string>('walnut');
+	themeName = $state<string>('antique');
 	pieceSet = $state<PieceSetId>('merida');
 
 	constructor() {

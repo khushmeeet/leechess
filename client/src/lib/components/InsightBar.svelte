@@ -63,10 +63,7 @@
 	});
 </script>
 
-<section
-	data-testid="insight-bar"
-	class="flex flex-col gap-2 rounded-xs border border-line bg-card px-3 py-3 text-sm"
->
+<section data-testid="insight-bar" class="study-panel flex flex-col gap-2 text-sm">
 	<div>
 		<div>
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -92,7 +89,7 @@
 						{opening.eco}
 					</span>
 				{/if}
-				<span class="min-w-0 font-semibold text-ink" data-testid="opening-name">{title}</span>
+				<span class="section-title min-w-0 text-ink" data-testid="opening-name">{title}</span>
 			</div>
 			{#if subtitle}
 				<p class="mt-0.5 text-xs text-muted" data-testid="opening-subtitle">{subtitle}</p>

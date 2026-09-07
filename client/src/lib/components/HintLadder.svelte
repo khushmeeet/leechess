@@ -88,7 +88,7 @@
 
 {#if hint}
 	{#if standalone}
-		<section class="rounded-xs border border-line bg-card p-3 text-sm" data-testid="hint-ladder">
+		<section class="study-panel text-sm" data-testid="hint-ladder">
 			<h2 class="mb-2 flex items-baseline justify-between font-semibold text-ink">
 				Hints
 				<span class="text-xs font-normal text-faint">level {level}/{MAX_LEVEL}</span>

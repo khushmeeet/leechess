@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import logo from '$lib/assets/logo.svg';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import { authErrorMessage } from '$lib/auth/messages';
 	import { openFriendGame } from '$lib/stores/live.svelte';
 	import { ANONYMOUS_NAME, session } from '$lib/stores/session.svelte';
@@ -30,27 +30,27 @@
 	const loop = [
 		{
 			title: 'Play',
-			body: 'Stockfish at one of five strengths, or a friend over a shared link. Against the engine, every move is classified as you make it — Best through Blunder — and a live hint ladder nudges before it tells. Against a friend, none of that: a board and nothing else.'
+			body: 'Find your rhythm against a practice partner, or invite a friend to the board.'
 		},
 		{
 			title: 'Review',
-			body: 'Afterwards: a centipawn-loss graph split by opening, middlegame and endgame; the tactical motif you walked into; and a written explanation of why the move cost what it did.'
+			body: 'Revisit your games. Understand the turning points and what to try next time.'
 		},
 		{
 			title: 'Puzzles',
-			body: 'Your own blunders become drillable positions, scheduled by Leitner box — ten minutes, a day, three days, a week, three weeks. Twelve motifs, from forks and pins to zwischenzug and overloading.'
+			body: 'Turn your missed tactics into practice, one carefully chosen position at a time.'
 		},
 		{
 			title: 'Endgames',
-			body: 'Twelve curated positions — Lucena, Philidor, key squares, Vancura — played out against a full-strength engine rather than solved as a line. You have to actually convert it.'
+			body: 'Study the classics. Learn to convert an advantage and hold a difficult draw.'
 		},
 		{
 			title: 'Progress',
-			body: 'Success rate per motif over 30 days, 90 days or all time; your weakest patterns called out with a link straight to a drill; a day streak. No rating ladder — the measure is whether the mistakes stop.'
+			body: 'Follow the patterns you are mastering and give your weakest ones another look.'
 		},
 		{
 			title: 'Literature',
-			body: 'A reference shelf: chess terminology, annotated famous games, an eras timeline, and live opening theory from Wikibooks for whatever line is on the board.'
+			body: 'Explore the language, history, and great games of a timeless pursuit.'
 		}
 	];
 
@@ -111,32 +111,37 @@
 
 <svelte:head><title>leechess — learn from your own mistakes</title></svelte:head>
 
-<!-- Sized to the viewport rather than to the content: this is the first thing
-     anyone sees, and a landing page that opens mid-scroll reads as broken. The
-     primer sits beside the sign-in at lg rather than below it, which is what
-     keeps both halves on screen. Narrow screens stack and scroll as usual.
-     3rem is the padding <main> adds; there is no nav on this route. -->
-<div class="flex min-h-[calc(100svh-3rem)] flex-col justify-center" data-testid="welcome">
-	<div class="grid items-center gap-8 lg:grid-cols-[1fr_20rem] lg:gap-12">
-		<!-- Identity, thesis, and the way in. Ordered rather than moved: the
-		     wordmark is the h1, so it stays first in the DOM for a screen reader
-		     and first in the stack on a narrow screen — only the desktop layout
-		     puts it to the right of the primer. -->
-		<div class="flex flex-col items-center text-center lg:order-2 lg:items-start lg:text-left">
-			<img src={logo} alt="" class="mb-3 h-12 w-12" />
-			<h1 class="mb-3 font-display text-3xl">leechess</h1>
-			<p class="mb-6 text-sm text-body">
-				A chess coach, not a chess server. Play a game, find out which pattern you missed and why,
-				then drill that exact pattern until it stops costing you games.
+<div class="welcome" data-testid="welcome">
+	<header class="welcome-masthead">
+		<div class="welcome-wordmark">
+			<BrandMark />
+			<h1>leechess</h1>
+		</div>
+		<p class="eyebrow">The royal game. Your own journey.</p>
+	</header>
+	<div class="welcome-hero">
+		<div class="welcome-intro">
+			<p class="eyebrow">A quiet place to become a better player</p>
+			<h2>An ancient game.<br /><span>A lifelong study.</span></h2>
+			<div class="royal-rule" aria-hidden="true"><span>◆</span></div>
+			<p class="welcome-description">
+				Every move has something to teach you. Play, reflect, and return to the board with a little
+				more understanding.
 			</p>
-
+			<p class="welcome-note">Personal guidance. Thoughtful practice. At your pace.</p>
+		</div>
+		<section class="welcome-entry study-panel" aria-label="Start playing">
+			{#if mode === 'choose'}
+				<p class="eyebrow">Your next move</p>
+				<h2 class="section-title mb-2 mt-2">The board is yours.</h2>
+			{/if}
 			{#if mode === 'choose'}
 				<div class="flex w-full flex-col gap-2" data-testid="welcome-actions">
 					<button
 						type="button"
 						onclick={startPlaying}
 						data-testid="welcome-play"
-						class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft"
+						class="btn-primary"
 					>
 						<!-- Signed out this screen is the way in; someone already
 						     playing anonymously got here from a sign-up link, and for
@@ -148,7 +153,7 @@
 						onclick={playWithFriend}
 						disabled={friendBusy}
 						data-testid="welcome-play-friend"
-						class="rounded-xs border border-line bg-card px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"
+						class="btn-secondary"
 					>
 						{friendBusy ? 'Starting a game…' : 'Play with a friend'}
 					</button>
@@ -176,17 +181,16 @@
 						</button>
 					</div>
 					<p class="text-xs text-muted" data-testid="play-now-terms">
-						Play now asks for nothing and keeps nothing — you're {ANONYMOUS_NAME}, and the game ends
-						when you close the tab. An account is what saves your games, so that Review, Puzzles,
-						Endgames and Progress have something to work from.
+						Play now asks for nothing and keeps nothing in your account. You play as
+						{ANONYMOUS_NAME}. Create an account to save games and build your practice history.
 					</p>
 				</div>
 			{:else}
-				<div class="w-full rounded-xs border border-line bg-card p-4 text-left">
-					<h2 class="mb-3 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				<div class="w-full text-left">
+					<h2 class="section-title mb-2">
 						{heading}
 					</h2>
-					<form class="flex flex-col gap-3" onsubmit={submit}>
+					<form class="flex flex-col gap-2" onsubmit={submit}>
 						<label class="flex flex-col gap-1 text-sm">
 							<span class="text-muted">Username</span>
 							<input
@@ -196,7 +200,7 @@
 								maxlength="24"
 								required
 								data-testid="auth-username"
-								class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+								class="rounded-xs border border-line bg-paper px-3 py-2 text-base text-ink"
 							/>
 						</label>
 
@@ -208,7 +212,7 @@
 								autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
 								required
 								data-testid="auth-password"
-								class="rounded-xs border border-line bg-paper px-2 py-1 text-sm text-ink"
+								class="rounded-xs border border-line bg-paper px-3 py-2 text-base text-ink"
 							/>
 						</label>
 
@@ -226,12 +230,7 @@
 						{/if}
 
 						<div class="flex items-center gap-2">
-							<button
-								type="submit"
-								disabled={busy}
-								data-testid="auth-submit"
-								class="rounded-xs border border-accent-line px-3 py-2 text-xs font-semibold tracking-[0.07em] text-accent uppercase hover:bg-accent-soft disabled:opacity-50"
-							>
+							<button type="submit" disabled={busy} data-testid="auth-submit" class="btn-primary">
 								{heading}
 							</button>
 							<button
@@ -246,24 +245,164 @@
 					</form>
 				</div>
 			{/if}
-		</div>
-
-		<!-- the primer -->
-		<div class="lg:order-1">
-			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
-				What you get
-			</h2>
-			<div class="grid gap-2 sm:grid-cols-2">
-				{#each loop as step (step.title)}
-					<section class="rounded-xs border border-line bg-card p-3">
-						<h3 class="mb-0.5 font-display text-base">{step.title}</h3>
-						<p class="text-[13px] leading-snug text-body">{step.body}</p>
-					</section>
-				{/each}
-			</div>
-			<p class="mt-3 text-xs text-muted">
-				No matchmaking and no rating ladder — the only way to play someone is to send them a link.
-			</p>
-		</div>
+		</section>
 	</div>
+	<section class="welcome-primer" aria-label="What you get">
+		{#each loop as step, index (step.title)}
+			<article>
+				<span class="chapter-number" aria-hidden="true"
+					>{['I', 'II', 'III', 'IV', 'V', 'VI'][index]}</span
+				>
+				<div>
+					<h2>{step.title}</h2>
+					<p>{step.body}</p>
+				</div>
+			</article>
+		{/each}
+	</section>
+	<footer class="welcome-footer">
+		<span>Sixty-four squares. Endless possibility.</span><span>Play · Reflect · Return</span>
+	</footer>
 </div>
+
+<style>
+	.welcome {
+		display: flex;
+		flex-direction: column;
+	}
+	.welcome-masthead {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding-block-end: 0.625rem;
+		border-bottom: 3px double var(--color-line);
+	}
+	.welcome-wordmark {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+	.welcome-wordmark :global(svg) {
+		width: 1.625rem;
+		height: 2rem;
+	}
+	.welcome-wordmark h1 {
+		font-family: var(--font-display);
+		font-size: 1.625rem;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+	.welcome-hero {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 20rem;
+		align-items: center;
+		gap: 2rem;
+		padding-block: 1.25rem;
+	}
+	.welcome-intro h2 {
+		margin-block: 0.625rem;
+		font-family: var(--font-display);
+		font-size: clamp(1.875rem, 3.2vw, 2.625rem);
+		font-weight: 700;
+		line-height: 1.1;
+		letter-spacing: -0.025em;
+	}
+	.welcome-intro h2 span {
+		color: var(--color-accent);
+	}
+	.royal-rule {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 7rem;
+		margin-block: 0.75rem;
+		color: var(--color-ornament);
+		font-size: 0.5rem;
+	}
+	.royal-rule::before,
+	.royal-rule::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: var(--color-line);
+	}
+	.welcome-description {
+		max-width: 44ch;
+		font-size: 0.9375rem;
+		line-height: 1.5;
+		color: var(--color-body);
+	}
+	.welcome-note {
+		margin-block-start: 0.75rem;
+		font-size: 0.75rem;
+		font-style: italic;
+		color: var(--color-muted);
+	}
+	.welcome-entry {
+		border-top: 3px double var(--color-ornament);
+	}
+	.welcome-primer {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.875rem 1.25rem;
+		padding-block: 0.875rem;
+		border-block: 1px solid var(--color-line);
+	}
+	.welcome-primer article {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+	}
+	.chapter-number {
+		width: 1.25rem;
+		flex: none;
+		font-family: var(--font-display);
+		font-size: 0.875rem;
+		color: var(--color-ornament);
+	}
+	.welcome-primer h2 {
+		margin-block-end: 0.125rem;
+		font-family: var(--font-display);
+		font-size: 1rem;
+		font-weight: 700;
+	}
+	.welcome-primer p {
+		font-size: 0.8125rem;
+		line-height: 1.4;
+		color: var(--color-muted);
+	}
+	.welcome-footer {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		padding-block-start: 0.625rem;
+		color: var(--color-muted);
+		font-size: 0.6875rem;
+	}
+	@media (max-width: 44rem) {
+		.welcome-hero {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 1rem;
+		}
+		.welcome-entry {
+			width: 100%;
+			max-width: 26rem;
+		}
+		.welcome-primer {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.welcome-masthead > p {
+			display: none;
+		}
+	}
+	@media (max-width: 30rem) {
+		.welcome-primer {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.welcome-footer {
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+	}
+</style>

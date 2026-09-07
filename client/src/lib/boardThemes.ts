@@ -16,6 +16,7 @@ export interface BoardTheme {
 }
 
 export const BOARD_THEMES: BoardTheme[] = [
+	{ name: 'antique', label: 'Antique', light: '#e6cca0', dark: '#a27b4d' },
 	{ name: 'brown', label: 'Brown', light: '#f0d9b5', dark: '#b58863' },
 	{ name: 'green', label: 'Green', light: '#eeeed2', dark: '#769656' },
 	{ name: 'blue', label: 'Ice blue', light: '#dee3e6', dark: '#8ca2ad' },

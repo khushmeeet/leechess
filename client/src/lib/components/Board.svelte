@@ -221,7 +221,11 @@
 		role="group"
 		aria-label={eliminatedLabel(color)}
 	>
-		<span class="side-label">{color}</span>
+		<span class="side-label" class:side-to-move={turnColor === color && !check?.mate}>
+			<span class="turn-marker" aria-hidden="true"></span>
+			{color}
+			{#if turnColor === color && !check?.mate}<span class="sr-only"> to move</span>{/if}
+		</span>
 		<div class="eliminated-pieces" aria-hidden="true">
 			{#each eliminated[color] as role, index (`${role}-${index}`)}
 				<piece class="eliminated-piece {role} {color}"></piece>
@@ -240,7 +244,8 @@
 	data-check={check && (check.mate ? 'mate' : 'check')}
 >
 	{@render eliminatedRow(topColor)}
-	<div class="relative aspect-square w-full">
+	<div class="board-frame relative aspect-square w-full">
+		<span class="board-inlays" aria-hidden="true"></span>
 		<div bind:this={el} class="h-full w-full"></div>
 		{#if pendingPromotion}
 			<div
@@ -280,6 +285,41 @@
 />
 
 <style>
+	.board-frame {
+		outline: 1px solid var(--color-board-frame);
+		box-shadow:
+			0 0 0 4px var(--color-paper),
+			0 0 0 5px var(--color-line),
+			0 5px 14px rgb(58 37 17 / 9%);
+	}
+
+	.board-inlays {
+		position: absolute;
+		inset: -5px;
+		z-index: 2;
+		pointer-events: none;
+		color: var(--color-board-frame);
+		background:
+			linear-gradient(currentColor, currentColor) top left / 14px 2px,
+			linear-gradient(currentColor, currentColor) top left / 2px 14px,
+			linear-gradient(currentColor, currentColor) top right / 14px 2px,
+			linear-gradient(currentColor, currentColor) top right / 2px 14px,
+			linear-gradient(currentColor, currentColor) bottom left / 14px 2px,
+			linear-gradient(currentColor, currentColor) bottom left / 2px 14px,
+			linear-gradient(currentColor, currentColor) bottom right / 14px 2px,
+			linear-gradient(currentColor, currentColor) bottom right / 2px 14px;
+		background-repeat: no-repeat;
+	}
+
+	/* Chessground rounds the rendered board down to whole device-pixel
+	 * squares. Match that grid so the frame and adjacent eval bar end exactly
+	 * at the board, including when a fluid column has a fractional width. */
+	@supports (width: round(down, 100%, 8px)) {
+		.board-frame {
+			width: round(down, 100%, 8px);
+		}
+	}
+
 	.eliminated-row {
 		display: flex;
 		height: 1.75rem;
@@ -290,16 +330,36 @@
 
 	.side-label {
 		display: flex;
-		width: 2.75rem;
+		width: 3.5rem;
 		height: 100%;
 		flex: none;
 		align-items: center;
+		gap: 0.375rem;
 		color: var(--color-muted);
-		font-size: 0.625rem;
+		font-size: 0.6875rem;
 		font-weight: 600;
 		letter-spacing: 0.09em;
 		line-height: 1;
 		text-transform: uppercase;
+	}
+
+	.turn-marker {
+		width: 5px;
+		height: 5px;
+		flex: none;
+		border: 1px solid var(--color-muted);
+		transform: rotate(45deg);
+	}
+
+	.side-to-move {
+		color: var(--color-accent);
+	}
+	.side-to-move .turn-marker {
+		border-color: currentColor;
+		background: currentColor;
+		box-shadow:
+			0 0 0 2px var(--color-paper),
+			0 0 0 3px var(--color-line);
 	}
 
 	.eliminated-pieces {
