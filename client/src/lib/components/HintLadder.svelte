@@ -16,12 +16,20 @@
 </script>
 
 <script lang="ts">
+	import NotationText from '$lib/components/NotationText.svelte';
+	import type { NotationTarget } from '$lib/notation';
+
 	// Shared hint ladder (Play's Nudge mode / Puzzles). Levels 1-5 reveal one
 	// rung at a time, never all at once, and only when `hint` content is
 	// provided. The parent owns `level` (bindable) — it needs it to highlight
 	// Level 3's squares on the board and to report hint usage with puzzle
 	// attempts.
 	interface Props {
+		/** Positions the hint's moves are played in, most likely first —
+		 * resolved there, pointing at one lights it up on the board. */
+		fens?: string[];
+		/** The move or square under the pointer, for the host's board. */
+		onnotationhover?: (target: NotationTarget | null) => void;
 		/** Ladder content for Levels 1-5. */
 		hint?: HintContent | null;
 		/** Highest level revealed so far (0-5). */
@@ -31,7 +39,13 @@
 		standalone?: boolean;
 	}
 
-	let { hint = null, level = $bindable(0), standalone = true }: Props = $props();
+	let {
+		hint = null,
+		level = $bindable(0),
+		standalone = true,
+		fens = [],
+		onnotationhover
+	}: Props = $props();
 
 	const MAX_LEVEL = 5;
 	const nextLabels: Record<number, string> = {
@@ -65,12 +79,14 @@
 		{/if}
 		{#if level >= 4}
 			<li data-testid="hint-level-4" class="rung text-body">
-				<span class="font-mono font-semibold">{content.moveSan}</span> — {content.reason}
+				<NotationText text={content.moveSan} {fens} line onhover={onnotationhover} /> —
+				<NotationText text={content.reason} {fens} onhover={onnotationhover} />
 			</li>
 		{/if}
 		{#if level >= 5}
 			<li data-testid="hint-level-5" class="rung text-body">
-				Full line: <span class="font-mono">{content.line.join(' ')}</span>
+				Full line:
+				<NotationText text={content.line.join(' ')} {fens} line onhover={onnotationhover} />
 			</li>
 		{/if}
 	</ol>

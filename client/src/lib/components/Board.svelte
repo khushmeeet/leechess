@@ -42,6 +42,10 @@
 		viewOnly?: boolean;
 		/** Engine/annotation arrows (e.g. best move vs played move on Review). */
 		autoShapes?: DrawShape[];
+		/** Squares to light up, each with the class that styles it (board.css)
+		 * — the piece a move or square in the coaching text names, while the
+		 * player points at it. */
+		highlights?: Map<Key, string>;
 		/** Bump to force a resync even when no prop changed — needed to snap
 		 * a piece back after a legal-but-rejected move (wrong puzzle answer),
 		 * where the FEN stays the same but chessground moved the piece. */
@@ -60,6 +64,7 @@
 		orientation = 'white',
 		viewOnly = false,
 		autoShapes = [],
+		highlights,
 		syncKey = 0,
 		onmove
 	}: Props = $props();
@@ -160,6 +165,9 @@
 			// check when the key is there, so leaving it out on the move that
 			// escapes would strand the stain on the board
 			check: check?.color,
+			// always present too: chessground replaces the map wholesale, so an
+			// empty one is what clears a highlight that is no longer wanted
+			highlight: { custom: highlights ?? new Map() },
 			orientation,
 			viewOnly,
 			movable: {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import type { NotationTarget } from '$lib/notation';
 	import type { Idea } from '$lib/ideas';
 	import type { OpeningState } from '$lib/stores/play.svelte';
 
@@ -32,6 +34,10 @@
 		gameOver: boolean;
 		/** Fired with a uci on chip hover/focus, null when it ends. */
 		onideahover?: (uci: string | null) => void;
+		/** The position on the board, for resolving moves the coach names. */
+		fen: string;
+		/** A move or square in the coach line under the pointer. */
+		onnotationhover?: (target: NotationTarget | null) => void;
 	}
 
 	let {
@@ -46,7 +52,9 @@
 		showIdeas,
 		ideas,
 		gameOver,
-		onideahover
+		onideahover,
+		fen,
+		onnotationhover
 	}: Props = $props();
 
 	const title = $derived.by(() => {
@@ -115,7 +123,9 @@
 		<div class="panel-row" data-testid="coach-line">
 			<span class="panel-row-label"> Coach </span>
 			{#if coach}
-				<p class="text-body">{coach}</p>
+				<p class="text-body">
+					<NotationText text={coach} fens={[fen]} onhover={onnotationhover} />
+				</p>
 			{:else}
 				<span class="text-faint">…</span>
 			{/if}

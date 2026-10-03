@@ -14,6 +14,49 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Notation you can point at (2026-10-03)
+
+**Goal:** the coaching text names moves and squares ("Black threatens …Bxd1, winning
+material: the queen on d1 is worth more…"), and the player had to find each one on the
+board themselves. Now the notation is set apart in the text, and pointing at it lights it up.
+
+- **`client/src/lib/notation.ts`** finds moves ("…Bxd1", "Qd2", "21. Be6", castling) and
+  squares in prose, and resolves each move against the position the text is about.
+  - **Position order:** a move is tried first in the position right after the previous move
+    in the text, so a line resolves move by move. Then it is tried in each position the
+    caller names, most likely first. A threat's move belongs to the passed position; an
+    engine suggestion belongs to the current one.
+  - **Unresolved moves:** a move that fits none of them stays plain text, because there would
+    be nothing to show.
+- **Bare squares are squares unless the text says otherwise.** "d4" is both a pawn move and
+  a square. It is read as a move only after a move number or "…", after a word that
+  introduces a move ("prefers", "threatens", "line:"), or right after another move. Anywhere
+  else it is a square, so "the pawn on e4" lights up e4 instead of drawing e2–e4 because
+  that push happens to be legal. `linkWhy` in `summaryLinks.ts` guesses by legality and has
+  exactly that trap; it is left alone here because the Why panel's clicks depend on it.
+- **`NotationText.svelte`** renders the tokens as buttons in mono with a dotted underline,
+  and reports which one is pointed at.
+  - **Mouse or pen:** hover shows the target.
+  - **Keyboard:** focus shows it.
+  - **Touch:** a tap shows it until the next tap or move, because a finger can't hover and
+    pointerleave fires the moment it lifts.
+- **The board** gets a `highlights` prop (chessground's `highlight.custom`). The piece that
+  moves, or the square named, gets a blue fill and ring (`notation-focus` in `board.css`).
+  A move also gets a blue arrow. The map is always passed, empty when nothing is pointed at,
+  because chessground replaces it wholesale and that is what clears it.
+- **Where:** Play's Threat, Tactic and Coach rows and the hint ladder (also on Puzzles, where
+  the full line is resolved from the puzzle's first position). Review's threat line and its
+  outcome are covered too. The target clears on every move and on every ply selected in
+  Review. Zen mode shows no text, so it has nothing to point at.
+- **Testing:** `notation.test.ts` (9 cases) covers the threat sentence, square-versus-move
+  cues, lines with and without the flag, move numbers and ellipses, castling, unresolvable
+  moves, and no matches inside words or numbers. A Play browser spec hovers …Qh4# and asserts
+  the lit square and the arrow appear, then disappear when the pointer leaves. Results: vitest
+  446 passed; Playwright for the play, review, insight-bar, puzzles and hint-ladder specs,
+  34 passed.
+
+---
+
 ## Addendum — Threats: what does their last move want? (2026-10-03)
 
 **Goal:** the app named the tactic the player *had* and never the one they *faced*. In a

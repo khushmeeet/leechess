@@ -425,3 +425,24 @@ test('a quiet move is called quiet rather than left blank', async ({ page }) => 
 	await expect(page.getByTestId('threat-none')).toBeVisible({ timeout: 15_000 });
 	await expect(threatArrow(page)).toHaveCount(0);
 });
+
+test('pointing at a move in the panel lights up its piece', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+	await page.getByTestId('hint-mode-full').click();
+
+	const move = page.getByTestId('threat-text').getByTestId('notation').first();
+	await expect(move).toHaveText('…Qh4#', { timeout: 15_000 });
+	const lit = page.locator('cg-board square.notation-focus');
+	const drawn = page.locator('.cg-shapes line[stroke="#003088"]');
+	await expect(lit).toHaveCount(0);
+
+	await move.hover();
+	await expect(lit).toHaveCount(1); // the queen on d8, the piece that moves
+	await expect(drawn).toHaveCount(1);
+
+	await page.mouse.move(0, 0);
+	await expect(lit).toHaveCount(0);
+	await expect(drawn).toHaveCount(0);
+});

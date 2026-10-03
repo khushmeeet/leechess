@@ -22,7 +22,15 @@
 	import { session } from '$lib/stores/session.svelte';
 	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
-	import { classifyThreat, threatOutcome, type Threat, type ThreatOutcome } from '$lib/threats';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import { targetSquare, type NotationTarget } from '$lib/notation';
+	import {
+		classifyThreat,
+		passTurn,
+		threatOutcome,
+		type Threat,
+		type ThreatOutcome
+	} from '$lib/threats';
 
 	let game = $state<GameDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -218,8 +226,24 @@
 			});
 		}
 		if (citedShape) result.push(citedShape);
+		if (notationTarget?.kind === 'move') {
+			result.push({
+				orig: notationTarget.from as Key,
+				dest: notationTarget.to as Key,
+				brush: 'blue'
+			});
+		}
 		return result;
 	});
+
+	// The move or square in the threat line the player is pointing at: its
+	// piece lights up, and a move is drawn too (the arrow is added above).
+	let notationTarget = $state<NotationTarget | null>(null);
+	const notationHighlights = $derived(
+		notationTarget
+			? new Map<Key, string>([[targetSquare(notationTarget) as Key, 'notation-focus']])
+			: undefined
+	);
 
 	const boardFen = $derived(
 		selectedMove?.fen_before ?? game?.moves[0]?.fen_before ?? '8/8/8/8/8/8/8/8 w - - 0 1'
@@ -241,6 +265,7 @@
 		if (!game) return;
 		selectedPly = Math.min(Math.max(1, ply), game.moves.length);
 		citedShape = null;
+		notationTarget = null;
 	}
 
 	// Move references in the LLM texts ("4. Bc4") become board links.
@@ -420,7 +445,13 @@
 			     fit on screen without page scrolling (22rem ≈ the chrome above
 			     and below the board). -->
 			<div class="w-full" style="max-width: min(100%, clamp(20rem, 100dvh - 22rem, 36rem))">
-				<Board fen={boardFen} turnColor={boardTurn} viewOnly autoShapes={shapes} />
+				<Board
+					fen={boardFen}
+					turnColor={boardTurn}
+					viewOnly
+					autoShapes={shapes}
+					highlights={notationHighlights}
+				/>
 			</div>
 
 			<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -488,19 +519,28 @@
 				{@const side = selectedThreat.by === 'white' ? 'White' : 'Black'}
 				<p class="mt-2 text-sm text-body" data-testid="review-threat">
 					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Threat</span>
-					<span data-testid="review-threat-text">{selectedThreat.text}</span>
-					{#if selectedThreatOutcome?.kind === 'ignored'}
-						<span class="font-semibold text-err" data-testid="review-threat-ignored">
-							{selectedMove.san} left it on the board — it was still {side}’s best move.
-						</span>
-					{:else if selectedThreatOutcome?.kind === 'replaced'}
-						<span class="font-semibold text-err" data-testid="review-threat-replaced">
-							After {selectedMove.san}, {side}’s best move became {selectedThreatOutcome.replySan} instead.
-						</span>
-					{:else if selectedThreatOutcome?.kind === 'answered'}
-						<span class="font-semibold text-ok" data-testid="review-threat-answered">
-							{selectedMove.san} answered it.
-						</span>
+					<span data-testid="review-threat-text"
+						><NotationText
+							text={selectedThreat.text}
+							fens={[passTurn(selectedMove.fen_before) ?? selectedMove.fen_before]}
+							onhover={(target) => (notationTarget = target)}
+						/></span
+					>
+					{#if selectedThreatOutcome}
+						{@const outcome = selectedThreatOutcome}
+						<span
+							class="font-semibold {outcome.kind === 'answered' ? 'text-ok' : 'text-err'}"
+							data-testid="review-threat-{outcome.kind}"
+							><NotationText
+								text={outcome.kind === 'ignored'
+									? `${selectedMove.san} left it on the board — it was still ${side}’s best move.`
+									: outcome.kind === 'replaced'
+										? `After ${selectedMove.san}, ${side}’s best move became ${outcome.replySan} instead.`
+										: `${selectedMove.san} answered it.`}
+								fens={[selectedMove.fen_before, selectedMove.fen_after]}
+								onhover={(target) => (notationTarget = target)}
+							/></span
+						>
 					{/if}
 				</p>
 			{/if}

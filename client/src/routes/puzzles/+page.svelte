@@ -6,6 +6,7 @@
 	import Board from '$lib/components/Board.svelte';
 	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
 	import { humanizeMotif, motifReason } from '$lib/motifs';
+	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import { PuzzleSession } from '$lib/stores/puzzle.svelte';
 	// Aliased: `session` on this page already means the puzzle session.
 	import { session as account } from '$lib/stores/session.svelte';
@@ -61,6 +62,28 @@
 		return [];
 	});
 
+	// The move or square in the hint text the player is pointing at; cleared
+	// whenever the position changes underneath it.
+	let notationTarget = $state<NotationTarget | null>(null);
+	let notationFen = session.fen;
+	$effect(() => {
+		if (session.fen !== notationFen) {
+			notationFen = session.fen;
+			notationTarget = null;
+		}
+	});
+	const boardShapes = $derived<DrawShape[]>([
+		...shapes,
+		...(notationTarget?.kind === 'move'
+			? [{ orig: notationTarget.from as Key, dest: notationTarget.to as Key, brush: 'blue' }]
+			: [])
+	]);
+	const notationHighlights = $derived(
+		notationTarget
+			? new Map<Key, string>([[targetSquare(notationTarget) as Key, 'notation-focus']])
+			: undefined
+	);
+
 	const turnColor = $derived(
 		session.fen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
 	);
@@ -113,7 +136,8 @@
 				lastMove={session.lastMove}
 				{movableColor}
 				orientation={session.orientation}
-				autoShapes={shapes}
+				autoShapes={boardShapes}
+				highlights={notationHighlights}
 				syncKey={session.boardSyncKey}
 				onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 			/>
@@ -173,7 +197,12 @@
 					</div>
 				{/if}
 
-				<HintLadder {hint} bind:level={session.hintLevel} />
+				<HintLadder
+					{hint}
+					bind:level={session.hintLevel}
+					fens={[session.fen, session.puzzle.fen]}
+					onnotationhover={(target) => (notationTarget = target)}
+				/>
 			{/if}
 		</aside>
 	</div>

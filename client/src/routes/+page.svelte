@@ -11,7 +11,9 @@
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
-	import { classifyThreat, type Threat } from '$lib/threats';
+	import { classifyThreat, passTurn, type Threat } from '$lib/threats';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { rise } from '$lib/transitions';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
@@ -127,14 +129,20 @@
 	// over from the position they were about.
 	let hintLevel = $state(0);
 	let threatRevealed = $state(false);
+	// The move or square in the panel's text the player is pointing at.
+	let notationTarget = $state<NotationTarget | null>(null);
 	let lastHintFen = game.fen;
 	$effect(() => {
 		if (game.fen !== lastHintFen) {
 			lastHintFen = game.fen;
 			hintLevel = 0;
 			threatRevealed = false;
+			notationTarget = null;
 		}
 	});
+	// A threat's moves are played in the passed position — the opponent's
+	// free move — so they resolve there first.
+	const threatFens = $derived([passTurn(game.fen) ?? game.fen, game.fen]);
 
 	let hoverUci = $state<string | null>(null);
 	// Level 3 circles the piece and its target; Level 4+ (move named in text)
@@ -162,8 +170,21 @@
 			}
 		];
 	});
+	// Pointing at a move in the text draws it; pointing at a square (or the
+	// move's piece) lights that square up through the board's highlights.
+	const notationShapes = $derived.by((): DrawShape[] =>
+		notationTarget?.kind === 'move'
+			? [{ orig: notationTarget.from as Key, dest: notationTarget.to as Key, brush: 'blue' }]
+			: []
+	);
+	const notationHighlights = $derived(
+		notationTarget
+			? new Map<Key, string>([[targetSquare(notationTarget) as Key, 'notation-focus']])
+			: undefined
+	);
 	const boardShapes = $derived<DrawShape[]>([
 		...threatShapes,
+		...notationShapes,
 		...(hoverUci
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
 			: []),
@@ -371,7 +392,13 @@
 					</button>
 				</p>
 			{:else if threat}
-				<p class="min-w-0 text-body" data-testid="threat-text">{threat.text}</p>
+				<p class="min-w-0 text-body" data-testid="threat-text">
+					<NotationText
+						text={threat.text}
+						fens={threatFens}
+						onhover={(target) => (notationTarget = target)}
+					/>
+				</p>
 			{:else}
 				<p class="min-w-0 text-muted" data-testid="threat-none">
 					No direct threat — ignoring their last move loses you no material.
@@ -394,13 +421,25 @@
 					>
 						{liveTactic.motif}
 					</span>
-					<span data-testid="tactic-why">{liveTactic.why}</span>
+					<span data-testid="tactic-why"
+						><NotationText
+							text={liveTactic.why}
+							fens={[game.fen]}
+							onhover={(target) => (notationTarget = target)}
+						/></span
+					>
 				</p>
 			</div>
 		{/if}
 	{:else}
 		<!-- Nudge: the same answer, but earned a rung at a time. -->
-		<HintLadder hint={ladderHint} bind:level={hintLevel} standalone={false} />
+		<HintLadder
+			hint={ladderHint}
+			bind:level={hintLevel}
+			standalone={false}
+			fens={[game.fen]}
+			onnotationhover={(target) => (notationTarget = target)}
+		/>
 	{/if}
 {/snippet}
 
@@ -414,6 +453,7 @@
 			{movableColor}
 			orientation={session.playerColor}
 			autoShapes={boardShapes}
+			highlights={notationHighlights}
 			onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 		/>
 
@@ -603,6 +643,8 @@
 					ideas={candidateIdeas}
 					gameOver={game.isGameOver}
 					onideahover={(uci) => (hoverUci = uci)}
+					fen={game.fen}
+					onnotationhover={(target) => (notationTarget = target)}
 				/>
 
 				<section
