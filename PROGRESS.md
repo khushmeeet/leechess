@@ -95,7 +95,7 @@ thinking routine, and missing the answer is how most games under 1400 are lost.
   The engine-marked analysis-job test pins 3…Nf6 facing Qxf7#: a mate in one, still White's
   best reply. There is also a migration check for the columns. Browser specs cover Full,
   Nudge and a quiet position on Play, and the ignored mate threat on Review. Results:
-  vitest 437 passed, pytest 561 passed (544 unit), Playwright: the play, review and insight-bar specs, 27 passed.
+  vitest 437 passed, pytest 561 passed (544 unit), Playwright 89 passed (full suite).
 
 ---
 
