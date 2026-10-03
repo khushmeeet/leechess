@@ -14,6 +14,91 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Threats: what does their last move want? (2026-10-03)
+
+**Goal:** the app named the tactic the player *had* and never the one they *faced*. In a
+play-tested 28-move game the panel never once said what the opponent was threatening: at
+move 21 it described a deflection on b7 (a false positive) and told the player to "improve
+your worst-placed piece", while the bishop on f5 was attacked twice, defended once, and lost
+on the next move. Asking what the other side's last move wants is the first step of any
+thinking routine, and missing the answer is how most games under 1400 are lost.
+
+- **Found by passing.** Hand the move back to the opponent (a null move: flip the side to
+  move, drop the en passant square, refuse in check) and ask the engine what it would play
+  with it. Play runs that search on the WASM engine after every engine reply, at depth 12,
+  queued on the chain behind the eval it is weighed against. It is skipped if the user has
+  already moved when it starts, and dropped if they move while it runs (the same `fen` and
+  `boardEpoch` guards the eval uses). The analysis job runs the same search for every stored
+  position with native Stockfish (`app/threats.py`) and keeps the raw result on the move:
+  `threat_move`, `threat_cp`, `threat_mate`.
+- **The engine proposes; a board fact has to back it.** A free move is always worth
+  something, and the opponent's best use of one is often just tidying up.
+  `classifyThreat` (`client/src/lib/threats.ts`) reports four kinds and nothing else:
+
+  | Kind | Backed by |
+  |---|---|
+  | `mate` | the passed position is a forced mate for the opponent |
+  | `material` | the move is a capture that wins material by static exchange |
+  | `motif` | the move executes a detected tactic and is worth ≥ 1.5 pawns — or is a winning capture that also forks (…Nxf2 hitting both rooks is about the fork, not the pawn) |
+  | `attack` | nothing nameable, but worth ≥ 3 pawns |
+
+  "Worth" is the swing between the passed position and the real one. Each sentence names
+  pieces and squares, in the same voice as the tactic row: "Black threatens …Bxf5, winning
+  the bishop on f5 (attacked twice, defended once)." The static exchange count re-reads
+  the attackers after each capture, so a queen behind a rook joins in, and a king never
+  recaptures onto a defended square.
+- **A rescue is not a threat.** When the player can win a piece, the opponent's best free
+  move is to save it, and the eval swings by that piece without anything being threatened.
+  The swing is therefore taken net of the player's own best capture (`bestCaptureGain`). In
+  the test position where White can take a knight, the raw swing is 3.8 pawns, which would
+  have been reported as an attack. Net of the capture it is 0.8, below every bar.
+- **One classifier, two screens.** The server stores the engine's facts and nothing more.
+  Play and Review both call `classifyThreat` on them, so the two can't disagree about what
+  counts, and there is no Python port to keep in step. That changes once Progress needs
+  threat statistics server-side. The classifier would then be ported with a shared
+  conformance suite, the way `shared/motifs.json` keeps the motif detectors honest.
+- **Play.** A Threat row sits above the Tactic row, because it is the question to answer
+  first.
+  - **Full:** the threat is stated outright, with an orange arrow. That is chessground's
+    `yellow` brush; red and green already mean "played" and "best" in Review.
+  - **Nudge:** the row asks "What does their last move threaten?" with a Show me button.
+    That brings back a prompt on every move, which removing the static checks/captures/threats
+    banner took away, but this time the answer is specific to the position.
+  - **Off:** no row at all.
+  - **Other cases:** in check it says so. In a quiet position it says "No direct threat —
+    ignoring their last move loses you no material", which is only what was checked. Zen
+    mode gets no arrow, and friend games are untouched.
+- **Review.** The line under the selected move shows the threat that move had to answer,
+  with the arrow, and what became of it. That is read off the other side's best move in the
+  next stored position:
+  - still the threat: "left it on the board";
+  - something else, after a mistake or blunder: "After Be6, Black's best move became …Bxe6
+    instead";
+  - something else, after a sound move: "answered".
+
+  The first cut called every changed reply "answered", which would have told the player
+  that 24. Qg6??, a queen thrown away, had answered a mating threat.
+- **Existing data.** The three columns are added by the hand-rolled migration.
+  `scripts/backfill_threats.py` runs the searches for games analyzed before them, one
+  commit per game, and skips games that already have threats.
+- **Known gaps.** The thresholds come from one game's positions. Positional threats below
+  1.5 pawns are deliberately left unreported: in that game, …Qf4 (about 1.2 pawns) is not
+  mentioned. The deflection false positive at move 21 still shows in the Tactic row; it is
+  on the quick-fix list. Showing mistake causes on Progress ("most of your blunders left a
+  threat on the board") is the next step, and needs the server-side classifier above.
+- **Testing:** `threats.test.ts` covers the null move, static exchange (x-ray recaptures,
+  kings, even trades), every threat kind on positions and Stockfish scores from the
+  play-tested game, the rescue and the thresholds, and the three Review outcomes. Five new
+  `PlaySession` cases cover the search running after the engine reply, skipped and dropped
+  when the user has moved on, not run in check, and run on a restored game. Server
+  `test_threats.py` uses a stubbed engine for the position searched and white-POV scores.
+  The engine-marked analysis-job test pins 3…Nf6 facing Qxf7#: a mate in one, still White's
+  best reply. There is also a migration check for the columns. Browser specs cover Full,
+  Nudge and a quiet position on Play, and the ignored mate threat on Review. Results:
+  vitest 437 passed, pytest 561 passed (544 unit), Playwright: the play, review and insight-bar specs, 27 passed.
+
+---
+
 ## Addendum — Takeback on a live blunder, keyboard review nav (2026-07-27)
 
 **Goal:** two places where the app produced feedback the player couldn't act on. Review had

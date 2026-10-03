@@ -8,6 +8,7 @@ assert plumbing (every move analyzed, statuses transition), not eval quality.
 
 import shutil
 
+import chess
 import pytest
 
 from app.analysis import EVAL_CLAMP_CP
@@ -46,6 +47,12 @@ def test_analysis_job_fills_every_move(client, clientside_game):
     # eval chain is continuous: eval_after of ply N is eval_before of ply N+1
     for prev, nxt in zip(moves, moves[1:], strict=False):
         assert prev["eval_after"] == nxt["eval_before"]
+    # every position got a threat search, except where the mover was in check
+    for move in moves:
+        in_check = chess.Board(move["fen_before"]).is_check()
+        assert (move["threat_move"] is None) == in_check, move["san"]
+        if not in_check:
+            assert (move["threat_cp"] is None) != (move["threat_mate"] is None), move["san"]
 
 
 @requires_stockfish
@@ -85,3 +92,22 @@ def test_analysis_of_checkmate_game(client):
     # mating move itself must classify (mate was already forced, so "best")
     assert last["eval_after"] == EVAL_CLAMP_CP
     assert last["classification"] in CLASSIFICATIONS
+
+
+@requires_stockfish
+def test_analysis_records_the_threat_each_move_had_to_answer(client):
+    """Scholar's mate again: 3...Nf6 had to answer Qxf7#, and didn't. The
+    search before it found the mate in one from White's side, and Qxf7# was
+    still White's best reply after it — which is how Review tells an ignored
+    threat from an answered one."""
+    game_id = client.post("/games", json={}).json()["id"]
+    for san in ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]:
+        assert client.post(f"/games/{game_id}/moves", json={"san": san}).status_code == 201
+
+    client.post(f"/games/{game_id}/complete", json={})
+    nf6, qxf7 = client.get(f"/games/{game_id}/review").json()["moves"][5:7]
+
+    assert nf6["threat_move"] == "h5f7"
+    assert nf6["threat_mate"] == 1
+    assert nf6["threat_cp"] is None
+    assert qxf7["best_move"] == nf6["threat_move"]

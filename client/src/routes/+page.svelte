@@ -11,6 +11,7 @@
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
+	import { classifyThreat, type Threat } from '$lib/threats';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { rise } from '$lib/transitions';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
@@ -72,6 +73,31 @@
 		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci);
 	});
 
+	// The opponent's threat in the position the user faces — "what does their
+	// last move want?", the first question of any thinking routine. Searched
+	// after every engine reply and trusted only for the position it was run
+	// on, like the candidate lines; a null `uci` means the user is in check.
+	const freshThreatSearch = $derived(
+		session.threatSearch?.fen === game.fen ? session.threatSearch : null
+	);
+	const threat = $derived.by((): Threat | null => {
+		if (!freshThreatSearch?.uci) return null;
+		return classifyThreat({
+			fen: game.fen,
+			threatUci: freshThreatSearch.uci,
+			threatScore: freshThreatSearch.score,
+			currentScore: freshThreatSearch.current
+		});
+	});
+	// From the opponent's first move on: before it there is no "their last
+	// move" to ask about. While the engine thinks, the row waits with a dash
+	// rather than coming and going on every move.
+	const showThreatRow = $derived(
+		displayPrefs.hintMode !== 'off' &&
+			!game.isGameOver &&
+			game.moves.length >= (session.playerColor === 'white' ? 2 : 1)
+	);
+
 	// The engine-answer rows belong to Full alone. Off is a real game (spec
 	// user story 5 — no help at all, so the training can be tested), and Nudge
 	// makes you climb the ladder for the answer: "Stockfish prefers Nxf4" or an
@@ -100,11 +126,13 @@
 	// Reveal state is per position — a new move clears it, so hints never carry
 	// over from the position they were about.
 	let hintLevel = $state(0);
+	let threatRevealed = $state(false);
 	let lastHintFen = game.fen;
 	$effect(() => {
 		if (game.fen !== lastHintFen) {
 			lastHintFen = game.fen;
 			hintLevel = 0;
+			threatRevealed = false;
 		}
 	});
 
@@ -121,7 +149,21 @@
 			{ orig: to, brush: 'blue' }
 		];
 	});
+	// The threat's move as an orange arrow, once the row says it out loud
+	// (always in Full, after "Show me" in Nudge). Not in zen: an arrow with no
+	// sentence beside it would be the engine pointing with nothing to say.
+	const threatShapes = $derived.by((): DrawShape[] => {
+		if (!threat || displayPrefs.zenMode || !(fullHints || threatRevealed)) return [];
+		return [
+			{
+				orig: threat.uci.slice(0, 2) as Key,
+				dest: threat.uci.slice(2, 4) as Key,
+				brush: 'yellow'
+			}
+		];
+	});
 	const boardShapes = $derived<DrawShape[]>([
+		...threatShapes,
 		...(hoverUci
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
 			: []),
@@ -300,6 +342,41 @@
 					Take it back
 				</button>
 			</p>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet threatRow()}
+	{#if showThreatRow}
+		<div class="panel-row" data-testid="threat-row">
+			<span class="panel-row-label">Threat</span>
+			{#if !freshThreatSearch}
+				<span class="text-faint">…</span>
+			{:else if freshThreatSearch.uci === null}
+				<p class="min-w-0 text-body" data-testid="threat-text">
+					You’re in check — answering it comes first.
+				</p>
+			{:else if !fullHints && !threatRevealed}
+				<!-- Nudge: the question before the answer. Asking it every move is
+				     the habit; the button is for checking your own answer. -->
+				<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+					<span class="min-w-0">What does their last move threaten?</span>
+					<button
+						type="button"
+						data-testid="threat-reveal"
+						onclick={() => (threatRevealed = true)}
+						class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+					>
+						Show me
+					</button>
+				</p>
+			{:else if threat}
+				<p class="min-w-0 text-body" data-testid="threat-text">{threat.text}</p>
+			{:else}
+				<p class="min-w-0 text-muted" data-testid="threat-none">
+					No direct threat — ignoring their last move loses you no material.
+				</p>
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -518,6 +595,7 @@
 							: 'loading'}
 					ply={game.moves.length}
 					takeback={takebackRow}
+					threat={threatRow}
 					tactic={tacticRow}
 					showCoach={displayPrefs.showCoach && fullHints}
 					coach={coachText}

@@ -4,8 +4,8 @@
 	import type { OpeningState } from '$lib/stores/play.svelte';
 
 	// Play's single in-game coaching panel: where you are (opening), what the
-	// position holds (the tactic row), and what the engine suggests (coach +
-	// ideas). These used to be two stacked cards, which let the Ideas chips
+	// position holds (the threat against you, then your own tactic), and what
+	// the engine suggests (coach + ideas). These used to be two stacked cards, which let the Ideas chips
 	// name the best move while a hint ladder was still asking the player to
 	// look for it — one panel makes that contradiction visible, and Play's
 	// hint mode now decides which rows exist at all.
@@ -14,6 +14,10 @@
 		openingState: 'loading' | 'ready' | 'failed';
 		/** Plies played so far. */
 		ply: number;
+		/** The opponent's threat — what their last move wants. Rendered before
+		 * the tactic row because it is the question to answer first: your own
+		 * tactic is no good if theirs lands before it. */
+		threat?: Snippet;
 		/** The live tactic row, rendered under the opening line. */
 		tactic?: Snippet;
 		/** The "take back and think again" offer, shown while the last move
@@ -34,6 +38,7 @@
 		opening,
 		openingState,
 		ply,
+		threat,
 		tactic,
 		takeback,
 		showCoach,
@@ -101,6 +106,8 @@
 	</div>
 
 	{@render takeback?.()}
+
+	{@render threat?.()}
 
 	{@render tactic?.()}
 

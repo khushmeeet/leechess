@@ -10,6 +10,7 @@ import {
 import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
 import { engineName } from '$lib/engine';
 import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
+import { passTurn, type EngineScore } from '$lib/threats';
 import { GameStore, type PlayedMove } from './game.svelte';
 import { soundPrefs } from './soundPrefs.svelte';
 import { clearActiveGame, loadActiveGame, saveActiveGame } from './gamePersistence';
@@ -38,6 +39,10 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LIVE_EVAL_DEPTH = 16;
 /** Candidate lines for the insight bar's Ideas row. */
 const IDEAS_MULTIPV = 3;
+/** Depth of the null-move search behind the threat row. Shallower than the
+ * live eval: it answers "what would they do with a free move", where the
+ * first move of the line is what matters, and it runs on every engine reply. */
+const THREAT_DEPTH = 12;
 /** Attempts to get the engine's reply before giving up (the first failure
  * tears down and re-inits the worker, so a retry runs on a fresh engine). */
 const ENGINE_REPLY_ATTEMPTS = 2;
@@ -82,6 +87,17 @@ export class PlaySession {
 	/** Candidate lines for the position in `fen` — user-to-move positions only;
 	 * consumers must check `fen` against the live board to drop stale ones. */
 	ideas = $state<{ fen: string; lines: EngineLine[] } | null>(null);
+	/** The null-move search for the position in `fen` (user to move): the
+	 * opponent's best move if the user passed, with the scores
+	 * `classifyThreat` weighs it against. `uci` is null when there was nothing
+	 * to search — the user is in check, which the board already says. Same
+	 * staleness rule as `ideas`. */
+	threatSearch = $state<{
+		fen: string;
+		uci: string | null;
+		score: EngineScore;
+		current: EngineScore | null;
+	} | null>(null);
 
 	/** Eval (cp, white POV, clamped) after each ply; index = ply - 1. */
 	evals = $state<(number | null)[]>([]);
@@ -326,7 +342,10 @@ export class PlaySession {
 		this.baselineEval = normalizeEval(result);
 		this.pendingBestMove = result.bestMove;
 		this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
-		if (userToMove) this.ideas = { fen, lines: result.lines };
+		if (userToMove) {
+			this.ideas = { fen, lines: result.lines };
+			await this.searchThreat(fen);
+		}
 	}
 
 	private seedFromInitial(): void {
@@ -390,6 +409,12 @@ export class PlaySession {
 		});
 
 		this.inChain(() => this.evaluatePly(played, !byEngine));
+		// the engine just moved, so the user faces a position its move may
+		// have threatened something in — queued after the eval it is weighed
+		// against, and skipped if the user has already answered
+		if (byEngine && !this.game.isGameOver) {
+			this.inChain(() => this.searchThreat(played.fenAfter));
+		}
 
 		if (this.game.isGameOver) {
 			soundPrefs.play('game-end');
@@ -445,6 +470,34 @@ export class PlaySession {
 			this.lastFeedback = { ply: played.ply, san: played.san, classification };
 		}
 		this.save();
+	}
+
+	/** Runs inside `chain` (or straight after a rebaseline): give the move back
+	 * to the opponent and see what they would play with it — the threat row's
+	 * raw material (see `$lib/threats`). Dropped when the board has moved on
+	 * by the time it runs or lands; a player who has already replied doesn't
+	 * need telling what they were facing. */
+	private async searchThreat(fen: string): Promise<void> {
+		if (this.game.fen !== fen || !this.userCanMove) return;
+		const boardEpoch = this.boardEpoch;
+		// the eval of this very position, from the search that just ran on it
+		const current =
+			this.ideas?.fen === fen && this.insightEval
+				? { cp: this.insightEval.cp, mate: this.insightEval.mate }
+				: null;
+		const passed = passTurn(fen);
+		if (!passed) {
+			this.threatSearch = { fen, uci: null, score: {}, current };
+			return;
+		}
+		const result = await stockfish.evaluate(passed, THREAT_DEPTH, 1);
+		if (boardEpoch !== this.boardEpoch || this.game.fen !== fen) return;
+		this.threatSearch = {
+			fen,
+			uci: result.bestMove,
+			score: { cp: result.cp, mate: result.mate },
+			current
+		};
 	}
 
 	/** Track the deepest book line reached along the game so far. */
@@ -556,6 +609,7 @@ export class PlaySession {
 		this.evals = this.evals.slice(0, targetPly);
 		this.badges = this.badges.slice(0, targetPly);
 		this.lastFeedback = null;
+		this.threatSearch = null;
 		this.currentEval = this.evals[targetPly - 1] ?? null;
 		this.refreshOpening();
 		// save() no-ops once the game is back to no moves — clear instead, or
@@ -623,6 +677,7 @@ export class PlaySession {
 		this.opening = null;
 		this.insightEval = null;
 		this.ideas = null;
+		this.threatSearch = null;
 		clearActiveGame();
 		this.persistable = true;
 		soundPrefs.play('game-start');

@@ -22,6 +22,7 @@
 	import { session } from '$lib/stores/session.svelte';
 	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
+	import { classifyThreat, threatOutcome, type Threat, type ThreatOutcome } from '$lib/threats';
 
 	let game = $state<GameDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -158,6 +159,32 @@
 		}
 	}
 
+	// The threat the selected move had to answer: the other side's best move
+	// had the mover passed, as the analysis job stored it, judged by the same
+	// rules Play uses. Null for a quiet position, a move made in check, and a
+	// game analyzed before threats were recorded.
+	const selectedThreat = $derived.by((): Threat | null => {
+		if (!selectedMove?.threat_move) return null;
+		return classifyThreat({
+			fen: selectedMove.fen_before,
+			threatUci: selectedMove.threat_move,
+			threatScore: { cp: selectedMove.threat_cp, mate: selectedMove.threat_mate },
+			currentScore: selectedMove.eval_before === null ? null : { cp: selectedMove.eval_before }
+		});
+	});
+
+	// What became of it: left on the board, replaced by a bigger problem, or
+	// answered — read off the next ply's stored best move.
+	const selectedThreatOutcome = $derived.by((): ThreatOutcome | null => {
+		if (!selectedThreat || !selectedMove || !game) return null;
+		const reply = game.moves[selectedPly]; // selectedPly is 1-based: the next move
+		return threatOutcome(
+			selectedThreat,
+			{ fenAfter: selectedMove.fen_after, classification: selectedMove.classification },
+			reply?.best_move
+		);
+	});
+
 	/** True when the engine's best move differs from what was played. */
 	const bestDiffers = $derived.by(() => {
 		if (!selectedMove?.best_move) return false;
@@ -171,6 +198,14 @@
 	const shapes = $derived.by((): DrawShape[] => {
 		if (!selectedMove) return [];
 		const result: DrawShape[] = [];
+		// drawn first so the played and best arrows sit on top where they cross
+		if (selectedThreat) {
+			result.push({
+				orig: selectedThreat.uci.slice(0, 2) as Key,
+				dest: selectedThreat.uci.slice(2, 4) as Key,
+				brush: 'yellow'
+			});
+		}
 		const played = sanToKeys(selectedMove.fen_before, selectedMove.san);
 		if (played) {
 			result.push({ orig: played[0], dest: played[1], brush: bestDiffers ? 'red' : 'green' });
@@ -447,6 +482,27 @@
 						</span>
 					{/each}
 				</div>
+			{/if}
+
+			{#if selectedMove && selectedThreat}
+				{@const side = selectedThreat.by === 'white' ? 'White' : 'Black'}
+				<p class="mt-2 text-sm text-body" data-testid="review-threat">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Threat</span>
+					<span data-testid="review-threat-text">{selectedThreat.text}</span>
+					{#if selectedThreatOutcome?.kind === 'ignored'}
+						<span class="font-semibold text-err" data-testid="review-threat-ignored">
+							{selectedMove.san} left it on the board — it was still {side}’s best move.
+						</span>
+					{:else if selectedThreatOutcome?.kind === 'replaced'}
+						<span class="font-semibold text-err" data-testid="review-threat-replaced">
+							After {selectedMove.san}, {side}’s best move became {selectedThreatOutcome.replySan} instead.
+						</span>
+					{:else if selectedThreatOutcome?.kind === 'answered'}
+						<span class="font-semibold text-ok" data-testid="review-threat-answered">
+							{selectedMove.san} answered it.
+						</span>
+					{/if}
+				</p>
 			{/if}
 
 			{#if selectedMove?.explanation}

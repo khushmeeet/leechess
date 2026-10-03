@@ -146,6 +146,15 @@ class Move(Base):
     eval_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     classification: Mapped[str | None] = mapped_column(String, nullable=True)
     best_move: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The opponent's threat in fen_before: what the other side would play if
+    # the mover passed (app/threats.py), and the score after it, white POV —
+    # centipawns clamped like the evals, or moves to mate. Raw engine facts;
+    # whether they add up to a threat is decided client-side. All null when
+    # there was nothing to search (the mover was in check) or the game was
+    # analyzed before threats were.
+    threat_move: Mapped[str | None] = mapped_column(String, nullable=True)
+    threat_cp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    threat_mate: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="moves")
     motif_tags: Mapped[list["MotifTag"]] = relationship(

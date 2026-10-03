@@ -57,6 +57,35 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	await expect(page.getByTestId('best-move-hint')).toContainText('best was');
 });
 
+test('each move shows the threat it had to answer, and whether it did', async ({
+	page,
+	request
+}) => {
+	const gameId = await seedCompletedGame(request);
+	await page.goto(`/review/${gameId}`);
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`${API}/games/${gameId}/review`)).json()).analysis_status,
+			{ timeout: 60_000 }
+		)
+		.toBe('complete');
+	await expect(page.getByTestId('analysis-status')).toBeHidden({ timeout: 10_000 });
+
+	// 3.Qh5 threatened mate, and 3…Nf6 walked past it
+	const moveList = page.getByTestId('move-list');
+	await moveList.getByRole('button', { name: /Nf6/ }).click();
+	await expect(page.getByTestId('review-threat-text')).toHaveText(
+		'White threatens Qxf7#, checkmate.'
+	);
+	await expect(page.getByTestId('review-threat-ignored')).toContainText('Nf6 left it on the board');
+	await expect(page.locator('.cg-shapes line[stroke="#e68f00"]')).toHaveCount(1);
+
+	// the opening move faced nothing, and says nothing
+	await moveList.getByRole('button', { name: /^e4/ }).click();
+	await expect(page.getByTestId('review-threat')).toBeHidden();
+});
+
 test('arrow keys step through the game and yield to text fields', async ({ page, request }) => {
 	const gameId = await seedCompletedGame(request);
 

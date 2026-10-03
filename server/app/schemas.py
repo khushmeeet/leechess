@@ -103,6 +103,9 @@ class MoveOut(BaseModel):
     eval_after: float | None
     classification: str | None
     best_move: str | None
+    threat_move: str | None
+    threat_cp: float | None
+    threat_mate: int | None
     motifs: list[str]
     explanation: str | None
 

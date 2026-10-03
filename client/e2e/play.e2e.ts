@@ -312,6 +312,7 @@ test('Off shows no in-game help at all', async ({ page }) => {
 	// a real game: even though Nxh4 is a live tactic, nothing names it and the
 	// engine's own suggestions go too
 	await page.getByTestId('hint-mode-off').click();
+	await expect(page.getByTestId('threat-row')).toBeHidden();
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
 	await expect(page.getByTestId('hint-ladder')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
@@ -371,4 +372,56 @@ test('Full names the motif and why the position is one', async ({ page }) => {
 
 	// Full is the mode that also hands over the engine's answer
 	await expect(page.getByTestId('ideas-row')).toContainText('Nxh4');
+});
+
+/** Restore a game where White (the user) to move faces a mate in one: after
+ * 1.f3 e5 2.g4?? Nc6, Black's free move would be …Qh4#. A mate in one is found
+ * at any depth, so the threat search lands on it every time. */
+async function restoreMateThreat(page: import('@playwright/test').Page) {
+	await restoreActiveGame(page, { moves: ['f2f3', 'e7e5', 'g2g4', 'b8c6'] });
+}
+
+/** The threat arrow: chessground's yellow brush, an orange line. */
+function threatArrow(page: import('@playwright/test').Page) {
+	return page.locator('.cg-shapes line[stroke="#e68f00"]');
+}
+
+test('Full states the threat their last move made, with an arrow', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-full').click();
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens …Qh4#, checkmate.', {
+		timeout: 15_000
+	});
+	await expect(page.getByTestId('threat-reveal')).toHaveCount(0);
+	await expect(threatArrow(page)).toHaveCount(1);
+});
+
+test('Nudge asks what their move threatens before saying', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-nudge').click();
+	const reveal = page.getByTestId('threat-reveal');
+	await expect(reveal).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId('threat-row')).toContainText('What does their last move threaten?');
+	await expect(page.getByTestId('threat-text')).toBeHidden();
+	await expect(threatArrow(page)).toHaveCount(0);
+
+	await reveal.click();
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens …Qh4#, checkmate.');
+	await expect(threatArrow(page)).toHaveCount(1);
+});
+
+test('a quiet move is called quiet rather than left blank', async ({ page }) => {
+	await restoreActiveGame(page, { moves: ['e2e4', 'e7e5'] });
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-full').click();
+	await expect(page.getByTestId('threat-none')).toBeVisible({ timeout: 15_000 });
+	await expect(threatArrow(page)).toHaveCount(0);
 });

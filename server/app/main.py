@@ -153,6 +153,18 @@ def _migrate_existing_tables(bind=None) -> None:
             conn.commit()
             _number_the_saved_games(conn)
 
+        # The null-move threat search (app/threats.py). Nullable with no
+        # default: a game analyzed before it simply has no threats on record
+        # until scripts/backfill_threats.py runs the searches.
+        for column, sql_type in (
+            ("threat_move", "VARCHAR"),
+            ("threat_cp", "FLOAT"),
+            ("threat_mate", "INTEGER"),
+        ):
+            if column not in columns_of("moves"):
+                conn.execute(text(f"ALTER TABLE moves ADD COLUMN {column} {sql_type}"))
+                conn.commit()
+
         _move_schedules_off_the_content_rows(conn, columns_of)
 
 

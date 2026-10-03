@@ -38,6 +38,15 @@ export interface MoveRecord {
 	eval_after: number | null;
 	classification: string | null;
 	best_move: string | null;
+	/** The other side's best move in `fen_before` had the mover passed — the
+	 * threat this move had to answer, before `classifyThreat` judges whether
+	 * it is one. Null when the mover was in check, or for a game analyzed
+	 * before threats were recorded. */
+	threat_move: string | null;
+	/** The score after `threat_move`, white POV: centipawns (clamped like the
+	 * evals) or moves to mate — one of the two. */
+	threat_cp: number | null;
+	threat_mate: number | null;
 	motifs: string[];
 	/** Cached LLM "why" text — only flagged moves have one (Phase 5). */
 	explanation: string | null;

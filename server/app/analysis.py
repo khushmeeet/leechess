@@ -18,10 +18,11 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.explanations import generate_explanations_for_game
-from app.models import Game
+from app.models import Game, Move
 from app.motifs import apply_rule_based_tags
 from app.puzzle_generation import create_puzzles_for_game
 from app.summaries import generate_summary_for_game
+from app.threats import THREAT_DEPTH, search_threat
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,12 @@ def analysis_depth() -> int:
     return int(os.environ.get("LEECHESS_ANALYSIS_DEPTH", "18"))
 
 
+def threat_depth() -> int:
+    """Never deeper than the main analysis — the suites lower that to keep
+    engine tests fast, and the threat search should follow."""
+    return min(THREAT_DEPTH, analysis_depth())
+
+
 def stockfish_binary() -> str | None:
     """Native Stockfish. LEECHESS_STOCKFISH pins an explicit path — PATH
     lookup can be shadowed (e.g. the npm `stockfish` package's JS stub in
@@ -100,6 +107,14 @@ def classify_move(
 def _score_cp(info: chess.engine.InfoDict) -> float:
     score = info["score"].white()
     return clamp_eval(score.score(mate_score=100_000))
+
+
+def record_threat(engine: chess.engine.SimpleEngine, move: Move, depth: int) -> None:
+    """Store the null-move threat search for the position before `move`."""
+    found = search_threat(engine, chess.Board(move.fen_before), depth)
+    move.threat_move = found.move if found else None
+    move.threat_cp = clamp_eval(found.cp) if found and found.cp is not None else None
+    move.threat_mate = found.mate if found else None
 
 
 def _terminal_eval(board: chess.Board) -> float:
@@ -168,6 +183,7 @@ def _analyze(game: Game) -> None:
 
     depth = analysis_depth()
     limit = chess.engine.Limit(depth=depth)
+    threats_at = threat_depth()
 
     with chess.engine.SimpleEngine.popen_uci(binary) as engine:
         # Each position is searched once: the eval after move i is the eval
@@ -181,6 +197,7 @@ def _analyze(game: Game) -> None:
             board = chess.Board(move.fen_before)
             move.eval_before = eval_cp
             move.best_move = best.uci() if best else None
+            record_threat(engine, move, threats_at)
 
             played = board.parse_san(move.san)
             after = chess.Board(move.fen_after)
