@@ -6,7 +6,8 @@ score. That is the opponent's threat, the thing the player's move had to
 answer. Play runs the same search in the browser on every engine reply.
 
 Deciding whether the move is a threat worth telling the player about (a
-mate, a capture that wins material, a tactic worth a pawn and a half) is
+mate, a capture that wins material, a tactic worth a pawn and a half, a quiet
+move worth a pawn that sets up something the board can show) is
 `classifyThreat` in client/src/lib/threats.ts, which Play and Review both call
 on these stored facts. `threat_kind` below is its Python port, for the
 mistake causes Progress counts (app/mistakes.py): the kind only, none of the
@@ -38,6 +39,9 @@ from app.motifs import (
 # and past which a threat counts with no name — classifyThreat's bars.
 MOTIF_SWING_CP = 150
 ATTACK_SWING_CP = 300
+# ...and the bar for a quiet move that sets something up the board can show
+# (sets_up) — a pawn's worth.
+SMALL_SWING_CP = 100
 # Kept in step with evalClampCp in shared/classification.json (a mate scores
 # as the clamp) without importing app.analysis, which imports this module.
 _CLAMP_CP = 1000
@@ -158,6 +162,35 @@ def best_capture_gain(board: chess.Board) -> int:
     return best
 
 
+def sets_up(passed: chess.Board, move: chess.Move) -> bool:
+    """A quiet threat move sets up something the player can check on the
+    board: the piece that moved could then win material by a capture, or it
+    now hits more squares next to the player's king than it did (two at
+    least). setsUp in threats.ts, kind only."""
+    after = passed.copy(stack=False)
+    after.push(move)
+    mover = after.piece_at(move.to_square)
+    if mover is None:
+        return False
+    again = pass_turn(after)
+    if again is not None:
+        for follow in again.legal_moves:
+            if (
+                follow.from_square == move.to_square
+                and again.is_capture(follow)
+                and not again.is_en_passant(follow)
+                and static_exchange(again, follow.from_square, follow.to_square) >= 1
+            ):
+                return True
+    king = after.king(not mover.color)
+    if king is None:
+        return False
+    zone = chess.SquareSet(chess.BB_KING_ATTACKS[king])
+    hit_now = len(zone & after.attacks(move.to_square))
+    hit_before = len(zone & passed.attacks(move.from_square))
+    return hit_now >= 2 and hit_now > hit_before
+
+
 def _centipawns(cp: float | None, mate: int | None) -> float | None:
     if mate is not None:
         return _CLAMP_CP if mate > 0 else -_CLAMP_CP
@@ -205,9 +238,16 @@ def threat_kind(
     after = _centipawns(threat_cp, threat_mate)
     if now is None or after is None:
         return None
-    swing = sign * (after - now) - 100 * best_capture_gain(chess.Board(fen))
+    # less what the free move took off the player's board: a capture it
+    # rescued from, not one still there after it
+    after_board = passed.copy(stack=False)
+    after_board.push(move)
+    rescued = best_capture_gain(chess.Board(fen)) - best_capture_gain(after_board)
+    swing = sign * (after - now) - 100 * max(0, rescued)
     if swing >= MOTIF_SWING_CP and any(name in motifs for name in NAMEABLE_MOTIFS):
         return "motif"
+    if swing >= SMALL_SWING_CP and sets_up(passed, move):
+        return "attack"
     if swing >= ATTACK_SWING_CP:
         return "attack"
     return None

@@ -20,17 +20,22 @@
  * | `material` | the move is a capture that wins material by static exchange   |
  * |            | (told as a `motif` instead when the capture also forks)       |
  * | `motif`    | the move executes a recognized tactic and is worth ≥ 1.5 pawns |
- * | `attack`   | nothing nameable, but the move is worth ≥ 3 pawns              |
+ * | `attack`   | a quiet move worth ≥ 1 pawn that sets something up the player |
+ * |            | can check: the piece could then win material by a capture, or |
+ * |            | it now hits more squares beside the king (two at least)       |
+ * |            | — or, with nothing to point at, any move worth ≥ 3 pawns      |
  *
  * "Worth" is the swing: how much better the opponent stands after a free move
- * than in the real position with the player to move, less whatever the player
- * could win by capturing right now. That last part is what keeps a rescue from
- * reading as a threat — when the player can take a queen, the opponent's best
- * free move is to save it, and the eval swings by nine pawns without anything
- * being threatened at all. The last two kinds need the swing because a
- * detector firing is not proof the tactic works. Positional threats below
- * those bars are deliberately not reported — a threat row that cries wolf
- * teaches the player to stop reading it.
+ * than in the real position with the player to move, less whatever the free
+ * move takes away from what the player could win by capturing right now. That
+ * last part is what keeps a rescue from reading as a threat — when the player
+ * can take a queen, the opponent's best free move is to save it, and the eval
+ * swings by nine pawns without anything being threatened at all. A capture
+ * still there after the free move was not rescued, so it takes nothing off. The last two kinds need the swing because a
+ * detector firing is not proof the tactic works. Small threats are reported
+ * only with a board fact to point at, and vaguer positional ones below the
+ * bars not at all — a threat row that cries wolf teaches the player to stop
+ * reading it.
  */
 import { Chess, type Color, type Square } from 'chess.js';
 import { EVAL_CLAMP_CP } from '$lib/classification';
@@ -79,6 +84,9 @@ export interface ThreatInput {
 export const MOTIF_SWING_CP = 150;
 /** Swing, in centipawns, past which a threat is reported with no name. */
 export const ATTACK_SWING_CP = 300;
+/** Swing, in centipawns, a quiet threat must be worth when the board backs
+ * it with something to point at (`setsUp`) — a pawn's worth. */
+export const SMALL_SWING_CP = 100;
 
 const VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
 const PIECE_NAME: Record<string, string> = {
@@ -198,6 +206,61 @@ function materialClause(passed: Chess, from: Square, to: Square): string {
 	return `winning ${piece} (attacked ${times(attackers)}, defended ${times(defenders)})`;
 }
 
+/** The squares next to `color`'s king. */
+function kingZone(chess: Chess, color: Color): Square[] {
+	const king = chess.findPiece({ type: 'k', color })[0];
+	if (!king) return [];
+	const file = king.charCodeAt(0);
+	const rank = Number(king[1]);
+	const zone: Square[] = [];
+	for (let df = -1; df <= 1; df++) {
+		for (let dr = -1; dr <= 1; dr++) {
+			const f = file + df;
+			const r = rank + dr;
+			if ((df === 0 && dr === 0) || f < 97 || f > 104 || r < 1 || r > 8) continue;
+			zone.push(`${String.fromCharCode(f)}${r}` as Square);
+		}
+	}
+	return zone;
+}
+
+/** What a quiet threat move sets up, when it is something the player can
+ * check on the board, as the rest of the sentence after "threatens …Qf4":
+ * the piece that moved could then win material by a capture, or it now hits
+ * more squares next to the player's king than it did (two at least). Null
+ * for anything vaguer, which is left unreported below the attack bar. */
+function setsUp(passed: Chess, after: Chess, from: Square, to: Square): string | null {
+	const mover = after.get(to)!;
+	const prefix = mover.color === 'b' ? '…' : '';
+	// the threatener's next move, as though the player passed in turn; none
+	// when the move gives check, which is a threat of its own kind
+	const againFen = passTurn(after.fen());
+	if (againFen) {
+		const again = new Chess(againFen);
+		let best: { gain: number; from: Square; to: Square; san: string } | null = null;
+		for (const move of again.moves({ square: to, verbose: true })) {
+			if (!move.isCapture() || move.isEnPassant()) continue;
+			const gain = staticExchange(againFen, move.from, move.to);
+			if (gain >= 1 && (!best || gain > best.gain)) {
+				best = { gain, from: move.from, to: move.to, san: move.san };
+			}
+		}
+		if (best) {
+			return ` and then ${prefix}${best.san}, ${materialClause(again, best.from, best.to)}`;
+		}
+	}
+	const defender = opposite(mover.color);
+	const zone = kingZone(after, defender);
+	const hitNow = zone.filter((square) => after.attackers(square, mover.color).includes(to));
+	const hitBefore = zone.filter((square) => passed.attackers(square, mover.color).includes(from));
+	if (hitNow.length >= 2 && hitNow.length > hitBefore.length) {
+		const king = COLOR_NAME[defender] === 'white' ? 'White' : 'Black';
+		const squares = `${hitNow.slice(0, -1).join(', ')} and ${hitNow.at(-1)}`;
+		return `, aiming the ${PIECE_NAME[mover.type]} at ${king}’s king: from ${to} it hits ${squares}, next to the king`;
+	}
+	return null;
+}
+
 /** The opponent's threat in `input.fen`, or null when there is nothing
  * concrete to answer. See the module comment for what counts. */
 export function classifyThreat(input: ThreatInput): Threat | null {
@@ -263,8 +326,10 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 	const passedScore = centipawns(threatScore);
 	if (now === null || passedScore === null) return null;
 	// how much better the opponent stands with the free move than they do now,
-	// less what the player could take this move (see the module comment)
-	const swing = sign * (passedScore - now) - 100 * bestCaptureGain(fen);
+	// less what the free move took off the player's board — a capture it
+	// rescued from, not one still there after it (see the module comment)
+	const rescued = bestCaptureGain(fen) - bestCaptureGain(after.fen());
+	const swing = sign * (passedScore - now) - 100 * Math.max(0, rescued);
 
 	if (swing >= MOTIF_SWING_CP) {
 		// a capture that loses the exchange isn't a hanging piece, whatever the
@@ -282,6 +347,19 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 				text: `${subject} threatens ${shown}, a ${name}: ${why}.`
 			};
 		}
+	}
+
+	// a quiet move worth a pawn or more, with something on the board to point
+	// at; above the attack bar the same clause beats a bare number
+	const setup = swing >= SMALL_SWING_CP ? setsUp(passed, after, from, to) : null;
+	if (setup) {
+		return {
+			...base,
+			kind: 'attack',
+			target: null,
+			motif: null,
+			text: `${subject} threatens ${shown}${setup}.`
+		};
 	}
 
 	if (swing >= ATTACK_SWING_CP) {

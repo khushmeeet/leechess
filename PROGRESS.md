@@ -14,6 +14,38 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Smaller threats, when the board can show them (2026-10-04)
+
+**Goal:** the threat row reported a quiet move only when it was a named tactic worth
+1.5 pawns, or anything worth 3. It missed …Qf4 in the play-tested game (move 19, worth
+about 1.2 pawns), the move the player then ignored twice.
+
+- **A new bar for quiet moves:** 1 pawn (`SMALL_SWING_CP`). It needs a fact the player
+  can check on the board (`setsUp` in `threats.ts`, `sets_up` in `threats.py`):
+  - the piece that moved could then win material by a capture: "Black threatens …Rb7
+    and then …Rxb2, winning the knight on b2, which nothing defends."; or
+  - it now hits more squares next to the king than before, two at least: "Black
+    threatens …Qf4, aiming the queen at White's king: from f4 it hits f2 and h2, next
+    to the king."
+  - A swing of 1–3 pawns with nothing to point at is still not reported. Above 3 pawns,
+    the same sentence replaces the bare "about N pawns' worth" when one is available.
+- **The rescue rule was too broad.** The swing subtracted every capture the player had,
+  to keep a rescue (the opponent saving a piece) from reading as a threat. In the …Qf4
+  position White's Bxh7 wins a pawn whether or not Black plays …Qf4, and that pawn
+  cancelled the whole threat. Now only what the free move takes away is subtracted:
+  the best capture before it, less the best capture after it.
+- **Same kind on the server:** `threat_kind` is ported, so the mistake causes on
+  Progress and the defence puzzles count these threats too.
+  `shared/threats.json`: the old "small-real-threat-unreported" case is now
+  "quiet-queen-move-aimed-at-the-king" (attack), plus four new cases: the same move
+  under a pawn, a quiet move then a winning capture, the same under a pawn, and a
+  swing with nothing to point at.
+- **Testing:** both conformance suites; the wording for both sentences; the browser
+  tests for Play, Review, the insight bar, puzzles, the hint ladder and Think first
+  (40 passed).
+
+---
+
 ## Addendum — Guess-the-move scores are kept (2026-10-04)
 
 **Goal:** a guess-the-move run lived only in the page; closing it lost the score.

@@ -120,7 +120,7 @@
 			"kind": null
 		},
 		{
-			"id": "small-real-threat-unreported",
+			"id": "quiet-queen-move-aimed-at-the-king",
 			"fen": "r1b2r1k/ppq2p1p/2n2p2/3p4/P7/1P1B3P/2QN1PP1/3R1RK1 w - - 1 19",
 			"threatUci": "c7f4",
 			"threatScore": {
@@ -128,6 +128,54 @@
 			},
 			"currentScore": {
 				"cp": -9
+			},
+			"kind": "attack"
+		},
+		{
+			"id": "constructed-same-move-worth-under-a-pawn",
+			"fen": "r1b2r1k/ppq2p1p/2n2p2/3p4/P7/1P1B3P/2QN1PP1/3R1RK1 w - - 1 19",
+			"threatUci": "c7f4",
+			"threatScore": {
+				"cp": -90
+			},
+			"currentScore": {
+				"cp": -9
+			},
+			"kind": null
+		},
+		{
+			"id": "constructed-quiet-move-then-a-winning-capture",
+			"fen": "4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1",
+			"threatUci": "h7b7",
+			"threatScore": {
+				"cp": -180
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": "attack"
+		},
+		{
+			"id": "constructed-same-setup-worth-under-a-pawn",
+			"fen": "4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1",
+			"threatUci": "h7b7",
+			"threatScore": {
+				"cp": -80
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "constructed-small-swing-nothing-to-point-at",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "d2d4",
+			"threatScore": {
+				"cp": 160
+			},
+			"currentScore": {
+				"cp": 29
 			},
 			"kind": null
 		},

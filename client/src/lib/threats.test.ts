@@ -180,8 +180,28 @@ describe('classifyThreat', () => {
 
 	it('stays quiet below the bars', () => {
 		expect(threat(QUIET, 'd2d4', { cp: 95 }, { cp: 29 })).toBeNull();
-		// …Qf4 is the engine's pick, and is worth about a pawn: not reported
-		expect(threat(SMALL_THREAT, 'c7f4', { cp: -129 }, { cp: -9 })).toBeNull();
+		// the same …Qf4 as below, worth under a pawn
+		expect(threat(SMALL_THREAT, 'c7f4', { cp: -90 }, { cp: -9 })).toBeNull();
+		// worth more than a pawn, but nothing on the board to point at
+		expect(threat(QUIET, 'd2d4', { cp: 160 }, { cp: 29 })).toBeNull();
+	});
+
+	it('reports a quiet move aimed at the king, worth about a pawn', () => {
+		// …Qf4 hits f2 and h2 beside White's king, where from c7 it hit only
+		// h2. White's Bxh7 wins a pawn either way — still there after …Qf4, so
+		// it was not rescued and takes nothing off the swing.
+		expect(threat(SMALL_THREAT, 'c7f4', { cp: -129 }, { cp: -9 })).toMatchObject({
+			kind: 'attack',
+			text: 'Black threatens …Qf4, aiming the queen at White’s king: from f4 it hits f2 and h2, next to the king.'
+		});
+	});
+
+	it('reports a quiet move that sets up a winning capture', () => {
+		const loose = '4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1';
+		expect(threat(loose, 'h7b7', { cp: -180 }, { cp: 0 })).toMatchObject({
+			kind: 'attack',
+			text: 'Black threatens …Rb7 and then …Rxb2, winning the knight on b2, which nothing defends.'
+		});
 	});
 
 	it('does not mistake a rescue for a threat', () => {
