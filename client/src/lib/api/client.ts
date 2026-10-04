@@ -509,6 +509,14 @@ export interface GameCplPoint {
 	endgame_cpl: number | null;
 }
 
+/** One of the player's moves, for a link into Review. */
+export interface MistakeExample {
+	game_id: number;
+	number: number | null;
+	ply: number;
+	san: string;
+}
+
 /** How often one step of the thinking routine broke, over the player's own
  * mistakes and blunders in the window. */
 export interface MistakeCauseCount {
@@ -516,7 +524,15 @@ export interface MistakeCauseCount {
 	mistakes: number;
 	blunders: number;
 	/** The most recent move with this cause, for a link into Review. */
-	latest: { game_id: number; number: number | null; ply: number; san: string } | null;
+	latest: MistakeExample | null;
+}
+
+/** How often one position idea ($lib/positionIdeas) was behind the
+ * player's own mistakes and blunders, with the latest for the link. */
+export interface PositionIdeaCount {
+	motif: string;
+	count: number;
+	latest: MistakeExample;
 }
 
 export interface ProgressSummary {
@@ -529,6 +545,7 @@ export interface ProgressSummary {
 	puzzles_solved: number;
 	drills_passed: number; // endgame drills converted/held in the window
 	mistake_causes: MistakeCauseCount[]; // every cause, most common first
+	position_ideas: PositionIdeaCount[]; // only ideas that came up, most common first
 	thinking: ThinkingSummary;
 	repertoire: RepertoireLine[]; // most played first
 	guessing: GuessSummary[]; // most recently played first

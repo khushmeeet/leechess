@@ -17,6 +17,8 @@ from app.auth.models import User
 from app.cpl import TWO_SIDED_MODES, aggregate_cpl, player_moves
 from app.db import get_db
 from app.mistakes import CAUSES
+from app.motifs import FLAGGED_CLASSIFICATIONS
+from app.strategy import STRATEGIC_MOTIFS
 from app.routers.guessing import guess_summary
 from app.openings import left_book, opening_of
 from app.models import (
@@ -33,6 +35,7 @@ from app.schemas import (
     MistakeExample,
     MotifProgress,
     MotifTrend,
+    PositionIdeaCount,
     ProgressOut,
     RepertoireExit,
     RepertoireLine,
@@ -165,6 +168,34 @@ def mistake_causes(games: list[Game]) -> list[MistakeCauseCount]:
             -(count.mistakes + count.blunders),
             CAUSES.index(count.cause),
         ),
+    )
+
+
+def position_ideas(games: list[Game]) -> list[PositionIdeaCount]:
+    """The position ideas (outpost, open file, weak back rank, weak pawns)
+    tagged on the player's own mistakes and blunders, most common first —
+    what "the position slipped" was about. `games` oldest first, so the
+    latest example wins."""
+    counts: dict[str, PositionIdeaCount] = {}
+    for game in games:
+        for move in player_moves(game):
+            if move.classification not in FLAGGED_CLASSIFICATIONS:
+                continue
+            for motif in move.motifs:
+                if motif not in STRATEGIC_MOTIFS:
+                    continue
+                example = MistakeExample(
+                    game_id=game.id, number=game.number, ply=move.ply, san=move.san
+                )
+                entry = counts.get(motif)
+                if entry is None:
+                    counts[motif] = PositionIdeaCount(motif=motif, count=1, latest=example)
+                else:
+                    entry.count += 1
+                    entry.latest = example
+    return sorted(
+        counts.values(),
+        key=lambda entry: (-entry.count, STRATEGIC_MOTIFS.index(entry.motif)),
     )
 
 
@@ -344,6 +375,7 @@ def get_progress(
         puzzles_solved=puzzles_solved,
         drills_passed=drills_passed,
         mistake_causes=mistake_causes(games),
+        position_ideas=position_ideas(games),
         thinking=thinking_summary(db, user, since),
         repertoire=repertoire(games),
         guessing=guess_summary(db, user, since),

@@ -17,6 +17,7 @@ from app.cpl import aggregate_cpl, player_moves as _player_moves
 from app.explanations import _san, explanations_enabled, needs_explanation
 from app.llm import MODEL, request_text
 from app.models import CoachSummary, Game, Move
+from app.strategy import STRATEGIC_MOTIFS
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,9 @@ SYSTEM_PROMPT = (
     "1400. You are given the engine-analysis digest of one completed game of "
     "theirs. Write exactly three takeaways worth remembering from this game — "
     "lessons, not a move-by-move recap. Stay grounded in the digest: refer to "
-    "the concrete moves and tactical motifs it lists, and if the per-phase "
-    "figures show a clearly weakest phase, make that one of the takeaways. "
+    "the concrete moves, tactical motifs and position ideas it lists, and if "
+    "the per-phase figures show a clearly weakest phase, make that one of the "
+    "takeaways. "
     "Plain language: no headings, no variation dumps, no engine jargon like "
     "'centipawns'. Address the player as 'you'. Format: three numbered lines "
     "(1., 2., 3.), each one or two sentences."
@@ -97,9 +99,16 @@ def build_summary_prompt(game: Game) -> str:
             bits[0] += " (the engine's own choice)"
         elif best_san:
             bits.append(f"engine preferred {best_san}")
-        if move.motifs:
-            humanized = ", ".join(name.replace("_", " ") for name in move.motifs)
+        # tactics and position ideas (app/strategy.py) apart: an isolated pawn
+        # is not a tactic, and the prompt asks for the tactics by name
+        tactics = [name for name in move.motifs if name not in STRATEGIC_MOTIFS]
+        ideas = [name for name in move.motifs if name in STRATEGIC_MOTIFS]
+        if tactics:
+            humanized = ", ".join(name.replace("_", " ") for name in tactics)
             bits.append(f"motifs: {humanized}")
+        if ideas:
+            humanized = ", ".join(name.replace("_", " ") for name in ideas)
+            bits.append(f"position idea: {humanized}")
         lines.append("; ".join(bits))
 
     return "\n".join(lines)

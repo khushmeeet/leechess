@@ -14,6 +14,75 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Position ideas: the strategic motifs (2026-10-04)
+
+**Goal:** the product spec's taxonomy (§4.4) has a strategic half (weak square/outpost,
+open file, bad bishop, isolated/doubled/backward pawns), and the architecture doc adds a
+weak back rank. The tagger knew only tactics, so every mistake without one was
+"positional: the position slipped", with nothing more to say.
+
+- **The ideas, as board facts** (`app/strategy.py`, `$lib/positionIdeas.ts`), all
+  without an engine:
+  - **Outpost:** a square on the 4th–6th rank that a pawn guards and no enemy pawn
+    can ever attack.
+  - **Open / half-open file:** a file with no pawns, or none of your own.
+  - **Weak back rank:** the king has no way off the back rank, no rook or queen of
+    its own guards that rank, and the other side has a rook or queen.
+  - **Weak pawns:**
+    - isolated: no pawn of its own on either side;
+    - doubled: two pawns on one file;
+    - backward: its neighbours are all further up, and an enemy pawn covers the
+      square in front.
+  - **Bad bishop** (browser only): three or more of its own pawns on its colour, two
+    of them fixed there by enemy pawns. Its first version also counted a pawn
+    stopped by a piece, and called Be2 bad because of White's own Nc3. Fixed before
+    commit.
+  - **Shared table:** `shared/position-ideas.json` runs five constructed positions
+    through both languages (a Sicilian d5 hole with a backward d6, a back rank with
+    and without luft, an isolated d-pawn with doubled f-pawns, and the start).
+- **Tags on positional mistakes** (`tags_for_move`): when a mistake or blunder has no
+  tactical tag, it gets the idea behind it:
+  - what the engine's move would have done: took an outpost with a knight or bishop,
+    put a rook or queen on an open file, or mended a weak back rank (only if the move
+    played did not do the same);
+  - or what the move played gave away: a weak back rank, or a new isolated, doubled
+    or backward pawn.
+  - **Shown in Review** as motif chips. **Puzzles:** none are made from these tags,
+    because puzzles use the tactical detector. Old games get the tags when
+    `scripts/retag.py` runs.
+- **Review: a "Position" row** (`ideaChanges`) for every move of both sides. It says
+  what the move changed, and only that, so most moves show nothing. Examples:
+  - "Nd5 puts White's knight on an outpost: the e4 pawn guards d5, and no Black pawn
+    can chase it away."
+  - "e5 leaves Black with a backward pawn on d6."
+  - "Rd7 leaves White's back rank weak: …" and "h3 mends White's weak back rank."
+- **Board: a "Structure" overlay.**
+  - Outposts get a green ring (with a dark inner ring for Black's).
+  - Weak pawns get orange dots, and a hemmed-in bishop orange dashes.
+  - A king with a weak back rank gets a red square.
+  - The saved overlay list is now derived from the overlay definitions, so a new
+    overlay is not dropped on reload.
+- **Progress: "Position ideas behind your mistakes"**, from `ProgressOut.position_ideas`.
+  Each idea that came up in the window is listed with its count, a plain explanation,
+  a question to ask at the board, and a link to the latest example.
+- **Game summary prompt:** these tags are listed as "position idea", apart from
+  "motifs", which the prompt asks for as tactics.
+- **Testing:**
+  - `test_strategy.py`: the shared table plus six tag cases (outpost, open file,
+    nothing missed when the move played was the idea, an unguarded square, an
+    isolated pawn made, the back rank left weak, luft).
+  - `test_motifs.py`: positional mistakes get the idea tag; a tactic keeps it out;
+    unflagged moves get none.
+  - `test_progress_api.py`: counting, order, the latest example, and the engine's
+    moves left out. `test_summaries.py`: the split listing.
+  - `positionIdeas.test.ts`: the table, the sentences, the bad-bishop rule and its
+    near-misses, and the overlay marks.
+  - **Browser:** `review.e2e.ts` covers the Najdorf's 6…e5 and 10.Nd5, a quiet move
+    with no row, and the overlay marks. `progress.e2e.ts` renders the section from an
+    injected entry. Light and dark screenshots were checked by eye.
+
+---
+
 ## Addendum — No "…" where the sentence already names the side (2026-10-04)
 
 **Goal:** "Black threatens …Qh4+" says whose move it is twice. The "…" marks a Black

@@ -8,6 +8,7 @@
 	import CplTrend from '$lib/components/CplTrend.svelte';
 	import MotifTrends from '$lib/components/MotifTrends.svelte';
 	import { GAMES } from '$lib/literature/games';
+	import { isPositionIdea, POSITION_IDEAS } from '$lib/positionIdeas';
 	import { session } from '$lib/stores/session.svelte';
 
 	const windows = [
@@ -78,6 +79,13 @@
 	);
 	const causeTotal = $derived(causes.reduce((sum, entry) => sum + entry.total, 0));
 	const leadingCause = $derived(causes[0]?.total ? causes[0] : null);
+
+	// The position ideas behind the mistakes no tactic explains.
+	const ideas = $derived(
+		(progress?.position_ideas ?? [])
+			.filter((entry) => isPositionIdea(entry.motif))
+			.map((entry) => ({ ...entry, copy: POSITION_IDEAS[entry.motif] }))
+	);
 
 	function percent(rate: number): string {
 		return `${Math.round(rate * 100)}%`;
@@ -213,6 +221,46 @@
 					<span><span class="mr-1 inline-block h-2 w-2 bg-err"></span>blunders</span>
 					<span><span class="mr-1 inline-block h-2 w-2 bg-mist"></span>mistakes</span>
 				</p>
+			</div>
+		</section>
+	{/if}
+
+	{#if ideas.length > 0}
+		<!-- What "the position slipped" was about: the strategic idea behind the
+		     mistakes no tactic explains (app/strategy.py tags them). -->
+		<section class="mb-6" data-testid="position-ideas">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Position ideas behind your mistakes
+			</h2>
+			<div class="rounded-xs border border-line bg-card p-3">
+				<ul class="flex flex-col gap-2 text-sm">
+					{#each ideas as entry (entry.motif)}
+						<li data-testid="position-idea-row" data-motif={entry.motif}>
+							<p class="text-ink">
+								<span class="font-semibold">{entry.copy.label}</span>
+								<span class="text-muted tabular-nums">
+									· {entry.count}
+									{entry.count === 1 ? 'mistake' : 'mistakes'} ·
+									<a
+										class="text-accent hover:underline"
+										data-testid="position-idea-example"
+										href="{resolve('/review/[gameId]', {
+											gameId: String(entry.latest.game_id)
+										})}?ply={entry.latest.ply}"
+										title="Open the latest one in Review"
+									>
+										{Math.ceil(entry.latest.ply / 2)}{entry.latest.ply % 2 ? '.' : '…'}{entry.latest
+											.san}
+									</a>
+								</span>
+							</p>
+							<p class="text-body">
+								{entry.copy.what[0].toUpperCase() + entry.copy.what.slice(1)}.
+								<span class="text-muted">Ask: {entry.copy.ask}</span>
+							</p>
+						</li>
+					{/each}
+				</ul>
 			</div>
 		</section>
 	{/if}

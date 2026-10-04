@@ -53,6 +53,50 @@ def test_blunder_is_tagged_with_the_tactic_it_allowed():
     assert tags == ["hanging_piece"]
 
 
+def test_a_mistake_no_tactic_explains_gets_its_position_idea():
+    # the engine wanted Nd5, a knight on an outpost; a3 let it go
+    sicilian = "6k1/pp3ppp/3p4/4p3/4P3/2N5/PP3PPP/6K1 w - - 0 1"
+    board = chess.Board(sicilian)
+    after = board.copy()
+    after.push_san("a3")
+    tags = tags_for_move(
+        fen_before=sicilian,
+        fen_after=after.fen(),
+        played_san="a3",
+        best_move_uci="c3d5",
+        classification="mistake",
+        opponent_best_uci=None,
+    )
+    assert tags == ["outpost"]
+    # the same move, graded fine, is no mistake to explain
+    assert (
+        tags_for_move(
+            fen_before=sicilian,
+            fen_after=after.fen(),
+            played_san="a3",
+            best_move_uci="c3d5",
+            classification="good",
+            opponent_best_uci=None,
+        )
+        == []
+    )
+
+
+def test_a_tactic_keeps_the_position_ideas_out():
+    # Qxe5+ hangs the queen: the tactic explains the blunder, so no position
+    # idea is looked for
+    qxe5 = hung_queen_rows()[4]
+    tags = tags_for_move(
+        fen_before=qxe5["fen_before"],
+        fen_after=qxe5["fen_after"],
+        played_san="Qxe5+",
+        best_move_uci="b1c3",
+        classification="blunder",
+        opponent_best_uci="c6e5",
+    )
+    assert tags == ["hanging_piece"]
+
+
 def test_unflagged_move_gets_no_allowed_tactic_tags():
     qxe5 = hung_queen_rows()[4]
     tags = tags_for_move(

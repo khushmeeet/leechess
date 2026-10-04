@@ -499,6 +499,15 @@ class MistakeCauseCount(BaseModel):
     latest: MistakeExample | None  # the most recent move with this cause
 
 
+class PositionIdeaCount(BaseModel):
+    """How often one position idea (app/strategy.py) was behind the player's
+    own mistakes and blunders in the window."""
+
+    motif: str
+    count: int
+    latest: MistakeExample  # the most recent move tagged with it
+
+
 class CriticalMomentIn(BaseModel):
     """One graded "Think first" check, as the client worked it out."""
 
@@ -613,6 +622,9 @@ class ProgressOut(BaseModel):
     # Every cause, most common first (ties in the routine's order); counts
     # are zero until games analyzed with causes are in the window.
     mistake_causes: list[MistakeCauseCount]
+    # The position ideas behind the mistakes no tactic explains, most common
+    # first; only ideas that came up.
+    position_ideas: list[PositionIdeaCount]
     thinking: ThinkingSummary
     # Openings you played as one side, most played first (games against the
     # engine or a friend — a pass-and-play game has no side of your own).

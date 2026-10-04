@@ -14,15 +14,18 @@
  * - **King safety** — the squares around each king the other side attacks.
  * - **Files** — open files (no pawns) and half-open ones (no pawns of one
  *   side), where rooks belong.
+ * - **Structure** — outposts, weak pawns, hemmed-in bishops and a weak back
+ *   rank ($lib/positionIdeas).
  *
  * `safeSquares`/`leastActivePiece` count where a piece can go without being
  * lost there — what lets the coach name the worst piece instead of a slogan.
  * Everything is board arithmetic on chess.js; no engine.
  */
 import { Chess, type Color, type Square } from 'chess.js';
+import { structureMarks } from '$lib/positionIdeas';
 import { staticExchange } from '$lib/threats';
 
-export type OverlayName = 'loose' | 'control' | 'pins' | 'king' | 'files';
+export type OverlayName = 'loose' | 'control' | 'pins' | 'king' | 'files' | 'structure';
 export const OVERLAYS: { name: OverlayName; label: string; title: string }[] = [
 	{
 		name: 'loose',
@@ -41,7 +44,13 @@ export const OVERLAYS: { name: OverlayName; label: string; title: string }[] = [
 			'Pieces that cannot move without exposing their king, or a more valuable piece behind them'
 	},
 	{ name: 'king', label: 'King safety', title: 'Squares around each king the other side attacks' },
-	{ name: 'files', label: 'Files', title: 'Open files (no pawns) and half-open ones' }
+	{ name: 'files', label: 'Files', title: 'Open files (no pawns) and half-open ones' },
+	{
+		name: 'structure',
+		label: 'Structure',
+		title:
+			'Outposts (green ring; with a dark inner ring for Black’s), weak pawns and hemmed-in bishops (orange), and a king with a weak back rank (red)'
+	}
 ];
 
 const VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
@@ -325,6 +334,9 @@ export function overlayMarks(
 	}
 	if (enabled.has('king')) {
 		for (const square of kingDanger(fen)) add(square, 'ov-king');
+	}
+	if (enabled.has('structure')) {
+		for (const { square, mark } of structureMarks(fen)) add(square, mark);
 	}
 	if (enabled.has('loose')) {
 		for (const { square, kind } of loosePieces(fen)) add(square, `ov-${kind}`);

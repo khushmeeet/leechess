@@ -147,6 +147,26 @@ cg-board square:where(.ov-file-black) {
 cg-board square:where(.ov-king) {
 	background-color: rgba(200, 30, 30, 0.22);
 }
+/* Structure — declared before the loose-piece rings so danger wins a tie */
+cg-board square:where(.ov-outpost-w) {
+	box-shadow: inset 0 0 0 3px rgba(23, 160, 111, 0.85);
+}
+cg-board square:where(.ov-outpost-b) {
+	box-shadow:
+		inset 0 0 0 3px rgba(23, 160, 111, 0.85),
+		inset 0 0 0 6px rgba(20, 20, 20, 0.35);
+}
+cg-board square:where(.ov-weak-pawn) {
+	outline: 3px dotted rgba(230, 143, 0, 0.95);
+	outline-offset: -5px;
+}
+cg-board square:where(.ov-bad-bishop) {
+	outline: 3px dashed rgba(230, 143, 0, 0.95);
+	outline-offset: -5px;
+}
+cg-board square:where(.ov-weak-back-rank) {
+	background-color: rgba(200, 30, 30, 0.3);
+}
 cg-board square:where(.ov-hanging) {
 	box-shadow: inset 0 0 0 4px rgba(200, 30, 30, 0.85);
 }

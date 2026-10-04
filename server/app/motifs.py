@@ -14,9 +14,10 @@ A move's stored tags come from two best-line passes:
 Detectors implemented so far (fixed taxonomy, product spec §4.4): fork, pin,
 skewer, back-rank mate, hanging piece, discovered check, double check,
 discovered attack, deflection, overloading, trapped piece, zwischenzug. The
-remaining tactical motif (x-ray) and the strategic motifs are follow-ups
-within this phase — add them one at a time with positive AND near-miss test
-cases.
+strategic motifs (outpost, open file, weak back rank, isolated/doubled/
+backward pawns) live in app/strategy.py and tag only the mistakes no tactic
+explains. The remaining tactical motif (x-ray) is a follow-up — add it with
+positive AND near-miss test cases.
 
 The multi-move motifs (deflection, overloading, zwischenzug) can't be proven
 from a single move without a search, so each detector below settles for a
@@ -29,6 +30,7 @@ import itertools
 import chess
 
 from app.models import Game, MotifTag
+from app.strategy import strategic_tags
 
 FORK = "fork"
 PIN = "pin"
@@ -426,6 +428,13 @@ def tags_for_move(
         after = chess.Board(fen_after)
         if not after.is_game_over():
             motifs |= detect_motifs(after, chess.Move.from_uci(opponent_best_uci))
+
+    # A mistake no tactic explains gets the position idea behind it instead:
+    # what the engine's move would have taken, or what the move played gave
+    # away (app/strategy.py). Only then — next to a fork, an isolated pawn is
+    # beside the point.
+    if flagged and not motifs:
+        motifs |= strategic_tags(fen_before, played_san, best_move_uci)
 
     return sorted(motifs)
 

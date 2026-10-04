@@ -1,6 +1,14 @@
 import { type APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { API, boardPosition, gameNumber, move, scholarsMateSans, waitForAnalysis } from './helpers';
+import {
+	API,
+	boardPosition,
+	gameNumber,
+	move,
+	scholarsMateSans,
+	seedGame,
+	waitForAnalysis
+} from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end
 // (real Stockfish, low depth via LEECHESS_ANALYSIS_DEPTH in the e2e server),
@@ -266,4 +274,38 @@ test('the lines from a move can be stepped through, and a move of your own weigh
 	await page.getByTestId('explore-exit').click();
 	await expect(page.getByTestId('review-lines')).toBeVisible();
 	await expect.poll(() => boardPosition(page)).toBe(decision);
+});
+
+test('a move’s position ideas are named: a backward pawn made, an outpost taken', async ({
+	page,
+	request
+}) => {
+	// Najdorf: 6…e5 leaves d6 backward, and 10.Nd5 puts a knight on the hole
+	const najdorf = [
+		'e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6',
+		'Be2', 'e5', 'Nb3', 'Be7', 'O-O', 'O-O', 'Be3', 'Be6', 'Nd5'
+	]; // prettier-ignore
+	const gameId = await seedGame(request, najdorf, '*');
+	await waitForAnalysis(request, gameId);
+
+	const position = page.getByTestId('review-position');
+	await page.goto(`/review/${gameId}?ply=12`);
+	await expect(page.getByTestId('selected-move')).toContainText('e5');
+	await expect(position).toHaveText(/e5 leaves Black with a backward pawn on d6\./);
+
+	await page.goto(`/review/${gameId}?ply=19`);
+	await expect(page.getByTestId('selected-move')).toContainText('Nd5');
+	await expect(position).toContainText(
+		'Nd5 puts White’s knight on an outpost: the e4 pawn guards d5, and no Black pawn can chase it away.'
+	);
+
+	// a move that changes none of it says nothing
+	await page.goto(`/review/${gameId}?ply=14`);
+	await expect(page.getByTestId('selected-move')).toContainText('Be7');
+	await expect(position).toBeHidden();
+
+	// the Structure overlay marks the hole and the weak pawn on the board
+	await page.getByTestId('overlay-structure').click();
+	await expect(page.locator('cg-board square.ov-weak-pawn').first()).toBeAttached();
+	await expect(page.locator('cg-board square.ov-outpost-w').first()).toBeAttached();
 });

@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { OVERLAYS } from '$lib/overlays';
 
 const EVAL_BAR_KEY = 'leechess.showEvalBar';
 const COACH_KEY = 'leechess.showCoach';
@@ -8,7 +9,8 @@ const HINT_MODE_KEY = 'leechess.hintMode';
 const ZEN_MODE_KEY = 'leechess.zenMode';
 const THINK_FIRST_KEY = 'leechess.thinkFirst';
 const OVERLAYS_KEY = 'leechess.overlays';
-const OVERLAY_NAMES = ['loose', 'control', 'pins', 'king', 'files'];
+// from the overlay list itself, so a new overlay survives a reload
+const OVERLAY_NAMES: string[] = OVERLAYS.map((overlay) => overlay.name);
 const FRIEND_EVAL_BAR_KEY = 'leechess.friendEvalBar';
 const FRIEND_MOVE_LIST_KEY = 'leechess.friendMoveList';
 /** Live move badges in friend games, removed. Named only to be cleared: every

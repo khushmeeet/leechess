@@ -31,6 +31,7 @@
 	import NotationText from '$lib/components/NotationText.svelte';
 	import { isMistakeCause, MISTAKE_CAUSES } from '$lib/mistakes';
 	import { gradeChange, gradeChangeText } from '$lib/gradeChange';
+	import { ideaChanges } from '$lib/positionIdeas';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import {
 		classifyThreat,
@@ -149,6 +150,10 @@
 			: []
 	);
 	const playedWasEngines = $derived(engineLine[0]?.uci === playedUci);
+	/** What the selected move changed strategically — empty for most moves. */
+	const positionChanges = $derived(
+		selectedMove && playedUci ? ideaChanges(selectedMove.fen_before, playedUci) : []
+	);
 
 	/** The mover's winning chances before and after the selected move. */
 	const chances = $derived.by(() => {
@@ -774,6 +779,22 @@
 					<span class="font-semibold" data-testid="review-cause-label">{cause.label}.</span>
 					{cause.what}
 					<span class="text-muted">Next time: {cause.habit}</span>
+				</p>
+			{/if}
+
+			{#if selectedMove && positionChanges.length > 0}
+				<!-- The strategic side of the move: outposts and open files taken,
+				     back ranks and pawns left weak — only what changed. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-position">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Position</span
+					>
+					{#each positionChanges as sentence, i (sentence)}
+						<NotationText
+							text={sentence}
+							fens={[selectedMove.fen_before, selectedMove.fen_after]}
+							onhover={(target) => (notationTarget = target)}
+						/>{i < positionChanges.length - 1 ? ' ' : ''}
+					{/each}
 				</p>
 			{/if}
 

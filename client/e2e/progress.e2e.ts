@@ -160,3 +160,36 @@ test('a motif’s first tries are compared with its latest', async ({ page, requ
 		'First 3 tries: 0 solved (0%). Latest 3 tries: 3 solved (100%).'
 	);
 });
+
+test('the position ideas behind your mistakes are named, with the latest one linked', async ({
+	page,
+	request
+}) => {
+	// The tags come from the analysis job on positional mistakes, which no
+	// short seeded game makes on cue — so the real response gets one entry
+	// added on its way to the page (the counting is the server suite's).
+	const gameId = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, gameId);
+	await page.route(`${API}/progress**`, async (route) => {
+		const response = await route.fetch();
+		const body = await response.json();
+		body.position_ideas = [
+			{
+				motif: 'isolated_pawn',
+				count: 2,
+				latest: { game_id: gameId, number: 1, ply: 5, san: 'Qh5' }
+			}
+		];
+		await route.fulfill({ response, json: body });
+	});
+
+	await page.goto('/progress');
+	const row = page.getByTestId('position-idea-row');
+	await expect(row).toHaveAttribute('data-motif', 'isolated_pawn');
+	await expect(row).toContainText('Isolated pawns · 2 mistakes');
+	await expect(row).toContainText('Ask: After this capture or push');
+	await expect(page.getByTestId('position-idea-example')).toHaveAttribute(
+		'href',
+		`/review/${gameId}?ply=5`
+	);
+});

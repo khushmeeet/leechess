@@ -131,6 +131,7 @@ def test_empty_database_returns_zeroes_not_errors(client):
                 "positional",
             )
         ],
+        "position_ideas": [],
         "thinking": {"moments": 0, "found": 0, "threats": 0, "answered": 0, "recent": []},
         "repertoire": [],
         "guessing": [],
@@ -478,3 +479,42 @@ def test_mistake_causes_respect_the_window(client, seed, db_session):
     assert windowed["positional"]["blunders"] == 0
     everything = {entry["cause"]: entry for entry in get(client)["mistake_causes"]}
     assert everything["positional"]["blunders"] == 1
+
+
+def test_position_ideas_count_the_players_mistakes_most_common_first(
+    client, seed, db_session
+):
+    from app.models import MotifTag
+
+    def tag(game, ply, classification, *motifs):
+        move = game.moves[ply - 1]
+        move.classification = classification
+        move.motif_tags = [MotifTag(motif=m, source="rule_based") for m in motifs]
+
+    older = seed.game([(0, 0)] * 4, mode="engine", created_at=days_ago(3))
+    tag(older, 1, "mistake", "outpost")
+    tag(older, 3, "blunder", "isolated_pawn")
+    tag(older, 2, "blunder", "outpost")  # the engine's move: not counted
+    newer = seed.game([(0, 0)] * 4, mode="engine")
+    tag(newer, 3, "mistake", "outpost")
+    tag(newer, 1, "good", "outpost")  # not a mistake: not counted
+    db_session.commit()
+
+    ideas = get(client)["position_ideas"]
+    assert [(entry["motif"], entry["count"]) for entry in ideas] == [
+        ("outpost", 2),
+        ("isolated_pawn", 1),
+    ]
+    assert ideas[0]["latest"] == {
+        "game_id": newer.id,
+        "number": newer.number,
+        "ply": 3,
+        "san": "e4",
+    }
+    # tactics are counted elsewhere (puzzles, mistake causes), never here
+    tag(newer, 3, "mistake", "fork")
+    db_session.commit()
+    assert [entry["motif"] for entry in get(client)["position_ideas"]] == [
+        "outpost",
+        "isolated_pawn",
+    ]
