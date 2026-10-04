@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { restoreActiveGame, waitForEngineReady } from './helpers';
+import { clickSquare, restoreActiveGame, waitForEngineReady } from './helpers';
 
 // Board overlays: each a way of looking at the position, switched on from
 // chips beside the board, persisted, and — being help — absent in Off.
@@ -47,4 +47,28 @@ test('a pin is drawn from the pinning piece to the king', async ({ page }) => {
 	await page.getByTestId('overlay-pins').click();
 	await expect(page.locator('cg-board square.ov-pinned')).toHaveCount(1);
 	await expect(page.locator('.cg-shapes line[stroke="#68217a"]')).toHaveCount(1);
+});
+
+test('overlays never hide the dots that show where a piece can go', async ({ page }) => {
+	// 1.e4 d5 2.exd5: White has no e-pawn, so the e-file is half-open — the
+	// Files overlay stripes it, and the knight on g1 can go to e2
+	await restoreActiveGame(page, { moves: ['e2e4', 'd7d5', 'e4d5', 'g8f6'] });
+	await page.goto('/');
+	await waitForEngineReady(page);
+	await page.getByTestId('hint-mode-full').click();
+	for (const overlay of ['files', 'control', 'king']) {
+		await page.getByTestId(`overlay-${overlay}`).click();
+	}
+
+	await clickSquare(page, 'g1');
+	await expect(page.locator('cg-board square.move-dest').first()).toBeAttached();
+	// every destination still paints its dot (a radial gradient), stripe or not
+	const backgrounds = await page.locator('cg-board square.move-dest').evaluateAll((squares) =>
+		squares.map((square) => ({
+			key: (square as HTMLElement & { cgKey?: string }).cgKey,
+			image: getComputedStyle(square).backgroundImage
+		}))
+	);
+	expect(backgrounds.map((square) => square.key).sort()).toEqual(['e2', 'f3', 'h3']);
+	for (const square of backgrounds) expect(square.image, square.key).toContain('radial-gradient');
 });

@@ -113,14 +113,21 @@ coords.squares:nth-of-type(even) :nth-child(even) {
 
 /* Board overlays ($lib/overlays): each a way of looking at the position.
  * Tints for areas (control, files, the king's surroundings), rings for single
- * pieces (loose, pinned), so a square can carry both and stay readable. */
-cg-board square.ov-control-w {
+ * pieces (loose, pinned), so a square can carry both and stay readable.
+ *
+ * Every rule is wrapped in :where(), which takes the overlay class out of the
+ * selector's weight: an overlay square is then no stronger than a bare one,
+ * and the board's own state — the dots for where a piece can go, the
+ * selected square, the last move, check — always paints over it. Without
+ * that, the Files stripe replaced the move dot (both are background images)
+ * and the tints hid the selected and last-move squares. */
+cg-board square:where(.ov-control-w) {
 	background-color: rgba(255, 255, 255, 0.28);
 }
-cg-board square.ov-control-b {
+cg-board square:where(.ov-control-b) {
 	background-color: rgba(20, 20, 20, 0.22);
 }
-cg-board square.ov-file-open {
+cg-board square:where(.ov-file-open) {
 	background-image: linear-gradient(
 		90deg,
 		transparent 44%,
@@ -128,8 +135,8 @@ cg-board square.ov-file-open {
 		transparent 56%
 	);
 }
-cg-board square.ov-file-white,
-cg-board square.ov-file-black {
+cg-board square:where(.ov-file-white),
+cg-board square:where(.ov-file-black) {
 	background-image: linear-gradient(
 		90deg,
 		transparent 46%,
@@ -137,16 +144,16 @@ cg-board square.ov-file-black {
 		transparent 54%
 	);
 }
-cg-board square.ov-king {
+cg-board square:where(.ov-king) {
 	background-color: rgba(200, 30, 30, 0.22);
 }
-cg-board square.ov-hanging {
+cg-board square:where(.ov-hanging) {
 	box-shadow: inset 0 0 0 4px rgba(200, 30, 30, 0.85);
 }
-cg-board square.ov-underdefended {
+cg-board square:where(.ov-underdefended) {
 	box-shadow: inset 0 0 0 4px rgba(230, 143, 0, 0.9);
 }
-cg-board square.ov-pinned {
+cg-board square:where(.ov-pinned) {
 	outline: 3px dashed rgba(120, 40, 160, 0.9);
 	outline-offset: -5px;
 }

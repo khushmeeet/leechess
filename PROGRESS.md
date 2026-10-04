@@ -40,6 +40,14 @@ which piece.
   - **Rendering:** classes go through the board's `highlight.custom`. chessground joins
     several classes on one square, and `boardHighlights` merges them with the notation
     focus.
+  - **Fixed after release:** clicking a piece sometimes showed no move dots. The Files
+    stripe and the move dot are both background images, and the overlay rule came later
+    in the stylesheet at the same weight, so the stripe won. The Control and King-safety
+    tints likewise hid the selected and last-move squares. Every overlay rule is now
+    wrapped in `:where()`, which removes its weight, so the board's own move,
+    selection, last-move and check styles always paint over it. A browser spec selects
+    the g1 knight with Files, Control and King safety on, and checks that e2 (on the
+    striped e-file), f3 and h3 all keep their dot.
 - **The coach names the piece.** `safeSquares` counts where a piece can go without being
   lost there. `leastActivePiece` picks the knight, bishop, rook or queen with the fewest,
   when that is three or fewer. The middlegame fallback becomes "Your least active piece
