@@ -44,6 +44,13 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Depth for live classification evals — matches the "depth ~16 minimum"
  * acceptance criterion; server batch analysis re-does this deeper. */
 const LIVE_EVAL_DEPTH = 16;
+/** The badge has to land within 500ms of the move (the same criterion), and
+ * depth 16 alone doesn't promise that: on a four-core machine the search
+ * after 1.e4 took anywhere from 90 to 580ms. So the badge's search stops at
+ * whichever comes first, depth 16 or this; what is left of the 500ms is for
+ * the queue and the render. A grade a shallower search got wrong is one
+ * Review's deeper check explains ($lib/gradeChange). */
+const BADGE_BUDGET_MS = 420;
 /** Candidate lines for the insight bar's Ideas row. */
 const IDEAS_MULTIPV = 3;
 /** Depth of the null-move search behind the threat row. Shallower than the
@@ -464,11 +471,17 @@ export class PlaySession {
 			this.insightEval = null;
 			this.ideas = null;
 		} else {
-			// badge evals stay single-PV so feedback lands inside the 500ms
-			// budget; engine-reply evals (user to move next) also fetch the
-			// candidate lines the insight bar's Ideas row shows.
+			// badge evals stay single-PV and time-capped so feedback lands
+			// inside the 500ms budget; engine-reply evals (user to move next)
+			// search to full depth and also fetch the candidate lines the
+			// insight bar's Ideas row shows.
 			const multiPv = badge ? 1 : IDEAS_MULTIPV;
-			const result = await stockfish.evaluate(played.fenAfter, LIVE_EVAL_DEPTH, multiPv);
+			const result = await stockfish.evaluate(
+				played.fenAfter,
+				LIVE_EVAL_DEPTH,
+				multiPv,
+				badge ? BADGE_BUDGET_MS : undefined
+			);
 			// A takeback landed while this search ran: the ply it describes is
 			// off the board now, so none of it may be written back.
 			if (boardEpoch !== this.boardEpoch) return;

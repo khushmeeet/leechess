@@ -137,9 +137,14 @@ export class StockfishClient {
 	}
 
 	/** Full-strength eval of a FEN — feeds move classification, and (with
-	 * multiPv > 1) the insight bar's candidate-move ideas. */
-	evaluate(fen: string, depth = 16, multiPv = 1): Promise<EngineEval> {
-		return this.enqueue(() => this.search(fen, { depth, skill: FULL_STRENGTH, multiPv }));
+	 * multiPv > 1) the insight bar's candidate-move ideas. With `movetimeMs`
+	 * the search also stops at that time if `depth` isn't reached by then
+	 * (the result's `depth` says how far it got) — for a reply that has a
+	 * deadline, like the live badge. */
+	evaluate(fen: string, depth = 16, multiPv = 1, movetimeMs?: number): Promise<EngineEval> {
+		return this.enqueue(() =>
+			this.search(fen, { depth, movetimeMs, skill: FULL_STRENGTH, multiPv })
+		);
 	}
 
 	/** The engine opponent: skill-limited, time-boxed pick of a move. */
@@ -209,7 +214,14 @@ export class StockfishClient {
 			worker.onerror = (e) => fail(new Error(`stockfish worker error: ${e.message}`));
 			worker.onmessage = (e: MessageEvent<string>) => {
 				const line = e.data;
-				if (line.startsWith('info ') && line.includes(' score ')) {
+				// a bound is not a score: Stockfish prints one while a search is
+				// still settling an iteration, and a search cut off by time can
+				// end on one — the last exact score stands
+				if (
+					line.startsWith('info ') &&
+					line.includes(' score ') &&
+					!/ (upper|lower)bound\b/.test(line)
+				) {
 					const depthMatch = line.match(/\bdepth (\d+)/);
 					const scoreMatch = line.match(/\bscore (cp|mate) (-?\d+)/);
 					if (depthMatch && scoreMatch) {
@@ -244,9 +256,11 @@ export class StockfishClient {
 			};
 
 			worker.postMessage(`position fen ${fen}`);
-			worker.postMessage(
-				options.movetimeMs ? `go movetime ${options.movetimeMs}` : `go depth ${options.depth}`
-			);
+			const limits = [
+				options.depth ? `depth ${options.depth}` : '',
+				options.movetimeMs ? `movetime ${options.movetimeMs}` : ''
+			].filter(Boolean);
+			worker.postMessage(`go ${limits.join(' ')}`);
 		});
 	}
 }

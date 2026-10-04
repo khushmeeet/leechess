@@ -32,7 +32,8 @@ test('live classification badge appears within 500ms of a move', async ({ page }
 	await book;
 
 	await move(page, 'e2', 'e4');
-	// the real requirement, not "eventually": depth-16 eval + badge in 500ms
+	// the real requirement, not "eventually": the badge in 500ms, from a search
+	// to depth 16 that stops early rather than miss that (BADGE_BUDGET_MS)
 	await expect(page.getByTestId('move-badge')).toBeVisible({ timeout: 500 });
 	// 1.e4 is in the opening book, so it is graded "book" — not whatever a
 	// quarter-pawn wobble in the engine's eval would make of it

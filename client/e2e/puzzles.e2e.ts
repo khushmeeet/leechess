@@ -206,31 +206,44 @@ test('a defence puzzle takes any move that deals with the threat, and says why o
 	const puzzle = await (await request.get(`${API}/puzzles/next?motif=defence`)).json();
 	const stored: string = puzzle.solution[0];
 	// …g6, …Qe7 and …Qf6 all stop Qxf7#; play one the analysis didn't store
-	const other = ['d8e7', 'g7g6', 'd8f6'].find((uci) => uci !== stored)!;
+	const defences: Record<string, string> = { d8e7: 'Qe7', g7g6: 'g6', d8f6: 'Qf6' };
+	const other = Object.keys(defences).find((uci) => uci !== stored)!;
 
 	await page.goto('/puzzles?motif=defence');
 	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
 	await clickSquare(page, 'f7', 'black');
 	await expect(page.getByTestId('defence-spot')).toHaveAttribute('data-phase', 'solve');
 
-	// a move that ignores the threat is refused, with the reason
-	await moveUntil(page, 'a7', 'a6', 'black', async () =>
-		page.getByTestId('puzzle-retry').isVisible()
+	// a move that ignores the threat is refused, with the reason. The retry
+	// stops as soon as the move registers — the check starting is enough —
+	// since a click after the refusal has put the pawn back would play …a6
+	// again, and the check of that would swallow the next move.
+	await moveUntil(
+		page,
+		'a7',
+		'a6',
+		'black',
+		async () =>
+			(await page.getByTestId('defence-checking').isVisible()) ||
+			(await page.getByTestId('puzzle-retry').isVisible())
 	);
 	await expect(page.getByTestId('puzzle-retry-text')).toHaveText(
 		'a6 leaves Qxf7# on the board. Try again.',
 		{ timeout: 30_000 }
 	);
+	await expect(page.getByTestId('defence-checking')).toBeHidden();
 
-	// another real defence counts as solving it
+	// another real defence counts as solving it — registered once the check
+	// names it (or it is already through)
 	await moveUntil(
 		page,
 		other.slice(0, 2),
 		other.slice(2, 4),
 		'black',
 		async () =>
-			(await page.getByTestId('defence-checking').isVisible()) ||
-			(await page.getByTestId('puzzle-correct').isVisible())
+			(await page.getByTestId('defence-checking').allTextContents())
+				.join(' ')
+				.includes(defences[other]) || (await page.getByTestId('puzzle-correct').isVisible())
 	);
 	await expect(page.getByTestId('puzzle-correct')).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByTestId('puzzle-alternative')).toContainText('deals with it too');
