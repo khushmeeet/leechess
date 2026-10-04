@@ -14,6 +14,67 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Mistake causes: which habit broke (2026-10-04)
+
+**Goal:** Progress said which motifs a player misses in puzzles, never which habit fails at
+the board. Each mistake and blunder now gets the first step of a thinking routine that
+would have caught it, and Progress counts them.
+
+- **The causes** (`server/app/mistakes.py`), in the routine's order:
+
+  | Cause | The step that broke |
+  |---|---|
+  | `missed_threat` | there was a threat, and it was still their best move after yours |
+  | `hung_piece` | their best reply takes something the exchange count says is lost |
+  | `allowed_reply` | their best reply is a check, a mate or a tactic, or the move walked into a forced mate |
+  | `missed_tactic` | your best move won material, ran a tactic or started a mate, and you played something else |
+  | `positional` | none of the above |
+
+  The threat comes first because it was on the board before the move was chosen. A
+  threatened piece moved onto a covered square is `hung_piece`, not `missed_threat`: the
+  threat was answered, and the move itself was the blunder (21. Be6).
+- **The threat classifier, ported.** "There was a threat" has to mean what the screens
+  show.
+  - `threat_kind` in `app/threats.py` ports `classifyThreat`'s kind (not its wording):
+    static exchange, the best-capture rescue correction, the 1.5 and 3 pawn bars, and the
+    motifs the client can name.
+  - `shared/threats.json` runs 16 classification cases and 9 exchange cases through both
+    sides.
+- **Stored, not recomputed.** `moves.mistake_cause` is filled by the analysis job after
+  tagging. It is derived from stored analysis only, so `scripts/retag.py` fills it in for
+  older games and re-derives it when the rules change.
+  - **The script itself** could not run: it never loaded the users table, so its first
+    flush failed on the owner foreign keys. It also needs `PYTHONPATH=.`, which its
+    docstring now says (as does `backfill_threats.py`'s).
+- **Progress.** "Why your mistakes happen" sits above the weakest motifs.
+  - **The headline** names the leading cause and the habit to practise, e.g. "2 of your 5
+    mistakes and blunders: drifted… Practise: compare two or three candidate moves".
+  - **Below it**, one bar per cause, blunders and mistakes stacked, each with a link to
+    its most recent move. Only the player's own side counts, as with CPL.
+  - **The words** live in `client/src/lib/mistakes.ts`.
+- **Review.** A Cause line under the selected move says what happened and what to do next
+  time. `?ply=N` opens a game on a move, which is what Progress's links use.
+- **On the play-tested game:**
+  - 21. Be6 left a piece hanging.
+  - 19. Rc1 allowed …Qf4's pin.
+  - 14. O-O missed White's own tactic.
+  - 13. Bd3 and 18. a4 drifted. …Qf4 before 18. a4 is worth about a pawn, under the
+    threat bar, so it is not counted as a missed threat. The Threat row doesn't show it
+    either.
+- **Testing:**
+  - Server: `test_mistakes.py` covers every cause, an answered threat, ungraded moves and
+    replies read off the next move. `test_threat_kind.py` runs the shared table. Progress
+    API tests cover counts, side, order, the latest example and the window. A migration
+    check covers the three new columns. The engine-marked Scholar's-mate test pins …Nf6
+    as `missed_threat`.
+  - Client: the shared table in `threats.test.ts`, and `mistakes.test.ts`.
+  - Browser: a Progress spec follows the example link into Review and finds the same
+    cause there.
+  - **Results:** pytest 643 passed, vitest 508 passed. Playwright: progress and review
+    specs, 9 passed.
+
+---
+
 ## Addendum — Quick fixes from the play-tested review (2026-10-03)
 
 **Goal:** seven small changes from the teaching review, each of which stopped the app from

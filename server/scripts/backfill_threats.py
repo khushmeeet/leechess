@@ -6,13 +6,16 @@ this fills them in with native Stockfish, one shallow search per position,
 and commits per game so an interrupted run keeps what it did. Games that
 already have threats are skipped, so it is safe to re-run.
 
-    cd server && uv run python scripts/backfill_threats.py
+    cd server && PYTHONPATH=. uv run python scripts/backfill_threats.py
 """
 
 import chess.engine
 from sqlalchemy import select
 
 from app.analysis import record_threat, stockfish_binary, threat_depth
+# Registers the users table the owner foreign keys point at; without it the
+# first flush that touches a puzzle or tag row can't resolve them.
+from app.auth import models as auth_models  # noqa: F401
 from app.db import SessionLocal
 from app.models import Game
 

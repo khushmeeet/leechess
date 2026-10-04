@@ -16,8 +16,15 @@ from app.auth.backend import current_active_user
 from app.auth.models import User
 from app.cpl import aggregate_cpl, player_moves
 from app.db import get_db
+from app.mistakes import CAUSES
 from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt, utcnow
-from app.schemas import GameCplPoint, MotifProgress, ProgressOut
+from app.schemas import (
+    GameCplPoint,
+    MistakeCauseCount,
+    MistakeExample,
+    MotifProgress,
+    ProgressOut,
+)
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -76,6 +83,36 @@ def game_cpl(game: Game) -> GameCplPoint | None:
     )
 
 
+def mistake_causes(games: list[Game]) -> list[MistakeCauseCount]:
+    """Which step of the thinking routine broke, counted over the player's
+    own mistakes and blunders (`games` oldest first, as the trend reads
+    them). Motif rates say which patterns are missed in puzzles; this says
+    which habit fails at the board."""
+    counts = {
+        cause: MistakeCauseCount(cause=cause, mistakes=0, blunders=0, latest=None)
+        for cause in CAUSES
+    }
+    for game in games:
+        for move in player_moves(game):
+            count = counts.get(move.mistake_cause or "")
+            if count is None:
+                continue
+            if move.classification == "blunder":
+                count.blunders += 1
+            else:
+                count.mistakes += 1
+            count.latest = MistakeExample(
+                game_id=game.id, number=game.number, ply=move.ply, san=move.san
+            )
+    return sorted(
+        counts.values(),
+        key=lambda count: (
+            -(count.mistakes + count.blunders),
+            CAUSES.index(count.cause),
+        ),
+    )
+
+
 def day_streak(activity_dates: set[date], today: date) -> int:
     """Consecutive days with activity, counting back from today. A streak
     with activity yesterday but not (yet) today is still alive."""
@@ -114,11 +151,8 @@ def get_progress(
     )
     if since is not None:
         games_query = games_query.where(Game.created_at >= since)
-    trend = [
-        point
-        for game in db.scalars(games_query)
-        if (point := game_cpl(game)) is not None
-    ]
+    games = list(db.scalars(games_query))
+    trend = [point for game in games if (point := game_cpl(game)) is not None]
 
     solved_query = select(PuzzleAttempt).where(
         PuzzleAttempt.user_id == user.id, PuzzleAttempt.correct.is_(True)
@@ -175,4 +209,5 @@ def get_progress(
         streak_days=day_streak(activity, now.date()),
         puzzles_solved=puzzles_solved,
         drills_passed=drills_passed,
+        mistake_causes=mistake_causes(games),
     )

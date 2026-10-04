@@ -108,6 +108,7 @@ class MoveOut(BaseModel):
     threat_move: str | None
     threat_cp: float | None
     threat_mate: int | None
+    mistake_cause: str | None
     motifs: list[str]
     explanation: str | None
 
@@ -414,6 +415,25 @@ class GameCplPoint(BaseModel):
     endgame_cpl: float | None
 
 
+class MistakeExample(BaseModel):
+    """One move with a given cause, for the link to it in Review."""
+
+    game_id: int
+    number: int | None  # the account's game number
+    ply: int
+    san: str
+
+
+class MistakeCauseCount(BaseModel):
+    """How often one step of the thinking routine broke (app/mistakes.py),
+    over the player's own mistakes and blunders in the window."""
+
+    cause: str
+    mistakes: int
+    blunders: int
+    latest: MistakeExample | None  # the most recent move with this cause
+
+
 class ProgressOut(BaseModel):
     """GET /progress response — everything computed on read (spec §4.5)."""
 
@@ -424,6 +444,9 @@ class ProgressOut(BaseModel):
     streak_days: int
     puzzles_solved: int  # correct attempts within the window
     drills_passed: int  # endgame drills converted/held within the window
+    # Every cause, most common first (ties in the routine's order); counts
+    # are zero until games analyzed with causes are in the window.
+    mistake_causes: list[MistakeCauseCount]
 
 
 class WikibookPageOut(BaseModel):

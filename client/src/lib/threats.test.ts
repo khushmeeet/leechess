@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { Square } from 'chess.js';
+import table from '../../../shared/threats.json';
 import {
 	ATTACK_SWING_CP,
 	bestCaptureGain,
@@ -239,4 +241,31 @@ describe('threatOutcome', () => {
 			threatOutcome(bishopThreat, { fenAfter: AFTER_BE6, classification: 'blunder' }, 'a1a8')
 		).toBeNull();
 	});
+});
+
+// The same table server/tests/test_threat_kind.py runs through the Python
+// port, which Progress's mistake causes count with — so the server never
+// counts a threat the screens would not show.
+describe('classifyThreat (shared conformance table)', () => {
+	for (const testCase of table.cases) {
+		it(testCase.id, () => {
+			const found = classifyThreat({
+				fen: testCase.fen,
+				threatUci: testCase.threatUci,
+				threatScore: testCase.threatScore,
+				currentScore: testCase.currentScore
+			});
+			expect(found?.kind ?? null).toBe(testCase.kind);
+		});
+	}
+});
+
+describe('staticExchange (shared conformance table)', () => {
+	for (const testCase of table.exchangeCases) {
+		it(testCase.id, () => {
+			expect(staticExchange(testCase.fen, testCase.from as Square, testCase.to as Square)).toBe(
+				testCase.expected
+			);
+		});
+	}
 });

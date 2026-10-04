@@ -120,3 +120,6 @@ def test_analysis_records_the_threat_each_move_had_to_answer(client):
     assert nf6["threat_mate"] == 1
     assert nf6["threat_cp"] is None
     assert qxf7["best_move"] == nf6["threat_move"]
+    # ...which makes it the cause Progress counts for the blunder
+    assert nf6["mistake_cause"] == "missed_threat"
+    assert qxf7["mistake_cause"] is None

@@ -23,6 +23,7 @@
 	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 	import NotationText from '$lib/components/NotationText.svelte';
+	import { isMistakeCause, MISTAKE_CAUSES } from '$lib/mistakes';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import {
 		classifyThreat,
@@ -93,6 +94,13 @@
 				game = fetched;
 				error = null;
 				pollStalled = false;
+				// a link straight to one move (Progress's examples): ?ply=N
+				if (!loadedOnce) {
+					const wanted = Number(page.url.searchParams.get('ply'));
+					if (Number.isInteger(wanted) && wanted >= 1) {
+						selectedPly = Math.min(wanted, Math.max(1, fetched.moves.length));
+					}
+				}
 				loadedOnce = true;
 				const status = fetched.analysis_status;
 				if (status === 'pending' || status === 'analyzing') scheduleNext();
@@ -556,6 +564,18 @@
 							/></span
 						>
 					{/if}
+				</p>
+			{/if}
+
+			{#if selectedMove && isMistakeCause(selectedMove.mistake_cause)}
+				{@const cause = MISTAKE_CAUSES[selectedMove.mistake_cause]}
+				<!-- Which step of the thinking routine broke on this move — the same
+				     cause Progress counts across games. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-cause">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Cause</span>
+					<span class="font-semibold" data-testid="review-cause-label">{cause.label}.</span>
+					{cause.what}
+					<span class="text-muted">Next time: {cause.habit}</span>
 				</p>
 			{/if}
 

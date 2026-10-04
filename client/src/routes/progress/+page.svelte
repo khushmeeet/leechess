@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getProgress, type ProgressSummary } from '$lib/api/client';
+	import { isMistakeCause, MISTAKE_CAUSES } from '$lib/mistakes';
 	import { humanizeMotif } from '$lib/motifs';
 	import AccountGate from '$lib/components/AccountGate.svelte';
 	import CplTrend from '$lib/components/CplTrend.svelte';
@@ -43,6 +44,20 @@
 			progress.cpl_trend.length === 0 &&
 			progress.drills_passed === 0
 	);
+
+	// Which step of the thinking routine broke, most common first. The bars
+	// are scaled to the biggest count so the leader always fills its row.
+	const causes = $derived(
+		(progress?.mistake_causes ?? [])
+			.filter((entry) => isMistakeCause(entry.cause))
+			.map((entry) => ({
+				...entry,
+				total: entry.mistakes + entry.blunders,
+				copy: MISTAKE_CAUSES[entry.cause as keyof typeof MISTAKE_CAUSES]
+			}))
+	);
+	const causeTotal = $derived(causes.reduce((sum, entry) => sum + entry.total, 0));
+	const leadingCause = $derived(causes[0]?.total ? causes[0] : null);
 
 	function percent(rate: number): string {
 		return `${Math.round(rate * 100)}%`;
@@ -112,6 +127,75 @@
 			<p class="text-xs text-muted">endgames drilled</p>
 		</a>
 	</div>
+
+	{#if leadingCause}
+		<section class="mb-6" data-testid="mistake-causes">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Why your mistakes happen
+			</h2>
+			<div class="rounded-xs border border-line bg-card p-3">
+				<p class="text-sm text-ink" data-testid="mistake-causes-headline">
+					<span class="font-semibold">
+						{leadingCause.total} of your {causeTotal}
+						{causeTotal === 1 ? 'mistake' : 'mistakes and blunders'}:
+						{leadingCause.copy.label.toLowerCase()}.
+					</span>
+					{leadingCause.copy.what}
+				</p>
+				<p class="mt-1 text-sm text-body" data-testid="mistake-causes-habit">
+					<span class="font-semibold text-accent">Practise:</span>
+					{leadingCause.copy.habit}
+				</p>
+				<div class="mt-3" role="list" aria-label="Mistakes and blunders by cause">
+					{#each causes as entry (entry.cause)}
+						<div
+							class="grid grid-cols-[10.5rem_1fr_auto] items-center gap-2 py-1 text-sm"
+							role="listitem"
+							data-testid="mistake-cause-row"
+							data-cause={entry.cause}
+						>
+							<span class="truncate {entry.total ? 'text-body' : 'text-faint'}">
+								{entry.copy.label}
+							</span>
+							<div class="h-2.5 overflow-hidden bg-line/60">
+								<div
+									class="h-full bg-err"
+									style="width:{(entry.blunders / causes[0].total) * 100}%;float:left"
+								></div>
+								<div
+									class="h-full bg-mist"
+									style="width:{(entry.mistakes / causes[0].total) * 100}%;float:left"
+								></div>
+							</div>
+							<span class="text-right text-xs text-muted tabular-nums">
+								{#if entry.total && entry.latest}
+									{entry.total}
+									·
+									<a
+										class="text-accent hover:underline"
+										data-testid="mistake-cause-example"
+										href="{resolve('/review/[gameId]', {
+											gameId: String(entry.latest.game_id)
+										})}?ply={entry.latest.ply}"
+										title="Open the latest one in Review"
+									>
+										{Math.ceil(entry.latest.ply / 2)}{entry.latest.ply % 2 ? '.' : '…'}{entry.latest
+											.san}
+									</a>
+								{:else}
+									0
+								{/if}
+							</span>
+						</div>
+					{/each}
+				</div>
+				<p class="mt-2 flex gap-3 text-xs text-muted">
+					<span><span class="mr-1 inline-block h-2 w-2 bg-err"></span>blunders</span>
+					<span><span class="mr-1 inline-block h-2 w-2 bg-mist"></span>mistakes</span>
+				</p>
+			</div>
+		</section>
+	{/if}
 
 	{#if progress.weakest_motifs.length > 0}
 		<section class="mb-6" data-testid="weakest-motifs">

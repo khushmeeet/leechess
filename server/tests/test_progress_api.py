@@ -120,6 +120,16 @@ def test_empty_database_returns_zeroes_not_errors(client):
         "streak_days": 0,
         "puzzles_solved": 0,
         "drills_passed": 0,
+        "mistake_causes": [
+            {"cause": cause, "mistakes": 0, "blunders": 0, "latest": None}
+            for cause in (
+                "missed_threat",
+                "hung_piece",
+                "allowed_reply",
+                "missed_tactic",
+                "positional",
+            )
+        ],
     }
 
 
@@ -359,3 +369,62 @@ def test_streak_alive_with_activity_only_yesterday():
 
 def test_game_cpl_returns_none_without_moves():
     assert game_cpl(Game(pgn="", analysis_status="complete")) is None
+
+
+def _with_causes(game: Game, db_session, causes: dict[int, tuple[str, str]]) -> None:
+    """Grade the given plies and give them a cause: {ply: (grade, cause)}."""
+    for move in game.moves:
+        if move.ply in causes:
+            move.classification, move.mistake_cause = causes[move.ply]
+    db_session.commit()
+
+
+def test_mistake_causes_count_the_players_side_most_common_first(
+    client, seed, db_session
+):
+    older = seed.game([(0, 0)] * 6, mode="engine", created_at=days_ago(3))
+    _with_causes(
+        older,
+        db_session,
+        {
+            1: ("blunder", "missed_threat"),
+            3: ("mistake", "hung_piece"),
+            # Black's moves are the engine's, not the player's: never counted
+            2: ("blunder", "missed_threat"),
+            4: ("blunder", "missed_threat"),
+        },
+    )
+    newer = seed.game([(0, 0)] * 4, mode="engine")
+    _with_causes(
+        newer,
+        db_session,
+        {1: ("mistake", "missed_threat"), 3: ("blunder", "missed_threat")},
+    )
+
+    causes = get(client)["mistake_causes"]
+    assert [entry["cause"] for entry in causes] == [
+        "missed_threat",
+        "hung_piece",
+        "allowed_reply",
+        "missed_tactic",
+        "positional",
+    ]
+    threat, hung = causes[0], causes[1]
+    assert (threat["mistakes"], threat["blunders"]) == (1, 2)
+    assert (hung["mistakes"], hung["blunders"]) == (1, 0)
+    # the example is the most recent one, for the link into Review
+    assert threat["latest"] == {
+        "game_id": newer.id,
+        "number": newer.number,
+        "ply": 3,
+        "san": "e4",
+    }
+
+
+def test_mistake_causes_respect_the_window(client, seed, db_session):
+    old = seed.game([(0, 0)], created_at=days_ago(40))
+    _with_causes(old, db_session, {1: ("blunder", "positional")})
+    windowed = {entry["cause"]: entry for entry in get(client, days=30)["mistake_causes"]}
+    assert windowed["positional"]["blunders"] == 0
+    everything = {entry["cause"]: entry for entry in get(client)["mistake_causes"]}
+    assert everything["positional"]["blunders"] == 1

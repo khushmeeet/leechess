@@ -52,6 +52,10 @@ export interface MoveRecord {
 	 * evals) or moves to mate — one of the two. */
 	threat_cp: number | null;
 	threat_mate: number | null;
+	/** For a mistake or blunder: the step of the thinking routine that broke
+	 * (see $lib/mistakes). Null for every other move, and for games analyzed
+	 * before causes were. */
+	mistake_cause: string | null;
 	motifs: string[];
 	/** Cached LLM "why" text — only flagged moves have one (Phase 5). */
 	explanation: string | null;
@@ -373,6 +377,16 @@ export interface GameCplPoint {
 	endgame_cpl: number | null;
 }
 
+/** How often one step of the thinking routine broke, over the player's own
+ * mistakes and blunders in the window. */
+export interface MistakeCauseCount {
+	cause: string;
+	mistakes: number;
+	blunders: number;
+	/** The most recent move with this cause, for a link into Review. */
+	latest: { game_id: number; number: number | null; ply: number; san: string } | null;
+}
+
 export interface ProgressSummary {
 	days: number | null; // echo of the window filter; null = all-time
 	motifs: MotifProgress[]; // weakest first
@@ -381,6 +395,7 @@ export interface ProgressSummary {
 	streak_days: number;
 	puzzles_solved: number;
 	drills_passed: number; // endgame drills converted/held in the window
+	mistake_causes: MistakeCauseCount[]; // every cause, most common first
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

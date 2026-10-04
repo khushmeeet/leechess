@@ -109,3 +109,30 @@ test('the CPL tooltip reads out the point nearest the pointer, not the newest ga
 	await page.mouse.move(box.x + box.width * 0.02, midY);
 	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${oldest}`);
 });
+
+test('mistake causes name the habit that broke, and link to the move', async ({
+	page,
+	request
+}) => {
+	// Scholar's mate, played locally (both sides count): 3…Nf6?? left Qxf7#
+	// on the board — the threat the previous move made
+	const gameId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, gameId);
+
+	await page.goto('/progress');
+	const section = page.getByTestId('mistake-causes');
+	await expect(section).toBeVisible();
+	const row = section.locator('[data-cause="missed_threat"]');
+	await expect(row).toContainText('Missed their threat');
+	const example = row.getByTestId('mistake-cause-example');
+	await expect(example).toHaveText('3…Nf6');
+	await expect(example).toHaveAttribute('href', `/review/${gameId}?ply=6`);
+
+	// the link opens Review on that move, with the same cause beside it
+	await example.click();
+	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
+	await expect(page.getByTestId('review-cause-label')).toHaveText('Missed their threat.');
+	await expect(page.getByTestId('review-cause')).toContainText(
+		'ask what their last move threatens'
+	);
+});

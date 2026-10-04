@@ -111,6 +111,12 @@ def test_threat_columns_are_added(legacy_engine):
     assert {"threat_move", "threat_cp", "threat_mate"} <= _columns(legacy_engine, "moves")
 
 
+def test_mate_and_cause_columns_are_added(legacy_engine):
+    assert {"mate_before", "mate_after", "mistake_cause"} <= _columns(
+        legacy_engine, "moves"
+    )
+
+
 def test_the_scheduling_columns_are_gone(legacy_engine):
     """They are NOT NULL with no server default, so leaving them behind makes
     every insert fail — see the next test."""

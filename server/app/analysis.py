@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.explanations import generate_explanations_for_game
+from app.mistakes import apply_mistake_causes
 from app.models import Game, Move
 from app.motifs import apply_rule_based_tags
 from app.openings import in_book
@@ -259,6 +260,7 @@ def run_game_analysis(game_id: int) -> None:
             try:
                 _analyze(game)
                 apply_rule_based_tags(game)
+                apply_mistake_causes(game)
                 create_puzzles_for_game(game)
                 generate_explanations_for_game(game)  # fail-soft, never raises
                 generate_summary_for_game(game)  # fail-soft, never raises

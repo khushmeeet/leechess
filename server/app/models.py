@@ -160,6 +160,10 @@ class Move(Base):
     threat_move: Mapped[str | None] = mapped_column(String, nullable=True)
     threat_cp: Mapped[float | None] = mapped_column(Float, nullable=True)
     threat_mate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # For a mistake or blunder: the step of a thinking routine that broke —
+    # missed_threat, hung_piece, allowed_reply, missed_tactic or positional
+    # (app/mistakes.py). Derived from the columns above, never from the engine.
+    mistake_cause: Mapped[str | None] = mapped_column(String, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="moves")
     motif_tags: Mapped[list["MotifTag"]] = relationship(
