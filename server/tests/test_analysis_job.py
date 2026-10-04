@@ -15,7 +15,7 @@ from app.analysis import EVAL_CLAMP_CP
 
 pytestmark = pytest.mark.engine
 
-CLASSIFICATIONS = {"best", "good", "inaccuracy", "mistake", "blunder"}
+CLASSIFICATIONS = {"book", "best", "good", "inaccuracy", "mistake", "blunder"}
 
 requires_stockfish = pytest.mark.skipif(
     shutil.which("stockfish") is None, reason="stockfish binary not in PATH"
@@ -87,11 +87,20 @@ def test_analysis_of_checkmate_game(client):
     assert review["result"] == "1-0"
     assert review["analysis_status"] == "complete"
 
-    last = review["moves"][-1]
-    # terminal position: eval pinned at the clamp for the winner, and the
-    # mating move itself must classify (mate was already forced, so "best")
+    moves = review["moves"]
+    last = moves[-1]
+    # terminal position: eval pinned at the clamp for the winner, with the
+    # mate on the board stored as mate 0 — and the mating move grades best
     assert last["eval_after"] == EVAL_CLAMP_CP
-    assert last["classification"] in CLASSIFICATIONS
+    assert last["mate_after"] == 0
+    assert last["classification"] == "best"
+    # the forced mate rides beside the clamped evals, continuous like them
+    assert last["mate_before"] == 1
+    assert moves[-2]["mate_after"] == 1
+    # 3...Nf6?? walked into it: a blunder, book or not
+    assert moves[5]["classification"] == "blunder"
+    # 1.e4 is book, whatever the engine thinks of it at depth 8
+    assert moves[0]["classification"] == "book"
 
 
 @requires_stockfish

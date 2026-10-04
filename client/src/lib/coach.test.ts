@@ -12,7 +12,6 @@ function ctx(overrides: Partial<CoachContext>): CoachContext {
 		ply: 0,
 		evalCp: 0,
 		lastUserClassification: null,
-		bestMoveSan: null,
 		userColor: 'white',
 		inBook: false,
 		...overrides
@@ -24,11 +23,10 @@ describe('coachAdvice', () => {
 		expect(coachAdvice(ctx({}))).toBe('Fight for the center and develop quickly.');
 	});
 
-	it('composes the king-safety line with the engine preference (mockup shape)', () => {
-		const advice = coachAdvice(ctx({ fen: ITALIAN, ply: 6, bestMoveSan: 'c3' }));
+	it('composes the king-safety line with its supporting sentence', () => {
+		const advice = coachAdvice(ctx({ fen: ITALIAN, ply: 6 }));
 		expect(advice).toBe(
-			'King safety is the priority. Stockfish prefers c3. ' +
-				'Finish development and castle before opening the position.'
+			'King safety is the priority. Finish development and castle before opening the position.'
 		);
 	});
 
@@ -65,12 +63,6 @@ describe('coachAdvice', () => {
 		expect(coachAdvice(ctx({ fen: kingAndPawns, ply: 60 }))).toBe(
 			'Activate your king and look for passed pawns.'
 		);
-	});
-
-	it('appends the engine preference whenever a best move is known', () => {
-		const advice = coachAdvice(ctx({ ply: 8, fen: ITALIAN, bestMoveSan: 'Nc3' }));
-		expect(advice).toContain('Stockfish prefers Nc3.');
-		expect(coachAdvice(ctx({ ply: 8, fen: ITALIAN }))).not.toContain('Stockfish prefers');
 	});
 });
 

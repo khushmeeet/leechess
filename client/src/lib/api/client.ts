@@ -36,6 +36,11 @@ export interface MoveRecord {
 	fen_after: string;
 	eval_before: number | null;
 	eval_after: number | null;
+	/** A forced mate beside each eval: moves to mate, signed for White (0 is
+	 * a mate on the board). Null without one, and for games analyzed before
+	 * mates were stored. */
+	mate_before: number | null;
+	mate_after: number | null;
 	classification: string | null;
 	best_move: string | null;
 	/** The other side's best move in `fen_before` had the mover passed — the

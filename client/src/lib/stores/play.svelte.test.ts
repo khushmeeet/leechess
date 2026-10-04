@@ -49,10 +49,12 @@ vi.mock('$lib/stores/session.svelte', () => ({ session: account }));
 vi.mock('$lib/openings', () => ({
 	loadOpenings: vi.fn(async () => false),
 	openingsReady: () => false,
-	openingForFens: vi.fn(() => null)
+	openingForFens: vi.fn(() => null),
+	inBook: vi.fn(() => false)
 }));
 
 import { ApiError } from '$lib/api/client';
+import { inBook } from '$lib/openings';
 import { passTurn } from '$lib/threats';
 import { PlaySession } from './play.svelte';
 
@@ -137,6 +139,25 @@ describe('live classification', () => {
 		engine.evaluate.mockResolvedValue(evalResult(-100, 'e7e5'));
 		await playWithReply(session, 'e2', 'e4');
 		expect(session.badges[0]).toBe('best');
+	});
+
+	it('grades a book move as book, whatever the eval did', async () => {
+		vi.mocked(inBook).mockImplementation((fen) => fen.startsWith('rnbqkbnr/pppppppp/8/8/4P3'));
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(-40, 'e7e5')); // a mistake off the book
+		await playWithReply(session, 'e2', 'e4');
+		expect(session.badges[0]).toBe('book');
+	});
+
+	it('tells a hastened mate apart, though both evals sit at the clamp', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue({ ...evalResult(0, 'e7e5'), cp: undefined, mate: -3 });
+		await playWithReply(session, 'e2', 'e4'); // the engine's reply is evaluated at mate -3 too
+		engine.evaluate.mockResolvedValue({ ...evalResult(0, 'd8h4'), cp: undefined, mate: -1 });
+		engine.play.mockResolvedValue(evalResult(0, 'd8h4'));
+		await playWithReply(session, 'g2', 'g4');
+		expect(session.evals.slice(1, 3)).toEqual([-1000, -1000]);
+		expect(session.badges[2]).toBe('inaccuracy');
 	});
 });
 

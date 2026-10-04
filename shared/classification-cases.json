@@ -1,118 +1,441 @@
 {
-	"_comment": "Cross-language conformance table for the eval-delta → classification rule in shared/classification.json. Run through BOTH implementations — server/app/analysis.py::classify_move (server/tests/test_classification.py) and client/src/lib/classification.ts::classifyMove (client/src/lib/classification.test.ts) — so a threshold change or an off-by-one in either one fails immediately. `clampCases` do the same for the eval clamp.",
+	"_comment": "Cross-language conformance table for the move-grading rule in shared/classification.json. Run through BOTH implementations — server/app/analysis.py::classify_move (server/tests/test_classification.py) and client/src/lib/classification.ts::classifyMove (client/src/lib/classification.test.ts) — so a threshold change or an off-by-one in either one fails immediately. Evals are white's point of view: cp clamped, mate signed for White (0 = mate on the board, cp says who gave it). `clampCases` and `winPercentCases` do the same for the clamp and the winning-chances curve.",
 	"cases": [
 		{
-			"evalBefore": 50,
-			"evalAfter": 50,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": 0
+			},
 			"moverIsWhite": true,
 			"expected": "best",
-			"why": "no loss"
+			"why": "level, no loss"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 55,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": 5
+			},
 			"moverIsWhite": true,
 			"expected": "best",
 			"why": "gained eval (engine wobble)"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 41,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -10
+			},
 			"moverIsWhite": true,
 			"expected": "best",
-			"why": "loss 9 < 10"
+			"why": "10 cp in a level game is 0.92 win% — under 1"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 40,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -11
+			},
 			"moverIsWhite": true,
 			"expected": "good",
-			"why": "loss 10 — the boundary is exclusive for best"
+			"why": "11 cp is 1.01 win% — the bound is exclusive for best"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 26,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -25
+			},
 			"moverIsWhite": true,
 			"expected": "good",
-			"why": "loss 24"
+			"why": "25 cp is 2.30 win%"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 25,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -28
+			},
 			"moverIsWhite": true,
 			"expected": "inaccuracy",
-			"why": "loss 25"
+			"why": "28 cp is 2.58 win%"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 1,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -50
+			},
 			"moverIsWhite": true,
 			"expected": "inaccuracy",
-			"why": "loss 49"
+			"why": "50 cp is 4.59 win%"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": 0,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -60
+			},
 			"moverIsWhite": true,
 			"expected": "mistake",
-			"why": "loss 50"
+			"why": "60 cp is 5.50 win%"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": -49,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -100
+			},
 			"moverIsWhite": true,
 			"expected": "mistake",
-			"why": "loss 99"
+			"why": "a pawn in a level game is 9.10 win%"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": -50,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -120
+			},
 			"moverIsWhite": true,
 			"expected": "blunder",
-			"why": "loss 100"
+			"why": "120 cp is 10.87 win%"
 		},
 		{
-			"evalBefore": 200,
-			"evalAfter": -800,
+			"before": {
+				"cp": 200
+			},
+			"after": {
+				"cp": -800
+			},
 			"moverIsWhite": true,
 			"expected": "blunder",
-			"why": "loss 1000"
+			"why": "a won game thrown away"
 		},
 		{
-			"evalBefore": -50,
-			"evalAfter": -41,
-			"moverIsWhite": false,
+			"before": {
+				"cp": 650
+			},
+			"after": {
+				"cp": 600
+			},
+			"moverIsWhite": true,
+			"expected": "good",
+			"why": "half a pawn at +6.5 is 1.52 win% — the same loss is an inaccuracy when level"
+		},
+		{
+			"before": {
+				"cp": 650
+			},
+			"after": {
+				"cp": 560
+			},
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "0.9 pawns at +6.5 is 2.92 win%"
+		},
+		{
+			"before": {
+				"cp": 1500
+			},
+			"after": {
+				"cp": 1200
+			},
+			"moverIsWhite": true,
 			"expected": "best",
-			"why": "black: loss 9"
+			"why": "past the clamp both sides are winning the same"
 		},
 		{
-			"evalBefore": -50,
-			"evalAfter": -25,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": 100
+			},
 			"moverIsWhite": false,
-			"expected": "inaccuracy",
-			"why": "black: loss 25"
+			"expected": "mistake",
+			"why": "black: a pawn in a level game"
 		},
 		{
-			"evalBefore": 0,
-			"evalAfter": 100,
-			"moverIsWhite": false,
-			"expected": "blunder",
-			"why": "black: loss 100"
-		},
-		{
-			"evalBefore": 0,
-			"evalAfter": -100,
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -100
+			},
 			"moverIsWhite": false,
 			"expected": "best",
 			"why": "black gained"
 		},
 		{
-			"evalBefore": 50,
-			"evalAfter": -30,
+			"before": {
+				"cp": -650
+			},
+			"after": {
+				"cp": -600
+			},
+			"moverIsWhite": false,
+			"expected": "good",
+			"why": "black: half a pawn at -6.5"
+		},
+		{
+			"before": {
+				"cp": 50
+			},
+			"after": {
+				"cp": -30
+			},
 			"moverIsWhite": true,
 			"playedIsBest": true,
 			"expected": "best",
 			"why": "playing the engine's own choice is never a mistake, however the eval wobbled"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 3
+			},
+			"after": {
+				"cp": 1000,
+				"mate": 2
+			},
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "mate in 3 becomes mate in 2: on track"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 3
+			},
+			"after": {
+				"cp": 1000,
+				"mate": 3
+			},
+			"moverIsWhite": true,
+			"expected": "good",
+			"why": "mate in 3 is still mate in 3 after the move: a detour, still winning"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 1
+			},
+			"after": {
+				"cp": 1000,
+				"mate": 0
+			},
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "mate in 1, delivered"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 2
+			},
+			"after": {
+				"cp": 1000
+			},
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "mate thrown away, still +10"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 2
+			},
+			"after": {
+				"cp": 800
+			},
+			"moverIsWhite": true,
+			"expected": "mistake",
+			"why": "mate thrown away, +8 left"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 2
+			},
+			"after": {
+				"cp": 300
+			},
+			"moverIsWhite": true,
+			"expected": "blunder",
+			"why": "mate thrown away, +3 left"
+		},
+		{
+			"before": {
+				"cp": -1000,
+				"mate": -4
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -4
+			},
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "already mated in 4, still mated in 4: nothing lost — not 'best' by accident of the clamp"
+		},
+		{
+			"before": {
+				"cp": -1000,
+				"mate": -4
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -2
+			},
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "already mated in 4, now in 2: hastened"
+		},
+		{
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -1
+			},
+			"moverIsWhite": true,
+			"expected": "blunder",
+			"why": "walked into mate in 1 from a level game"
+		},
+		{
+			"before": {
+				"cp": -800
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -3
+			},
+			"moverIsWhite": true,
+			"expected": "mistake",
+			"why": "walked into mate when already -8"
+		},
+		{
+			"before": {
+				"cp": -1000
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -5
+			},
+			"moverIsWhite": true,
+			"expected": "inaccuracy",
+			"why": "walked into mate when already lost at the clamp"
+		},
+		{
+			"before": {
+				"cp": -1000,
+				"mate": -3
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -2
+			},
+			"moverIsWhite": false,
+			"expected": "best",
+			"why": "black mating in 3, now in 2"
+		},
+		{
+			"before": {
+				"cp": 1000,
+				"mate": 2
+			},
+			"after": {
+				"cp": 1000,
+				"mate": 1
+			},
+			"moverIsWhite": false,
+			"expected": "inaccuracy",
+			"why": "black being mated in 2, now in 1"
+		},
+		{
+			"before": {
+				"cp": -1000,
+				"mate": -3
+			},
+			"after": {
+				"cp": -400
+			},
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "escaped a mate the engine saw"
+		},
+		{
+			"before": {
+				"cp": 1000
+			},
+			"after": {
+				"cp": 1000,
+				"mate": 4
+			},
+			"moverIsWhite": true,
+			"expected": "best",
+			"why": "found a forced mate"
+		},
+		{
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -28
+			},
+			"moverIsWhite": true,
+			"inBook": true,
+			"expected": "book",
+			"why": "book move that would be an inaccuracy"
+		},
+		{
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -80
+			},
+			"moverIsWhite": true,
+			"inBook": true,
+			"expected": "book",
+			"why": "book gambit that would be a mistake"
+		},
+		{
+			"before": {
+				"cp": 30
+			},
+			"after": {
+				"cp": 30
+			},
+			"moverIsWhite": true,
+			"inBook": true,
+			"playedIsBest": true,
+			"expected": "book",
+			"why": "the engine's own choice, in the book"
+		},
+		{
+			"before": {
+				"cp": 0
+			},
+			"after": {
+				"cp": -1000,
+				"mate": -1
+			},
+			"moverIsWhite": true,
+			"inBook": true,
+			"expected": "blunder",
+			"why": "the Fool's Mate is in the book, and still a blunder"
 		}
 	],
 	"clampCases": [
@@ -130,6 +453,33 @@
 			"cp": 37,
 			"expected": 37,
 			"why": "ordinary evals pass through"
+		}
+	],
+	"winPercentCases": [
+		{
+			"cp": 0,
+			"expected": 50,
+			"why": "level"
+		},
+		{
+			"cp": 100,
+			"expected": 59.1026,
+			"why": "a pawn up"
+		},
+		{
+			"cp": -100,
+			"expected": 40.8974,
+			"why": "a pawn down"
+		},
+		{
+			"cp": 1000,
+			"expected": 97.5447,
+			"why": "at the clamp"
+		},
+		{
+			"cp": 5000,
+			"expected": 97.5447,
+			"why": "past the clamp"
 		}
 	]
 }

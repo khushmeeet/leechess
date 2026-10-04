@@ -48,9 +48,11 @@ test('hint ladder reveals one level at a time and never resets', async ({ page, 
 	await expect(page.locator('.cg-shapes circle').first()).toBeVisible();
 	await expect(page.getByTestId('hint-level-4')).toBeHidden();
 
-	// Level 4 — the move plus a one-line reason
+	// Level 4 — the move plus a one-line reason, naming the piece it wins
+	// rather than a template about "a piece"
 	await reveal.click();
 	await expect(page.getByTestId('hint-level-4')).toContainText(solutionSans[0]);
+	await expect(page.getByTestId('hint-level-4')).toContainText('the queen on e5');
 
 	// Level 5 — full line; the ladder is exhausted
 	await reveal.click();

@@ -26,15 +26,17 @@ test('toggling the eval bar does not resize the board', async ({ page }) => {
 });
 
 test('live classification badge appears within 500ms of a move', async ({ page }) => {
+	const book = page.waitForResponse('**/openings.json');
 	await page.goto('/');
 	await waitForEngineReady(page);
+	await book;
 
 	await move(page, 'e2', 'e4');
 	// the real requirement, not "eventually": depth-16 eval + badge in 500ms
 	await expect(page.getByTestId('move-badge')).toBeVisible({ timeout: 500 });
-	await expect(page.getByTestId('move-list').getByTestId('move-badge')).toContainText(
-		/best|good|inaccuracy|mistake|blunder/
-	);
+	// 1.e4 is in the opening book, so it is graded "book" — not whatever a
+	// quarter-pawn wobble in the engine's eval would make of it
+	await expect(page.getByTestId('move-list').getByTestId('move-badge')).toHaveText('book');
 });
 
 test('a blundered move can be taken back, and Off withholds the offer', async ({ page }) => {
@@ -370,7 +372,8 @@ test('Full names the motif and why the position is one', async ({ page }) => {
 	await expect(page.getByTestId('tactic-why')).toHaveText('the queen on h4 is left undefended');
 	await expect(page.getByTestId('hint-reveal')).toHaveCount(0);
 
-	// Full is the mode that also hands over the engine's answer
+	// Full is the mode that also hands over the engine's answer, on request
+	await page.getByTestId('engine-reveal').click();
 	await expect(page.getByTestId('ideas-row')).toContainText('Nxh4');
 });
 

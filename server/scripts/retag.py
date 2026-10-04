@@ -1,14 +1,18 @@
-"""Re-run rule-based motif tagging over every analyzed game — no Stockfish.
+"""Re-grade and re-run rule-based motif tagging over every analyzed game —
+no Stockfish.
 
-Use after refining detection rules in app/motifs.py. Also backfills the
-personal puzzle queue (Phase 3): puzzles derive from the same stored
-analysis, and moves that already have one are skipped.
+Use after changing the grading rule (shared/classification.json) or refining
+detection rules in app/motifs.py. Grading runs first, since which moves get
+tagged depends on it. Also backfills the personal puzzle queue (Phase 3):
+puzzles derive from the same stored analysis, and moves that already have one
+are skipped.
 
     cd server && uv run python scripts/retag.py
 """
 
 from sqlalchemy import select
 
+from app.analysis import regrade_game
 from app.db import SessionLocal
 from app.models import Game
 from app.motifs import apply_rule_based_tags
@@ -20,6 +24,7 @@ def main() -> None:
     try:
         games = list(db.scalars(select(Game).where(Game.analysis_status == "complete")))
         for game in games:
+            regrade_game(game)
             apply_rule_based_tags(game)
             new_puzzles = create_puzzles_for_game(game)
             tagged = sum(1 for move in game.moves if move.motif_tags)

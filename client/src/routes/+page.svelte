@@ -61,7 +61,6 @@
 			ply: game.moves.length,
 			evalCp: session.currentEval,
 			lastUserClassification: session.lastFeedback?.classification ?? null,
-			bestMoveSan: candidateIdeas[0]?.san ?? null,
 			userColor: session.playerColor,
 			inBook: session.opening?.inBook ?? false
 		});
@@ -106,6 +105,12 @@
 	// idea chip sitting alongside would skip every rung at once. Their own
 	// Settings toggles still apply on top, within Full.
 	const fullHints = $derived(displayPrefs.hintMode === 'full');
+	// The engine's own answers — its pick and the Ideas chips, its top lines —
+	// wait behind one button even in Full, so the player has a move of their
+	// own in mind before seeing them. Either toggle keeps the row.
+	const showEngineRow = $derived(
+		fullHints && !game.isGameOver && (displayPrefs.showCoach || displayPrefs.showIdeas)
+	);
 
 	// Taking a move back is help, so it lives with the hints: Off is a real
 	// game (spec user story 5), and offering a do-over there would break the
@@ -129,6 +134,7 @@
 	// over from the position they were about.
 	let hintLevel = $state(0);
 	let threatRevealed = $state(false);
+	let enginePickRevealed = $state(false);
 	// The move or square in the panel's text the player is pointing at.
 	let notationTarget = $state<NotationTarget | null>(null);
 	let lastHintFen = game.fen;
@@ -137,6 +143,7 @@
 			lastHintFen = game.fen;
 			hintLevel = 0;
 			threatRevealed = false;
+			enginePickRevealed = false;
 			notationTarget = null;
 		}
 	});
@@ -408,6 +415,40 @@
 	{/if}
 {/snippet}
 
+<!-- The engine's own pick, and the Ideas chips (its top lines), behind a
+     button even in Full: stated up front they arrived before any thinking had
+     happened, every single move. -->
+{#snippet enginePickRow()}
+	{#if showEngineRow}
+		<div class="panel-row" data-testid="engine-row">
+			<span class="panel-row-label">Engine</span>
+			{#if !candidateIdeas[0]}
+				<span class="text-faint">…</span>
+			{:else if !enginePickRevealed}
+				<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+					<span class="min-w-0 text-muted">Pick your move first, then compare.</span>
+					<button
+						type="button"
+						data-testid="engine-reveal"
+						onclick={() => (enginePickRevealed = true)}
+						class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+					>
+						Show its pick
+					</button>
+				</p>
+			{:else}
+				<p class="min-w-0 text-body" data-testid="engine-pick">
+					<NotationText
+						text={`Stockfish prefers ${candidateIdeas[0].san}.`}
+						fens={[game.fen]}
+						onhover={(target) => (notationTarget = target)}
+					/>
+				</p>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet tacticRow()}
 	{#if fullHints}
 		{#if liveTactic}
@@ -639,7 +680,8 @@
 					tactic={tacticRow}
 					showCoach={displayPrefs.showCoach && fullHints}
 					coach={coachText}
-					showIdeas={displayPrefs.showIdeas && fullHints}
+					enginePick={enginePickRow}
+					showIdeas={displayPrefs.showIdeas && fullHints && enginePickRevealed}
 					ideas={candidateIdeas}
 					gameOver={game.isGameOver}
 					onideahover={(uci) => (hoverUci = uci)}

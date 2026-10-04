@@ -78,7 +78,7 @@ def build_summary_prompt(game: Game) -> str:
             counts[move.classification] = counts.get(move.classification, 0) + 1
     readable = ", ".join(
         f"{counts[label]} {label}"
-        for label in ["best", "good", "inaccuracy", "mistake", "blunder"]
+        for label in ["book", "best", "good", "inaccuracy", "mistake", "blunder"]
         if label in counts
     )
     lines.append(f"Your {len(player_moves)} moves: {readable}.")

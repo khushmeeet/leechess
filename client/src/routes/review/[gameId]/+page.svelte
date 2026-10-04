@@ -201,6 +201,13 @@
 		return played !== null && played[0] + played[1] !== best.slice(0, 4);
 	});
 
+	/** Graded as no loss, though it may differ from the engine's pick. */
+	const playedWasSound = $derived(
+		selectedMove?.classification === 'book' ||
+			selectedMove?.classification === 'best' ||
+			selectedMove?.classification === 'good'
+	);
+
 	// Board shows the position where the decision was made, with the played
 	// move and (when it differs) the engine's best move as arrows.
 	const shapes = $derived.by((): DrawShape[] => {
@@ -216,7 +223,10 @@
 		}
 		const played = sanToKeys(selectedMove.fen_before, selectedMove.san);
 		if (played) {
-			result.push({ orig: played[0], dest: played[1], brush: bestDiffers ? 'red' : 'green' });
+			// red only for a move that cost something: a book move, or one as
+			// good as the engine's pick, gets a quiet grey beside the green
+			const brush = !bestDiffers ? 'green' : playedWasSound ? 'paleGrey' : 'red';
+			result.push({ orig: played[0], dest: played[1], brush });
 		}
 		if (bestDiffers && selectedMove.best_move) {
 			result.push({
@@ -493,8 +503,12 @@
 					</span>
 				{/if}
 				{#if selectedMove?.best_move && bestDiffers}
+					<!-- a move graded best or book can still differ from the engine's
+					     pick: as good as it, not worse -->
 					<span class="text-sm text-body" data-testid="best-move-hint">
-						— best was
+						{selectedMove.classification === 'best' || selectedMove.classification === 'book'
+							? '— the engine’s pick was'
+							: '— best was'}
 						<span class="font-mono font-semibold text-ok">
 							{uciToSan(selectedMove.fen_before, selectedMove.best_move)}
 						</span>

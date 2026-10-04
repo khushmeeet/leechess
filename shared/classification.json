@@ -1,11 +1,17 @@
 {
-	"_comment": "Single source of truth for move-classification constants. Loaded by server/app/analysis.py and bundled into the client via client/src/lib/classification.ts — edit here, never in the consumers. Threshold upper bounds are exclusive centipawn loss from the mover's perspective: loss < 10 is best, 10-24 good, etc.; at or past the last bound is a blunder. The server's test_classification.py pins the canonical values.",
+	"_comment": "Single source of truth for move-classification constants. Loaded by server/app/analysis.py and bundled into the client via client/src/lib/classification.ts — edit here, never in the consumers. A move is graded by how much it lowers the mover's winning chances: win% = 50 + 50 * (2 / (1 + exp(-winPercentK * cp)) - 1), the curve Lichess fits to its games, with cp clamped to evalClampCp. Threshold upper bounds are exclusive drops in win% points: a drop < 1 is best, 1-2.5 good, etc.; at or past the last bound is a blunder. They are set so a level position grades as the old centipawn bars did (10/25/50/100 cp come to 0.9/2.3/4.6/9.2 points at 0.00), while a pawn given away at +6 barely moves the needle. Forced mates are graded on their own terms (mateLost, mateCreated) and a book move is 'book' unless it is a blunder. The server's test_classification.py pins the canonical values; shared/classification-cases.json is the conformance table.",
 	"evalClampCp": 1000,
+	"winPercentK": 0.00368208,
 	"thresholds": [
-		[10, "best"],
-		[25, "good"],
-		[50, "inaccuracy"],
-		[100, "mistake"]
+		[1, "best"],
+		[2.5, "good"],
+		[5, "inaccuracy"],
+		[10, "mistake"]
 	],
-	"blunder": "blunder"
+	"blunder": "blunder",
+	"_mateComment": "Lichess's mate rules, from the mover's side. mateLost: the mover had a forced mate and no longer does; graded by the eval left over (above inaccuracyAboveCp: inaccuracy, above mistakeAboveCp: mistake, else blunder). mateCreated: the opponent has a forced mate that they did not have before; graded by how lost the mover already was (below -inaccuracyAboveCp: inaccuracy, below -mistakeAboveCp: mistake, else blunder).",
+	"mate": {
+		"inaccuracyAboveCp": 999,
+		"mistakeAboveCp": 700
+	}
 }

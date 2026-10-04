@@ -51,8 +51,9 @@ export class PuzzleSession {
 	}
 
 	/** The solver's next expected move, looking past a pending opponent
-	 * reply if needed — drives hint Levels 3-4. */
-	nextPlayerMove: { san: string; uci: string } | null = $derived.by(() => {
+	 * reply if needed — drives hint Levels 3-4. `fen` is the position it is
+	 * played in. */
+	nextPlayerMove: { san: string; uci: string; fen: string } | null = $derived.by(() => {
 		const puzzle = this.puzzle;
 		if (!puzzle || this.status !== 'solving') return null;
 		const chess = new Chess(this.fen);
@@ -69,8 +70,9 @@ export class PuzzleSession {
 		}
 		const uci = puzzle.solution[index];
 		if (!uci) return null;
+		const fen = chess.fen();
 		try {
-			return { san: chess.move(uciParts(uci)).san, uci };
+			return { san: chess.move(uciParts(uci)).san, uci, fen };
 		} catch {
 			return null;
 		}

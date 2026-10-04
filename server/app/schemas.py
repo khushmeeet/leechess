@@ -101,6 +101,8 @@ class MoveOut(BaseModel):
     fen_after: str
     eval_before: float | None
     eval_after: float | None
+    mate_before: int | None
+    mate_after: int | None
     classification: str | None
     best_move: str | None
     threat_move: str | None

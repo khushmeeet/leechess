@@ -14,6 +14,94 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Quick fixes from the play-tested review (2026-10-03)
+
+**Goal:** seven small changes from the teaching review, each of which stopped the app from
+teaching a wrong lesson.
+
+- **Book moves are graded "book".** 2. c4 got a live Mistake badge and Review called
+  1. Nf3 an inaccuracy, because grading ignored the opening book. A move into a book
+  position now grades `book` (a sixth label, with an open-book glyph in the compact
+  badge) unless it is a blunder. Some named lines are traps, and the Fool's Mate is in the
+  book.
+  - **One book, two readers.** The lichess TSVs moved from `client/scripts/` to
+    `shared/chess-openings/`. `build-openings.js` builds the client's `openings.json` from
+    them, and the new `server/app/openings.py` builds the server's book. Each takes every
+    position along a line, not just the named one at its end: 7,847 positions, and a test
+    pins that both sides count the same. Named positions keep their `[eco, name]`;
+    positions passed through map to `null`.
+  - **Docker.** The image never built `openings.json`, so a deploy from a clean checkout
+    had no opening names. The Dockerfile now runs the script.
+- **Grading uses winning chances, not centipawns.** Black took a free bishop while 6.5
+  pawns up, and Review called it a mistake. A move is now graded by how much it lowers the
+  mover's win% (Lichess's curve, `win% = 100 / (1 + e^(-0.00368208·cp))`).
+  - **Thresholds:** 1, 2.5, 5 and 10 points. They were picked so a level position grades
+    as the old 10/25/50/100 cp bars did. A pawn given away at +6.5 is now an inaccuracy
+    at most.
+  - **Shared rule.** The rule lives in `shared/classification.json`. A rewritten
+    conformance table (37 cases, plus the win% curve) runs through both
+    `classify_move` and `classifyMove`.
+- **Mates are kept, not clamped away.** Once mate was on the board, every move graded
+  Best (both evals sat at ±10), so Review printed "26. Rcd1 Best — best was b4".
+  - **Storage:** `mate_before`/`mate_after` are stored beside the clamped evals. Mate 0
+    means a mate on the board; the eval says whose.
+  - **Grading follows Lichess's mate rules, from the mover's side:**
+    - a mate that gets closer is best; one that is delayed is good;
+    - hastening your own mate is an inaccuracy;
+    - throwing a mate away, or walking into one, is graded by how much was left.
+  - **Live play** tracks the mate the same way.
+  - **Review wording:** when a move graded best or book differs from the engine's pick,
+    Review now says "the engine's pick was" instead of "best was".
+- **The deflection false positive is gone** (`motifs.py` and the `liveMotifs.ts` port, in
+  step). The bad case was 21. Bxc8, a plain bishop trade, tagged as deflecting the b7
+  pawn. A deflection now needs two things:
+  - the hitting piece must be safe where it lands;
+  - the defender must be unable to stay: hit by a cheaper piece, or worth at least what
+    it guards.
+
+  The shared suite gains three near-misses, among them the game position itself. It
+  turned out one of its positive cases was a false positive too: after c6, the guarded
+  knight on e5 simply takes the pawn. That case now has a pawn on b5 holding c6.
+- **Puzzle hints name the pieces.** The step-4 reason uses `explainMotif` on the position
+  the move is played in ("the queen on e5 is left undefended"). It falls back to the
+  template for Lichess themes outside the taxonomy, and for later moves of a line.
+- **The engine's answers are their own reveal.** "Stockfish prefers X" used to end every
+  coach sentence, and the Ideas chips (the engine's top three lines) sat beside it. Both
+  were on screen before any thinking had happened.
+  - **The Engine row:** under the coach, it asks you to pick your move first. Its "Show its
+    pick" button reveals the preference and the Ideas chips together, and resets each move.
+  - **Where it shows:** Full only, while either the Coach or the Ideas toggle is on.
+- **Review's arrows:** the played move is drawn red only when it cost something. A book
+  move, or a move graded best or good that differs from the engine's pick, gets a quiet
+  grey arrow beside the green one.
+- **Endgame captured-piece rows** counted every piece missing from a drill position as
+  captured. `Board` takes a `startFen`, and the drill screen passes its own.
+- **Existing games** keep their grades. `scripts/retag.py` now re-grades from the stored
+  evals before re-tagging. It applies book and win% grading; games analyzed before mates
+  were stored are graded on their clamped evals alone.
+- **Testing:**
+  - The conformance table runs on both sides, along with server `test_openings.py` and
+    `test_regrade.py`.
+  - The engine-marked analysis tests now pin Qxf7# as mate 0 and graded best, …Nf6 as a
+    blunder, and 1.e4 as book.
+  - New `PlaySession` cases cover a book move and a hastened mate at the clamp.
+  - The motif parity suite gained three cases.
+  - Browser specs cover:
+    - the e4 badge reading "book";
+    - the hint ladder naming the queen on e5;
+    - the engine row's reveal, which brings the Ideas chips with it and is absent in
+      Nudge and Off;
+    - empty captured rows at the start of a drill.
+  - **One spec depended on the engine.** The narrow-screen Ideas check asserted that the
+    three chips wrapped onto a second row. When the engine's top three are e4, d4 and c4
+    (all "Space") they fit on one row. It now asserts the container's `flex-wrap`
+    instead.
+  - **Results:** vitest 481 passed, pytest 604 passed. Playwright full suite: 89 of 90
+    passed, and the one failure was the engine-dependent spec above, which passes after
+    the fix.
+
+---
+
 ## Addendum — Notation you can point at (2026-10-03)
 
 **Goal:** the coaching text names moves and squares ("Black threatens …Bxd1, winning

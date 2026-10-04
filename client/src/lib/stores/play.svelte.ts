@@ -7,9 +7,15 @@ import {
 	startGame,
 	takeBackMoves
 } from '$lib/api/client';
-import { classifyMove, clampEval, EVAL_CLAMP_CP, type Classification } from '$lib/classification';
+import {
+	classifyMove,
+	clampEval,
+	EVAL_CLAMP_CP,
+	type Classification,
+	type GradedEval
+} from '$lib/classification';
 import { engineName } from '$lib/engine';
-import { loadOpenings, openingForFens, openingsReady } from '$lib/openings';
+import { inBook, loadOpenings, openingForFens, openingsReady } from '$lib/openings';
 import { passTurn, type EngineScore } from '$lib/threats';
 import { GameStore, type PlayedMove } from './game.svelte';
 import { soundPrefs } from './soundPrefs.svelte';
@@ -50,6 +56,12 @@ const ENGINE_REPLY_ATTEMPTS = 2;
 function normalizeEval(result: EngineEval): number {
 	if (result.mate !== undefined) return result.mate > 0 ? EVAL_CLAMP_CP : -EVAL_CLAMP_CP;
 	return clampEval(result.cp ?? 0);
+}
+
+/** What grading needs from a search: the clamped eval, and the forced mate
+ * the clamp would otherwise hide. */
+function gradedEval(result: EngineEval): GradedEval {
+	return { cp: normalizeEval(result), mate: result.mate ?? null };
 }
 
 /** Orchestrates one live game: board state, engine opponent, live move
@@ -118,7 +130,8 @@ export class PlaySession {
 		return this.game.moves.length > 0;
 	}
 
-	private baselineEval = 0;
+	/** The eval each badge is graded against: the position before the move. */
+	private baseline: GradedEval = { cp: 0 };
 	private pendingBestMove: string | null = null;
 	private initialEval: EngineEval | null = null;
 	private chain: Promise<void> = Promise.resolve();
@@ -158,7 +171,7 @@ export class PlaySession {
 		this.currentEval = saved.currentEval;
 		// currentEval is the eval after the last evaluated ply — the right
 		// baseline until start() re-evaluates the position at full depth
-		this.baselineEval = saved.currentEval ?? 0;
+		this.baseline = { cp: saved.currentEval ?? 0 };
 		this.serverGameId = saved.serverGameId;
 		this.completedGameId = saved.completedGameId;
 		this.completedGameNumber = saved.completedGameNumber;
@@ -316,7 +329,7 @@ export class PlaySession {
 			return;
 		}
 		this.initialEval = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH, IDEAS_MULTIPV);
-		this.baselineEval = normalizeEval(this.initialEval);
+		this.baseline = gradedEval(this.initialEval);
 		this.pendingBestMove = this.initialEval.bestMove;
 		this.seedFromInitial();
 		this.engineReady = true;
@@ -339,7 +352,7 @@ export class PlaySession {
 		const userToMove = this.game.turnColor === this.playerColor;
 		const result = await stockfish.evaluate(fen, LIVE_EVAL_DEPTH, userToMove ? IDEAS_MULTIPV : 1);
 		if (this.game.fen !== fen) return;
-		this.baselineEval = normalizeEval(result);
+		this.baseline = gradedEval(result);
 		this.pendingBestMove = result.bestMove;
 		this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
 		if (userToMove) {
@@ -428,14 +441,20 @@ export class PlaySession {
 	 * classification compares it to the baseline captured at execution time. */
 	private async evaluatePly(played: PlayedMove, badge: boolean): Promise<void> {
 		const boardEpoch = this.boardEpoch;
-		const evalBefore = this.baselineEval;
+		const before = this.baseline;
 		const bestBefore = this.pendingBestMove;
 
-		let evalAfter: number;
+		let after: GradedEval;
 		if (this.game.boardGameOver) {
-			// terminal positions aren't searchable — same rule as the server
+			// terminal positions aren't searchable — same rule as the server:
+			// a mate on the board is mate 0 at the clamp for whoever gave it
 			const result = this.game.result;
-			evalAfter = result === '1-0' ? EVAL_CLAMP_CP : result === '0-1' ? -EVAL_CLAMP_CP : 0;
+			after =
+				result === '1-0'
+					? { cp: EVAL_CLAMP_CP, mate: 0 }
+					: result === '0-1'
+						? { cp: -EVAL_CLAMP_CP, mate: 0 }
+						: { cp: 0 };
 			this.pendingBestMove = null;
 			this.insightEval = null;
 			this.ideas = null;
@@ -448,24 +467,22 @@ export class PlaySession {
 			// A takeback landed while this search ran: the ply it describes is
 			// off the board now, so none of it may be written back.
 			if (boardEpoch !== this.boardEpoch) return;
-			evalAfter = normalizeEval(result);
+			after = gradedEval(result);
 			this.pendingBestMove = result.bestMove;
 			this.insightEval = { cp: result.cp, mate: result.mate, depth: result.depth };
 			if (!badge) this.ideas = { fen: played.fenAfter, lines: result.lines };
 		}
 
-		this.baselineEval = evalAfter;
-		this.evals[played.ply - 1] = evalAfter;
-		this.currentEval = evalAfter;
+		this.baseline = after;
+		this.evals[played.ply - 1] = after.cp;
+		this.currentEval = after.cp;
 
 		if (badge) {
 			const moverIsWhite = played.fenBefore.split(' ')[1] !== 'b';
-			const classification = classifyMove(
-				evalBefore,
-				evalAfter,
-				moverIsWhite,
-				played.uci === bestBefore
-			);
+			const classification = classifyMove(before, after, moverIsWhite, {
+				playedIsBest: played.uci === bestBefore,
+				inBook: inBook(played.fenAfter)
+			});
 			this.badges[played.ply - 1] = classification;
 			this.lastFeedback = { ply: played.ply, san: played.san, classification };
 		}
@@ -682,7 +699,7 @@ export class PlaySession {
 		this.persistable = true;
 		soundPrefs.play('game-start');
 		if (this.initialEval) {
-			this.baselineEval = normalizeEval(this.initialEval);
+			this.baseline = gradedEval(this.initialEval);
 			this.pendingBestMove = this.initialEval.bestMove;
 			this.seedFromInitial();
 		} else if (this.engineReady) {
@@ -691,7 +708,7 @@ export class PlaySession {
 			// right even if the user moves immediately
 			this.inChain(async () => {
 				this.initialEval = await stockfish.evaluate(START_FEN, LIVE_EVAL_DEPTH, IDEAS_MULTIPV);
-				this.baselineEval = normalizeEval(this.initialEval);
+				this.baseline = gradedEval(this.initialEval);
 				this.pendingBestMove = this.initialEval.bestMove;
 				if (this.game.moves.length === 0) this.seedFromInitial();
 			});

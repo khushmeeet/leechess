@@ -5,6 +5,7 @@
 	import AccountGate from '$lib/components/AccountGate.svelte';
 	import Board from '$lib/components/Board.svelte';
 	import HintLadder, { type HintContent } from '$lib/components/HintLadder.svelte';
+	import { explainMotif } from '$lib/liveMotifs';
 	import { humanizeMotif, motifReason } from '$lib/motifs';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import { PuzzleSession } from '$lib/stores/puzzle.svelte';
@@ -38,7 +39,10 @@
 			category: 'There’s a tactic in this position.',
 			motif: humanizeMotif(puzzle.motif),
 			moveSan: next.san,
-			reason: motifReason(puzzle.motif, next.san),
+			// the pieces and squares this move works on, when the detector can
+			// show the motif on this move; the template for themes it can't
+			// (a Lichess theme outside the taxonomy, a later move of the line)
+			reason: explainMotif(next.fen, next.uci, puzzle.motif) ?? motifReason(puzzle.motif, next.san),
 			line: session.solutionSans
 		};
 	});

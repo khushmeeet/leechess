@@ -156,6 +156,7 @@
 				lastMove={session.game.lastMove}
 				{movableColor}
 				orientation={session.playerColor}
+				startFen={session.drill?.fen}
 				onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 			/>
 		</div>

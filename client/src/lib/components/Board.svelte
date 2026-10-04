@@ -46,6 +46,11 @@
 		 * — the piece a move or square in the coaching text names, while the
 		 * player points at it. */
 		highlights?: Map<Key, string>;
+		/** The position the game started from, for the captured-piece rows: a
+		 * piece counts as taken only if it was on the board then. Defaults to
+		 * the standard set — an endgame drill starts with most of it gone,
+		 * and none of that was ever captured. */
+		startFen?: string;
 		/** Bump to force a resync even when no prop changed — needed to snap
 		 * a piece back after a legal-but-rejected move (wrong puzzle answer),
 		 * where the FEN stays the same but chessground moved the piece. */
@@ -65,6 +70,7 @@
 		viewOnly = false,
 		autoShapes = [],
 		highlights,
+		startFen,
 		syncKey = 0,
 		onmove
 	}: Props = $props();
@@ -118,25 +124,32 @@
 		return (orientation === 'white' ? 9 - rank : rank) === 1;
 	});
 
-	const eliminated = $derived.by((): Record<PieceColor, PieceRole[]> => {
-		const remaining: Record<PieceColor, PieceCounts> = {
+	function pieceCounts(placementFen: string): Record<PieceColor, PieceCounts> {
+		const counts: Record<PieceColor, PieceCounts> = {
 			white: { queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0 },
 			black: { queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0 }
 		};
-
-		for (const symbol of fen.split(' ')[0]) {
+		for (const symbol of placementFen.split(' ')[0]) {
 			const role = FEN_ROLES[symbol.toLowerCase()];
 			if (!role) continue;
 			const color = symbol === symbol.toUpperCase() ? 'white' : 'black';
-			remaining[color][role] += 1;
+			counts[color][role] += 1;
 		}
+		return counts;
+	}
+
+	const eliminated = $derived.by((): Record<PieceColor, PieceRole[]> => {
+		const remaining = pieceCounts(fen);
+		const started = startFen
+			? pieceCounts(startFen)
+			: { white: INITIAL_COUNTS, black: INITIAL_COUNTS };
 
 		return Object.fromEntries(
 			(['white', 'black'] as const).map((color) => [
 				color,
 				(Object.keys(INITIAL_COUNTS) as PieceRole[]).flatMap((role) =>
 					Array.from(
-						{ length: Math.max(0, INITIAL_COUNTS[role] - remaining[color][role]) },
+						{ length: Math.max(0, started[color][role] - remaining[color][role]) },
 						() => role
 					)
 				)

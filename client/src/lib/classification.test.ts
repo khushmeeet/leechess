@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import cases from '../../../shared/classification-cases.json';
-import { BADGE_STYLES, EVAL_CLAMP_CP, clampEval, classifyMove } from './classification';
+import {
+	BADGE_STYLES,
+	EVAL_CLAMP_CP,
+	clampEval,
+	classifyMove,
+	winPercent,
+	type Classification
+} from './classification';
 
 // The same table server/tests/test_classification.py runs. Both
 // implementations read shared/classification.json for the thresholds, but
@@ -12,15 +19,24 @@ describe('classifyMove (shared conformance table)', () => {
 	for (const testCase of cases.cases) {
 		it(testCase.why, () => {
 			expect(
-				classifyMove(
-					testCase.evalBefore,
-					testCase.evalAfter,
-					testCase.moverIsWhite,
-					testCase.playedIsBest ?? false
-				)
+				classifyMove(testCase.before, testCase.after, testCase.moverIsWhite, {
+					playedIsBest: testCase.playedIsBest ?? false,
+					inBook: testCase.inBook ?? false
+				})
 			).toBe(testCase.expected);
 		});
 	}
+
+	it('covers every label, both movers, and every rule', () => {
+		const labels = new Set(cases.cases.map((testCase) => testCase.expected));
+		expect(labels).toEqual(new Set(Object.keys(BADGE_STYLES)));
+		expect(new Set(cases.cases.map((testCase) => testCase.moverIsWhite))).toEqual(
+			new Set([true, false])
+		);
+		expect(cases.cases.some((testCase) => testCase.playedIsBest)).toBe(true);
+		expect(cases.cases.some((testCase) => testCase.inBook)).toBe(true);
+		expect(cases.cases.some((testCase) => 'mate' in testCase.before)).toBe(true);
+	});
 });
 
 describe('clampEval (shared conformance table)', () => {
@@ -35,9 +51,17 @@ describe('clampEval (shared conformance table)', () => {
 	});
 });
 
+describe('winPercent (shared conformance table)', () => {
+	for (const testCase of cases.winPercentCases) {
+		it(testCase.why, () => {
+			expect(winPercent(testCase.cp)).toBeCloseTo(testCase.expected, 3);
+		});
+	}
+});
+
 describe('BADGE_STYLES', () => {
 	it('styles every label the classifier can return', () => {
-		const labels = new Set(cases.cases.map((testCase) => testCase.expected));
-		expect(new Set(Object.keys(BADGE_STYLES))).toEqual(labels);
+		const labels: Classification[] = ['book', 'best', 'good', 'inaccuracy', 'mistake', 'blunder'];
+		expect(new Set(Object.keys(BADGE_STYLES))).toEqual(new Set(labels));
 	});
 });

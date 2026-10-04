@@ -94,7 +94,7 @@ describe('explainMotif', () => {
 		],
 		[
 			'deflection',
-			'6k1/3n4/8/2P1n3/8/8/8/4R1K1 w - - 0 1',
+			'6k1/3n4/8/1PP1n3/8/8/8/4R2K w - - 0 1',
 			'c5c6',
 			'deflection',
 			'the knight on d7 has to move, and it is the only piece guarding the knight on e5'

@@ -29,6 +29,9 @@
 		/** Coach row renders when true; a null sentence shows a pending dash. */
 		showCoach: boolean;
 		coach: string | null;
+		/** The engine's own pick, behind its own reveal — under the coach,
+		 * whose sentence used to carry it. */
+		enginePick?: Snippet;
 		showIdeas: boolean;
 		ideas: Idea[];
 		gameOver: boolean;
@@ -49,6 +52,7 @@
 		takeback,
 		showCoach,
 		coach,
+		enginePick,
 		showIdeas,
 		ideas,
 		gameOver,
@@ -131,6 +135,8 @@
 			{/if}
 		</div>
 	{/if}
+
+	{@render enginePick?.()}
 
 	{#if showIdeas}
 		<div class="panel-row" data-testid="ideas-row">

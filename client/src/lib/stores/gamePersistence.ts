@@ -34,7 +34,7 @@ export interface SavedGame {
 	completedGameNumber: number | null;
 }
 
-const CLASSIFICATIONS = new Set(['best', 'good', 'inaccuracy', 'mistake', 'blunder']);
+const CLASSIFICATIONS = new Set(['book', 'best', 'good', 'inaccuracy', 'mistake', 'blunder']);
 
 function isNumberOrNull(value: unknown): value is number | null {
 	return value === null || typeof value === 'number';

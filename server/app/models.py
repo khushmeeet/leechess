@@ -144,6 +144,11 @@ class Move(Base):
     # Populated by the Phase 1 analysis job; nullable until then.
     eval_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     eval_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # A forced mate beside each eval, moves to mate signed for White (0: mate
+    # on the board, the clamped eval says whose). The evals sit at the clamp
+    # either way; grading needs to know a mate from a big advantage.
+    mate_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mate_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classification: Mapped[str | None] = mapped_column(String, nullable=True)
     best_move: Mapped[str | None] = mapped_column(String, nullable=True)
     # The opponent's threat in fen_before: what the other side would play if

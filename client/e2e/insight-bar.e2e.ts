@@ -33,7 +33,9 @@ test('ideas and coach stay inside the panel on a narrow screen', async ({ page }
 	await page.goto('/');
 	await waitForEngineReady(page);
 
-	// warmup eval is MultiPV 3: idea chips + coach line for white's first move
+	// warmup eval is MultiPV 3: idea chips + coach line for white's first move,
+	// the chips behind the engine row's button
+	await page.getByTestId('engine-reveal').click();
 	const ideaButtons = page.getByTestId('ideas-row').locator('button');
 	await expect(ideaButtons).toHaveCount(3);
 	for (const button of await ideaButtons.all()) {
@@ -59,12 +61,15 @@ test('ideas and coach stay inside the panel on a narrow screen', async ({ page }
 	expect(scroll.scrollWidth).toBeLessThanOrEqual(scroll.clientWidth);
 	expect(barBox.x + barBox.width).toBeLessThanOrEqual(377);
 
-	// the chips really did wrap rather than all fitting by luck — otherwise
-	// this test would keep passing if flex-wrap were removed
-	const tops = await ideaButtons.evaluateAll((buttons) =>
-		buttons.map((button) => Math.round(button.getBoundingClientRect().top))
-	);
-	expect(new Set(tops).size).toBeGreaterThan(1);
+	// the chips can wrap, so the checks above don't pass only because these
+	// three happened to fit. Whether they do depends on the engine's top three
+	// at the start — "e4 Space, d4 Space, c4 Space" fits on one row at this
+	// width, "Nf3 Develop kingside knight" doesn't — so the container's own
+	// rule is asserted, not where today's chips landed
+	const wraps = await ideaButtons
+		.first()
+		.evaluate((button) => getComputedStyle(button.parentElement!).flexWrap);
+	expect(wraps).toBe('wrap');
 
 	await expect(page.getByTestId('coach-line')).toContainText(
 		'Fight for the center and develop quickly.'
@@ -74,7 +79,9 @@ test('ideas and coach stay inside the panel on a narrow screen', async ({ page }
 
 test('coach and ideas toggles hide the rows and persist across reloads', async ({ page }) => {
 	await page.goto('/');
+	await waitForEngineReady(page);
 	await expect(page.getByTestId('coach-line')).toBeVisible();
+	await page.getByTestId('engine-reveal').click();
 	await expect(page.getByTestId('ideas-row')).toBeVisible();
 
 	await page.getByTestId('settings-button').click();
@@ -82,11 +89,14 @@ test('coach and ideas toggles hide the rows and persist across reloads', async (
 	await page.getByTestId('settings-menu').getByLabel('Ideas').uncheck();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
+	// with both off, nothing is left for the engine row to reveal
+	await expect(page.getByTestId('engine-row')).toBeHidden();
 
 	await page.reload();
 	await expect(page.getByTestId('insight-bar')).toBeVisible();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
+	await expect(page.getByTestId('engine-row')).toBeHidden();
 
 	await page.getByTestId('settings-button').click();
 	await expect(page.getByTestId('settings-menu').getByLabel('Coach')).not.toBeChecked();
@@ -104,6 +114,14 @@ test('tactic, coach and ideas share one panel, gated by the hint mode', async ({
 	// one panel, not two stacked cards — every row lives inside the bar
 	await expect(bar.getByTestId('tactic-row')).toBeVisible({ timeout: 15_000 });
 	await expect(bar.getByTestId('coach-line')).toBeVisible();
+
+	// the engine's answers are not part of the coach's sentence: its pick and
+	// its idea chips wait behind their own button, even in Full
+	await expect(bar.getByTestId('coach-line')).not.toContainText('Stockfish prefers');
+	await expect(bar.getByTestId('engine-pick')).toBeHidden();
+	await expect(bar.getByTestId('ideas-row')).toBeHidden();
+	await bar.getByTestId('engine-reveal').click();
+	await expect(bar.getByTestId('engine-pick')).toContainText('Stockfish prefers Nxh4.');
 	await expect(bar.getByTestId('ideas-row')).toBeVisible();
 
 	// Nudge: the ladder replaces the stated tactic, and the engine's answers go —
@@ -112,6 +130,7 @@ test('tactic, coach and ideas share one panel, gated by the hint mode', async ({
 	await expect(bar.getByTestId('hint-ladder')).toBeVisible();
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
+	await expect(page.getByTestId('engine-row')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
 
 	// Off is a real game: nothing but the opening, which is book knowledge
@@ -120,6 +139,7 @@ test('tactic, coach and ideas share one panel, gated by the hint mode', async ({
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
 	await expect(page.getByTestId('hint-ladder')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
+	await expect(page.getByTestId('engine-row')).toBeHidden();
 	await expect(page.getByTestId('ideas-row')).toBeHidden();
 	await expect(page.getByTestId('opening-name')).toBeVisible();
 });

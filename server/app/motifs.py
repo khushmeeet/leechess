@@ -254,24 +254,35 @@ def _discovered_attack(
 
 
 def _deflection(after: chess.Board, move: chess.Move) -> bool:
-    """The moved piece attacks an enemy defender that can't stay put (a
-    capture it can't answer, or an undefended hit), and that defender is the
-    sole guard of a valuable piece — so wherever it runs, the piece it was
-    holding falls."""
+    """The moved piece attacks an enemy defender that can't stay put, and that
+    defender is the sole guard of a valuable piece — so wherever it runs, the
+    piece it was holding falls.
+
+    "Can't stay put" means staying costs more than leaving: it is hit by a
+    cheaper piece, or it is undefended and worth at least what it guards. An
+    unguarded pawn holding a knight just stays — losing the pawn is the
+    cheaper answer. And the hit has to stick: a piece that can itself be
+    taken for free forces nothing (the false positive that tagged a plain
+    bishop trade, Bxc8 met by ...Rxc8, as a deflection of the b7 pawn)."""
     friendly = not after.turn
     enemy = after.turn
+    if not _is_safe(after, move.to_square):
+        return False
     for defender_sq in after.attacks(move.to_square):
         defender = after.piece_at(defender_sq)
         if defender is None or defender.color == friendly:
             continue
         if defender.piece_type == chess.KING or _is_safe(after, defender_sq):
             continue  # not our piece to deflect, or not actually forced away
+        hit_by_cheaper = _value(after.piece_at(move.to_square)) < _value(defender)
         for guarded_sq in chess.SquareSet(after.occupied_co[enemy]):
             guarded = after.piece_at(guarded_sq)
             if guarded_sq == defender_sq or guarded.piece_type == chess.KING:
                 continue
             if _value(guarded) < 3 or not after.attackers(friendly, guarded_sq):
                 continue
+            if not hit_by_cheaper and _value(defender) < _value(guarded):
+                continue  # cheaper to let the defender go than what it holds
             if _sole_defender(after, guarded_sq, defender_sq):
                 return True
     return False

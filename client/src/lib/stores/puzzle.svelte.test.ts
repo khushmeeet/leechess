@@ -140,13 +140,17 @@ describe('multi-ply solutions', () => {
 		// the reply beat means looking one move past the board.
 		const session = new PuzzleSession();
 		await session.load();
-		expect(session.nextPlayerMove).toEqual({ san: 'Qxg2+', uci: 'h3g2' });
+		const start = session.fen;
+		expect(session.nextPlayerMove).toEqual({ san: 'Qxg2+', uci: 'h3g2', fen: start });
 
 		session.handleBoardMove('h3', 'g2');
-		expect(session.nextPlayerMove).toEqual({ san: 'Rh2+', uci: 'h4h2' });
+		// the move is played after the reply, so that is the position named
+		const second = session.nextPlayerMove;
+		expect(second).toMatchObject({ san: 'Rh2+', uci: 'h4h2' });
+		expect(second?.fen).not.toBe(session.fen);
 
 		await vi.advanceTimersByTimeAsync(400);
-		expect(session.nextPlayerMove).toEqual({ san: 'Rh2+', uci: 'h4h2' });
+		expect(session.nextPlayerMove).toEqual({ ...second, fen: session.fen });
 	});
 
 	it('ignores board input while the opponent reply is still pending', async () => {
