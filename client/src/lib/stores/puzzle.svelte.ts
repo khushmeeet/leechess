@@ -2,7 +2,7 @@ import { Chess } from 'chess.js';
 import type { Key } from 'chessground/types';
 import { SvelteMap } from 'svelte/reactivity';
 import { ApiError, getNextPuzzle, recordAttempt, type PuzzleRecord } from '$lib/api/client';
-import { chancesFor } from '$lib/candidates';
+import { chancesFor, SIDESTEP_LOSS } from '$lib/candidates';
 import { playLine } from '$lib/lines';
 import { passTurn } from '$lib/threats';
 import { computeDests } from './game.svelte';
@@ -21,10 +21,12 @@ const REPLY_DELAY_MS = 350;
  * stored one at the same depth. */
 const DEFENCE_DEPTH = 12;
 /** A defence is accepted when the threat is gone and it keeps the solver's
- * winning chances within this many points of the stored answer — move
- * grading's inaccuracy bar. A defence puzzle asks for an answer to the
- * threat, and there is usually more than one. */
-const DEFENCE_MARGIN = 5;
+ * winning chances within this many points of the stored answer — the same
+ * bar Think first draws between a threat answered and one sidestepped into
+ * something worse. A defence puzzle asks for an answer to the threat, and
+ * there is usually more than one; a tighter bar made …Qe7 against …g6 a
+ * coin toss on engine depth. */
+const DEFENCE_MARGIN = SIDESTEP_LOSS;
 
 /** A move as written in a sentence: "…Qxf7#" for Black, "Qxf7#" for White. */
 function writtenSan(fenBefore: string, san: string): string {

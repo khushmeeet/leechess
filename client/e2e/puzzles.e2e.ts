@@ -198,6 +198,9 @@ test('a defence puzzle takes any move that deals with the threat, and says why o
 	page,
 	request
 }) => {
+	// four engine searches in the browser on top of a game analysis: more
+	// than the default budget on a small CI runner
+	test.setTimeout(60_000);
 	const gameId = await seedGame(request, scholarsMateSans, '1-0');
 	await waitForAnalysis(request, gameId);
 	const puzzle = await (await request.get(`${API}/puzzles/next?motif=defence`)).json();

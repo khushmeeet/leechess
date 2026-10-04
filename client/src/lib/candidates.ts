@@ -25,9 +25,10 @@ export const CRITICAL_GAP = 10;
 export const CLOSE_ENOUGH = 2.5;
 /** At most this many candidates are taken; two or three is the habit. */
 export const MAX_CANDIDATES = 3;
-/** A candidate that gets out of the threat but trails the engine's move by
- * this many win% points ran into something else — a mistake's worth. */
-const SIDESTEP_LOSS = 10;
+/** A move that gets out of the threat but trails the engine's move by this
+ * many win% points ran into something else — a mistake's worth. The bar
+ * between "answered" and "sidestepped", here and in defence puzzles. */
+export const SIDESTEP_LOSS = 10;
 
 /** An engine score (white's point of view) as the player's winning chances. */
 export function chancesFor(score: { cp?: number; mate?: number }, forWhite: boolean): number {

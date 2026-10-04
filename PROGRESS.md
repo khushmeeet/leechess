@@ -105,9 +105,14 @@ threat has one answer, which is the opposite of the habit the puzzle trains.
   browser engine searches the position after it and the position after the stored
   answer, both at depth 12, while the board waits ("Checking Qe7…").
   - **Accepted** when the threat is no longer their best reply and the move keeps the
-    solver's winning chances within 5 points of the stored answer (move grading's
-    inaccuracy bar). The puzzle is solved and recorded as correct: "Qe7 deals with it
-    too — the engine's answer was g6."
+    solver's winning chances within 10 points of the stored answer. That is the same
+    bar Think first draws between a threat answered and one sidestepped
+    (`SIDESTEP_LOSS`, now shared). The puzzle is solved and recorded as correct: "Qe7
+    deals with it too — the engine's answer was g6."
+  - **The first cut used 5 points**, move grading's inaccuracy bar. In a level position
+    …Qe7 and …g6 can differ by nearly that much, so acceptance depended on engine depth
+    and machine. On CI it failed the browser spec, which also needed 60 s for four
+    in-browser searches on a small runner.
   - **Refused** otherwise, with the reason in the retry box. Either "a6 leaves Qxf7# on
     the board", or, for a move that dodges the threat but loses more, "Nh6 gets out of
     it, but then their best is d4". It counts as a wrong try, as before.
