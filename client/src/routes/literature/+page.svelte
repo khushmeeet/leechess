@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import MiniBoard from '$lib/components/MiniBoard.svelte';
 	import { ERAS } from '$lib/literature/history';
 	import { GAMES } from '$lib/literature/games';
@@ -165,6 +166,11 @@
 					</summary>
 					<p class="mt-2 font-mono text-xs leading-relaxed break-words text-body">{game.pgn}</p>
 				</details>
+				<a
+					class="mt-2 mr-3 inline-block text-xs font-semibold text-accent hover:underline"
+					data-testid="guess-link"
+					href={resolve('/literature/guess/[gameId]', { gameId: game.id })}>Guess the moves →</a
+				>
 				<a
 					class="mt-2 inline-block text-xs text-faint hover:text-accent"
 					href={game.source}

@@ -14,6 +14,50 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Guess the move through the landmark games (2026-10-04)
+
+**Goal:** Literature's landmark games could only be read. Guessing each move before seeing
+the master's is the classic way to think through a game, and it ties the reading material
+to the thinking the rest of the app trains.
+
+- **Where.** Each game card on Literature has a "Guess the moves" link to
+  `/literature/guess/[gameId]`. You play the winner's side by default; a toggle switches to
+  the other player. The other side's moves play themselves.
+- **Scoring** (`$lib/guess.ts`). A guess is weighed against the master's move by the
+  browser engine, both at depth 12, and scored by how far the guesser's winning chances
+  fall short. The bands are move grading's:
+
+  | Shortfall in win% points | Points |
+  |---|---|
+  | the master's move, or under 1 point | 5 |
+  | up to 2.5 | 4 |
+  | up to 5 | 3 |
+  | up to 10 | 1 |
+  | more | 0 |
+
+  A different move that is as good scores as well as the master's. The point is finding
+  good moves, not memorizing one game. In the Immortal Game, 2. Nf3 keeps 53% against
+  Anderssen's 2. f4 at 44%, and scores 5.
+- **The flow** (`GuessSession` in `stores/guess.svelte.ts`):
+  - **Guess:** make a move on the board.
+  - **Reveal:** the master's move is played, with the guess as a grey arrow beside the
+    master's green one, and a sentence like "Nc3 keeps 52%; Morphy's Nf3 keeps 55%.
+    3 points."
+  - **Next move:** plays the reply and moves on to the next guess.
+  - **Show the move:** gives the answer for no points.
+  - **The end:** a summary of points and exact matches. Nothing is stored.
+- **Testing:**
+  - `guess.test.ts` covers reading a game score, the bands including the sub-1-point
+    case, and the sentences.
+  - `guess.svelte.test.ts` mocks the engine. It covers starting on the player's first
+    move, an exact guess (no engine call), a weighed guess from the guesser's side, and
+    skipping to the end.
+  - `guess.e2e.ts` covers the Opera Game: an exact guess, a weighed one, a shown one, and
+    the score; also playing Black.
+  - **Results:** Playwright guess and literature specs, 3 passed.
+
+---
+
 ## Addendum — Defence puzzles from your own games (2026-10-04)
 
 **Goal:** the puzzle generator made attacking puzzles only: punish the blunder, or find the
