@@ -47,6 +47,15 @@ def test_analysis_job_fills_every_move(client, clientside_game):
     # eval chain is continuous: eval_after of ply N is eval_before of ply N+1
     for prev, nxt in zip(moves, moves[1:], strict=False):
         assert prev["eval_after"] == nxt["eval_before"]
+        # ...and so are the lines: what follows move N is move N+1's best
+        assert prev["reply_line"] == nxt["best_line"]
+    for move in moves:
+        line = move["best_line"].split()
+        assert line[0] == move["best_move"], move["san"]
+        # the stored line is a legal sequence from the position it belongs to
+        board = chess.Board(move["fen_before"])
+        for uci in line:
+            board.push_uci(uci)
     # every position got a threat search, except where the mover was in check
     for move in moves:
         in_check = chess.Board(move["fen_before"]).is_check()
@@ -93,6 +102,7 @@ def test_analysis_of_checkmate_game(client):
     # mate on the board stored as mate 0 — and the mating move grades best
     assert last["eval_after"] == EVAL_CLAMP_CP
     assert last["mate_after"] == 0
+    assert last["reply_line"] is None  # nothing follows a mate
     assert last["classification"] == "best"
     # the forced mate rides beside the clamped evals, continuous like them
     assert last["mate_before"] == 1

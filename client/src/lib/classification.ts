@@ -29,6 +29,22 @@ export function winPercent(cp: number): number {
 	return 50 + 50 * (2 / (1 + Math.exp(-WIN_PERCENT_K * clampEval(cp))) - 1);
 }
 
+/** One side's winning chances in percent for an eval, with a forced mate
+ * counted as certain — what Review shows beside each move. */
+export function winChances(evaluation: GradedEval, forWhite: boolean): number {
+	const white =
+		evaluation.mate !== undefined && evaluation.mate !== null
+			? evaluation.mate === 0
+				? evaluation.cp > 0
+					? 100
+					: 0
+				: evaluation.mate > 0
+					? 100
+					: 0
+			: winPercent(evaluation.cp);
+	return forWhite ? white : 100 - white;
+}
+
 /** An eval as stored: clamped centipawns, white's point of view, plus the
  * forced mate when there is one — moves to mate, signed for White like the
  * engine reports it. 0 is a mate already on the board; the centipawns (at

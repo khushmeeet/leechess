@@ -1,6 +1,6 @@
 import { type APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { API, gameNumber, scholarsMateSans } from './helpers';
+import { API, boardPosition, gameNumber, move, scholarsMateSans } from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end
 // (real Stockfish, low depth via LEECHESS_ANALYSIS_DEPTH in the e2e server),
@@ -180,4 +180,53 @@ test('board shows each color’s eliminated pieces on its side', async ({ page, 
 	await expect(rows.last()).toHaveAttribute('data-testid', 'eliminated-white');
 	await expect(page.getByTestId('eliminated-black').locator('piece.pawn.black')).toHaveCount(1);
 	await expect(page.getByTestId('eliminated-white').locator('piece.pawn.white')).toHaveCount(1);
+});
+
+test('the lines from a move can be stepped through, and a move of your own weighed', async ({
+	page,
+	request
+}) => {
+	const gameId = await seedCompletedGame(request);
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`${API}/games/${gameId}/review`)).json()).analysis_status,
+			{
+				timeout: 60_000
+			}
+		)
+		.toBe('complete');
+
+	// 3…Nf6?? — the move that let Qxf7# in
+	await page.goto(`/review/${gameId}?ply=6`);
+	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
+	await expect(page.getByTestId('review-chances')).toContainText('Black’s winning chances');
+	await expect(page.getByTestId('review-chances')).toContainText('→ 0%'); // mated
+	await expect(page.getByTestId('engine-line').getByTestId('line-move').first()).toBeVisible();
+	const played = page.getByTestId('played-line').getByTestId('line-move');
+	await expect(played).toHaveText(['Nf6', 'Qxf7#']);
+
+	// a move of the line puts its position on the board, and back again
+	const decision = await boardPosition(page);
+	await played.nth(1).click();
+	await expect(played.nth(1)).toHaveAttribute('aria-pressed', 'true');
+	await expect.poll(() => boardPosition(page)).not.toBe(decision);
+	await page.getByTestId('preview-exit').click();
+	await expect.poll(() => boardPosition(page)).toBe(decision);
+
+	// "what if": …g6 shuts the queen out, and the engine weighs it
+	await page.getByTestId('explore-start').click();
+	await expect(page.getByTestId('explore-panel')).toBeVisible();
+	await move(page, 'g7', 'g6');
+	await expect(page.getByTestId('explore-moves')).toContainText('g6');
+	const verdict = page.getByTestId('explore-verdict');
+	await expect(verdict).toContainText('Black’s winning chances', { timeout: 30_000 });
+	await expect(verdict).toContainText('in the game, Nf6 left 0%');
+	await expect(page.getByTestId('explore-answer').getByTestId('line-move').first()).toBeVisible();
+
+	await page.getByTestId('explore-undo').click();
+	await expect(page.getByTestId('explore-moves')).toBeHidden();
+	await page.getByTestId('explore-exit').click();
+	await expect(page.getByTestId('review-lines')).toBeVisible();
+	await expect.poll(() => boardPosition(page)).toBe(decision);
 });

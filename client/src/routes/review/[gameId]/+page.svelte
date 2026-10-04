@@ -12,8 +12,12 @@
 		type MoveRecord,
 		type WikibookPage
 	} from '$lib/api/client';
-	import type { Classification } from '$lib/classification';
+	import { winChances, type Classification } from '$lib/classification';
 	import Board from '$lib/components/Board.svelte';
+	import MoveLine from '$lib/components/MoveLine.svelte';
+	import { lineText, parseLine, playLine, sanToUci, type LineMove } from '$lib/lines';
+	import { computeDests } from '$lib/stores/game.svelte';
+	import { stockfish } from '$lib/stores/stockfish';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import CplGraph from '$lib/components/CplGraph.svelte';
 	import WikiBookPanel from '$lib/components/WikiBookPanel.svelte';
@@ -123,6 +127,118 @@
 
 	const selectedMove = $derived(game?.moves[selectedPly - 1] ?? null);
 
+	// The two lines from the decision under review, as stored by the analysis
+	// job: what the engine wanted, and what followed the move that was
+	// played. Either can be stepped through on the board.
+	const playedUci = $derived(
+		selectedMove ? sanToUci(selectedMove.fen_before, selectedMove.san) : null
+	);
+	const engineLine = $derived(
+		selectedMove ? playLine(selectedMove.fen_before, parseLine(selectedMove.best_line)) : []
+	);
+	const playedLine = $derived(
+		selectedMove && playedUci
+			? playLine(selectedMove.fen_before, [playedUci, ...parseLine(selectedMove.reply_line)])
+			: []
+	);
+	const playedWasEngines = $derived(engineLine[0]?.uci === playedUci);
+
+	/** The mover's winning chances before and after the selected move. */
+	const chances = $derived.by(() => {
+		const move = selectedMove;
+		if (!move || move.eval_before === null || move.eval_after === null) return null;
+		const white = move.ply % 2 === 1;
+		return {
+			side: white ? 'White' : 'Black',
+			before: winChances({ cp: move.eval_before, mate: move.mate_before }, white),
+			after: winChances({ cp: move.eval_after, mate: move.mate_after }, white)
+		};
+	});
+
+	// A position from one of the lines, on the board in place of the
+	// decision: which line, and how far along it.
+	let preview = $state<{ line: 'engine' | 'played'; index: number } | null>(null);
+	const previewMove = $derived.by((): LineMove | null => {
+		if (!preview) return null;
+		return (preview.line === 'engine' ? engineLine : playedLine)[preview.index] ?? null;
+	});
+
+	// "What if I'd played…?": from the decision, the player makes moves of
+	// their own (for both sides) and the browser engine weighs each position.
+	interface Exploration {
+		startFen: string;
+		moves: LineMove[];
+		/** The engine's view of the current position, once it has one. */
+		verdict: { chances: number; forWhite: boolean; line: LineMove[] } | null;
+	}
+	let explore = $state<Exploration | null>(null);
+	let exploreEpoch = 0;
+	const exploreFen = $derived(
+		explore ? (explore.moves.at(-1)?.fenAfter ?? explore.startFen) : null
+	);
+
+	function startExploring() {
+		if (!selectedMove) return;
+		preview = null;
+		exploreEpoch += 1;
+		explore = { startFen: selectedMove.fen_before, moves: [], verdict: null };
+	}
+
+	function stopExploring() {
+		exploreEpoch += 1;
+		explore = null;
+	}
+
+	async function weigh(fen: string) {
+		const epoch = exploreEpoch;
+		const chess = new Chess(fen);
+		const lastMover = chess.turn() === 'w' ? 'b' : 'w';
+		if (chess.isGameOver()) {
+			const mated = chess.isCheckmate();
+			if (explore) {
+				explore.verdict = {
+					chances: mated ? 100 : 50,
+					forWhite: lastMover === 'w',
+					line: []
+				};
+			}
+			return;
+		}
+		const result = await stockfish.evaluate(fen, 14, 1);
+		if (epoch !== exploreEpoch || !explore || exploreFen !== fen) return;
+		const forWhite = lastMover === 'w';
+		explore.verdict = {
+			chances: winChances(
+				{ cp: result.cp ?? (result.mate! > 0 ? 1000 : -1000), mate: result.mate ?? null },
+				forWhite
+			),
+			forWhite,
+			// the stored lines' length: past that the tail is noise
+			line: playLine(fen, (result.lines[0]?.pvUci ?? [result.bestMove]).slice(0, 10))
+		};
+	}
+
+	function exploreMove(orig: Key, dest: Key, promotion?: string) {
+		if (!explore || !exploreFen) return;
+		const [played] = playLine(exploreFen, [orig + dest + (promotion ?? '')]);
+		if (!played) return;
+		exploreEpoch += 1;
+		explore.moves = [...explore.moves, played];
+		explore.verdict = null;
+		void weigh(played.fenAfter);
+	}
+
+	function undoExplore() {
+		if (!explore || explore.moves.length === 0) return;
+		exploreEpoch += 1;
+		explore.moves = explore.moves.slice(0, -1);
+		explore.verdict = null;
+		const fen = explore.moves.at(-1)?.fenAfter;
+		if (fen) void weigh(fen);
+	}
+
+	const exploreDests = $derived(exploreFen ? computeDests(new Chess(exploreFen)) : undefined);
+
 	// Wikibooks opening theory for the game's move sequence, one page per
 	// ply until the line leaves the book. Off by default (Settings toggle);
 	// fetched once per game when enabled (the server caches upstream pages);
@@ -221,6 +337,25 @@
 	const shapes = $derived.by((): DrawShape[] => {
 		if (!selectedMove) return [];
 		const result: DrawShape[] = [];
+		// off the decision itself: the move that led here is the only arrow
+		const away = explore ? (explore.moves.at(-1) ?? null) : previewMove;
+		if (explore || previewMove) {
+			if (away) {
+				result.push({
+					orig: away.uci.slice(0, 2) as Key,
+					dest: away.uci.slice(2, 4) as Key,
+					brush: 'paleBlue'
+				});
+			}
+			if (notationTarget?.kind === 'move') {
+				result.push({
+					orig: notationTarget.from as Key,
+					dest: notationTarget.to as Key,
+					brush: 'blue'
+				});
+			}
+			return result;
+		}
 		// drawn first so the played and best arrows sit on top where they cross
 		if (selectedThreat) {
 			result.push({
@@ -264,7 +399,11 @@
 	);
 
 	const boardFen = $derived(
-		selectedMove?.fen_before ?? game?.moves[0]?.fen_before ?? '8/8/8/8/8/8/8/8 w - - 0 1'
+		exploreFen ??
+			previewMove?.fenAfter ??
+			selectedMove?.fen_before ??
+			game?.moves[0]?.fen_before ??
+			'8/8/8/8/8/8/8/8 w - - 0 1'
 	);
 	const boardTurn = $derived(
 		boardFen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
@@ -284,6 +423,8 @@
 		selectedPly = Math.min(Math.max(1, ply), game.moves.length);
 		citedShape = null;
 		notationTarget = null;
+		preview = null;
+		stopExploring();
 	}
 
 	// Move references in the LLM texts ("4. Bc4") become board links.
@@ -463,13 +604,21 @@
 			     fit on screen without page scrolling (22rem ≈ the chrome above
 			     and below the board). -->
 			<div class="w-full" style="max-width: min(100%, clamp(20rem, 100dvh - 22rem, 36rem))">
-				<Board
-					fen={boardFen}
-					turnColor={boardTurn}
-					viewOnly
-					autoShapes={shapes}
-					highlights={notationHighlights}
-				/>
+				<!-- Keyed on exploring: chessground only binds its pointer events
+				     when a board is created movable, so a view-only board can't
+				     be switched to taking moves in place. -->
+				{#key explore !== null}
+					<Board
+						fen={boardFen}
+						turnColor={boardTurn}
+						viewOnly={!explore}
+						dests={exploreDests}
+						movableColor={explore ? boardTurn : undefined}
+						onmove={exploreMove}
+						autoShapes={shapes}
+						highlights={notationHighlights}
+					/>
+				{/key}
 			</div>
 
 			<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -577,6 +726,145 @@
 					{cause.what}
 					<span class="text-muted">Next time: {cause.habit}</span>
 				</p>
+			{/if}
+
+			{#if selectedMove && !explore}
+				<!-- The decision in winning chances, and the two lines from it: the
+				     engine's, and what followed the move played. Clicking a move
+				     shows its position; the player's own ideas go in "Try a move". -->
+				<div class="mt-3 flex flex-col gap-1.5 text-sm" data-testid="review-lines">
+					{#if chances}
+						<p class="text-body" data-testid="review-chances">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>Chances</span
+							>
+							{chances.side}’s winning chances:
+							<span class="font-semibold tabular-nums">{Math.round(chances.before)}%</span>
+							→
+							<span
+								class="font-semibold tabular-nums {chances.before - chances.after >= 10
+									? 'text-err'
+									: chances.before - chances.after >= 5
+										? 'text-mist'
+										: 'text-ok'}">{Math.round(chances.after)}%</span
+							>
+						</p>
+					{/if}
+					{#if engineLine.length > 0 && !playedWasEngines}
+						<p class="text-body" data-testid="review-engine-line">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>Engine</span
+							>
+							<MoveLine
+								moves={engineLine}
+								active={preview?.line === 'engine' ? preview.index : null}
+								onpick={(index) => (preview = { line: 'engine', index })}
+								onhover={(target) => (notationTarget = target)}
+								testid="engine-line"
+							/>
+						</p>
+					{/if}
+					{#if playedLine.length > 1 || (playedLine.length > 0 && selectedMove.reply_line)}
+						<p class="text-body" data-testid="review-played-line">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>{playedWasEngines ? 'Engine (your move)' : 'Your move'}</span
+							>
+							<MoveLine
+								moves={playedLine}
+								active={preview?.line === 'played' ? preview.index : null}
+								onpick={(index) => (preview = { line: 'played', index })}
+								onhover={(target) => (notationTarget = target)}
+								testid="played-line"
+							/>
+						</p>
+					{/if}
+					<div class="flex flex-wrap items-center gap-2">
+						{#if preview}
+							<button
+								type="button"
+								class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+								data-testid="preview-exit"
+								onclick={() => (preview = null)}
+							>
+								Back to the decision
+							</button>
+						{/if}
+						<button
+							type="button"
+							class="rounded-xs border border-accent-line px-2 py-0.5 text-xs font-semibold text-accent hover:bg-accent-soft"
+							data-testid="explore-start"
+							onclick={startExploring}
+						>
+							Try a move of your own
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			{#if selectedMove && explore}
+				{@const verdict = explore.verdict}
+				<div
+					class="mt-3 flex flex-col gap-1.5 rounded-xs border border-accent-line bg-accent-soft/40 p-3 text-sm"
+					data-testid="explore-panel"
+				>
+					<p class="text-body">
+						<span class="mr-1 text-xs font-semibold tracking-wide text-accent uppercase"
+							>What if</span
+						>
+						{#if explore.moves.length === 0}
+							Play the move you were thinking of on the board — the engine will weigh it.
+						{:else}
+							<MoveLine
+								moves={explore.moves}
+								onhover={(target) => (notationTarget = target)}
+								testid="explore-moves"
+							/>
+						{/if}
+					</p>
+					{#if explore.moves.length > 0}
+						<p class="text-body" data-testid="explore-verdict">
+							{#if verdict}
+								{verdict.forWhite ? 'White' : 'Black'}’s winning chances:
+								<span class="font-semibold tabular-nums">{Math.round(verdict.chances)}%</span>
+								{#if explore.moves.length === 1 && chances}
+									<span class="text-muted"
+										>— in the game, {selectedMove.san} left {Math.round(chances.after)}%.</span
+									>
+								{/if}
+								{#if verdict.line.length > 0}
+									<span class="block text-muted"
+										>Engine’s answer: <MoveLine
+											moves={verdict.line}
+											onhover={(target) => (notationTarget = target)}
+											testid="explore-answer"
+										/></span
+									>
+								{/if}
+							{:else}
+								<span class="text-faint">Weighing {lineText(explore.moves.slice(-1))}…</span>
+							{/if}
+						</p>
+					{/if}
+					<div class="flex flex-wrap gap-2">
+						<button
+							type="button"
+							class="rounded-xs border border-line bg-card px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper disabled:opacity-40"
+							data-testid="explore-undo"
+							disabled={explore.moves.length === 0}
+							onclick={undoExplore}
+						>
+							Undo
+						</button>
+						<button
+							type="button"
+							class="rounded-xs border border-line bg-card px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+							data-testid="explore-exit"
+							onclick={stopExploring}
+						>
+							Back to the game
+						</button>
+					</div>
+				</div>
 			{/if}
 
 			{#if selectedMove?.explanation}

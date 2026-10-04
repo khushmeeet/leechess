@@ -159,7 +159,8 @@ def _migrate_existing_tables(bind=None) -> None:
         # The forced mates beside the evals likewise: a game analyzed before
         # them keeps its grades, and scripts/retag.py re-grades it on its
         # clamped evals alone. Mistake causes are derived, and retag.py fills
-        # them in for older games too.
+        # them in for older games too. The engine lines need a re-analysis;
+        # Review simply shows none for a game analyzed before them.
         for column, sql_type in (
             ("threat_move", "VARCHAR"),
             ("threat_cp", "FLOAT"),
@@ -167,6 +168,8 @@ def _migrate_existing_tables(bind=None) -> None:
             ("mate_before", "INTEGER"),
             ("mate_after", "INTEGER"),
             ("mistake_cause", "VARCHAR"),
+            ("best_line", "VARCHAR"),
+            ("reply_line", "VARCHAR"),
         ):
             if column not in columns_of("moves"):
                 conn.execute(text(f"ALTER TABLE moves ADD COLUMN {column} {sql_type}"))

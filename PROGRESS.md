@@ -14,6 +14,58 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — An explorable Review (2026-10-04)
+
+**Goal:** Review was look-only. It showed the engine's first move as a green arrow and
+nothing about what followed, and the board could not answer "what if I'd played Nf3?"
+With the LLM off, a blunder's whole explanation was that arrow.
+
+- **Lines are stored.** The analysis job keeps two principal variations per move, 10 plies
+  each, as space-separated UCI. No extra search is needed, since each position is
+  searched once already.
+  - `best_line` starts from `fen_before`: the line the engine wanted. Its first move is
+    `best_move`.
+  - `reply_line` starts from `fen_after`: what follows the move played. It equals the
+    next move's `best_line`, and is null after a game's last move.
+
+  Older games show no lines until re-analyzed.
+- **Review shows the decision three ways** under the selected move:
+  - **Chances:** the mover's winning chances before and after, e.g. "White's winning
+    chances: 37% → 8%". This uses the same curve the grading uses, with a forced mate
+    counted as certain (`winChances` in `classification.ts`).
+  - **Engine:** the engine's line with move numbers ("21. Bxc8 Raxc8 22. Qd3 …").
+  - **Your move:** the played move followed by its reply line ("21. Be6 Bxe6 22. Qc3 …").
+    When the move was the engine's own, one line is shown.
+
+  Clicking any move of either line puts its position on the board, with that move's
+  arrow, and "Back to the decision" returns. Pointing at a move lights it up, as the
+  notation in coaching text does. `MoveLine.svelte` renders the lines from
+  `$lib/lines.ts`.
+- **"Try a move of your own."** The board becomes playable from the decision, for both
+  sides.
+  - **Engine answer:** after each move the browser engine (depth 14) gives the mover's
+    winning chances and its answer line.
+  - **Comparison:** on the first move it compares with the game: "White's winning
+    chances: 10% — in the game, Be6 left 8%".
+  - **Exit:** Undo steps back, and "Back to the game", or selecting another move, ends
+    the exploration.
+  - **Board remount:** the board is keyed on exploring, because chessground binds its
+    pointer events only on a board created movable. A view-only board switched to
+    movable in place silently takes no moves.
+- **Testing:**
+  - The engine-marked analysis test checks the chain: each `reply_line` equals the next
+    `best_line`, every line starts with `best_move` and is legal from its position, and
+    there is no line after mate.
+  - A migration check covers the new columns.
+  - `lines.test.ts` covers numbering, positions, lines that stop early, and SAN to UCI.
+    `winChances` cases include mates either way.
+  - A browser spec on Scholar's mate covers …Nf6's chances (to 0%) and its two lines, a
+    preview there and back, and trying …g6 with the engine's verdict compared to the
+    game, then undo and exit.
+  - **Results:** vitest 515 passed, pytest 643 passed, Playwright review spec 7 passed.
+
+---
+
 ## Addendum — Mistake causes: which habit broke (2026-10-04)
 
 **Goal:** Progress said which motifs a player misses in puzzles, never which habit fails at

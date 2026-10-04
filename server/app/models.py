@@ -151,6 +151,13 @@ class Move(Base):
     mate_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classification: Mapped[str | None] = mapped_column(String, nullable=True)
     best_move: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The engine's principal variations, space-separated UCI, a few moves
+    # deep: from fen_before (the line it wanted — best_move is its first
+    # move) and from fen_after (what follows the move actually played). Null
+    # for a game analyzed before lines were stored; reply_line is null after
+    # the last move of a finished game.
+    best_line: Mapped[str | None] = mapped_column(String, nullable=True)
+    reply_line: Mapped[str | None] = mapped_column(String, nullable=True)
     # The opponent's threat in fen_before: what the other side would play if
     # the mover passed (app/threats.py), and the score after it, white POV —
     # centipawns clamped like the evals, or moves to mate. Raw engine facts;

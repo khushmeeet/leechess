@@ -5,6 +5,7 @@ import {
 	EVAL_CLAMP_CP,
 	clampEval,
 	classifyMove,
+	winChances,
 	winPercent,
 	type Classification
 } from './classification';
@@ -63,5 +64,19 @@ describe('BADGE_STYLES', () => {
 	it('styles every label the classifier can return', () => {
 		const labels: Classification[] = ['book', 'best', 'good', 'inaccuracy', 'mistake', 'blunder'];
 		expect(new Set(Object.keys(BADGE_STYLES))).toEqual(new Set(labels));
+	});
+});
+
+describe('winChances', () => {
+	it('is one side’s share of the winning-chances curve', () => {
+		expect(winChances({ cp: 100 }, true)).toBeCloseTo(59.1, 1);
+		expect(winChances({ cp: 100 }, false)).toBeCloseTo(40.9, 1);
+	});
+
+	it('counts a forced mate as certain, for whichever side gives it', () => {
+		expect(winChances({ cp: 1000, mate: 3 }, true)).toBe(100);
+		expect(winChances({ cp: -1000, mate: -2 }, true)).toBe(0);
+		expect(winChances({ cp: -1000, mate: -2 }, false)).toBe(100);
+		expect(winChances({ cp: 1000, mate: 0 }, false)).toBe(0);
 	});
 });

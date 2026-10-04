@@ -105,6 +105,8 @@ class MoveOut(BaseModel):
     mate_after: int | None
     classification: str | None
     best_move: str | None
+    best_line: str | None
+    reply_line: str | None
     threat_move: str | None
     threat_cp: float | None
     threat_mate: int | None

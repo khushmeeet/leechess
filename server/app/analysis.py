@@ -198,6 +198,16 @@ def regrade_game(game: Game) -> None:
         )
 
 
+# Plies of each principal variation kept — enough to see a tactic through,
+# short enough that the tail is still the engine's real opinion.
+LINE_PLIES = 10
+
+
+def _line(info: chess.engine.InfoDict) -> str | None:
+    pv = info.get("pv") or []
+    return " ".join(move.uci() for move in pv[:LINE_PLIES]) or None
+
+
 def _score(info: chess.engine.InfoDict) -> tuple[float, int | None]:
     """Clamped centipawns and the forced mate, if any, both white's POV."""
     score = info["score"].white()
@@ -289,23 +299,28 @@ def _analyze(game: Game) -> None:
         info = engine.analyse(board, limit)
         eval_cp, mate = _score(info)
         best = info["pv"][0] if info.get("pv") else None
+        line = _line(info)
 
         for move in game.moves:
             board = chess.Board(move.fen_before)
             move.eval_before, move.mate_before = eval_cp, mate
             move.best_move = best.uci() if best else None
+            move.best_line = line
             record_threat(engine, move, threats_at)
 
             played = board.parse_san(move.san)
             after = chess.Board(move.fen_after)
             if after.is_game_over():
-                (next_eval, next_mate), next_best = _terminal_eval(after), None
+                next_eval, next_mate = _terminal_eval(after)
+                next_best, next_line = None, None
             else:
                 info = engine.analyse(after, limit)
                 next_eval, next_mate = _score(info)
                 next_best = info["pv"][0] if info.get("pv") else None
+                next_line = _line(info)
 
             move.eval_after, move.mate_after = next_eval, next_mate
+            move.reply_line = next_line
             move.classification = classify_move(
                 eval_before=move.eval_before,
                 eval_after=move.eval_after,
@@ -315,4 +330,4 @@ def _analyze(game: Game) -> None:
                 mate_after=move.mate_after,
                 in_book=in_book(move.fen_after),
             )
-            eval_cp, mate, best = next_eval, next_mate, next_best
+            eval_cp, mate, best, line = next_eval, next_mate, next_best, next_line

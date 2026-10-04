@@ -43,6 +43,13 @@ export interface MoveRecord {
 	mate_after: number | null;
 	classification: string | null;
 	best_move: string | null;
+	/** The engine's principal variation from `fen_before` (its first move is
+	 * `best_move`), space-separated UCI. Null for games analyzed before lines
+	 * were stored. */
+	best_line: string | null;
+	/** The engine's principal variation from `fen_after` — what follows the
+	 * move played. Null after the last move of a finished game. */
+	reply_line: string | null;
 	/** The other side's best move in `fen_before` had the mover passed — the
 	 * threat this move had to answer, before `classifyThreat` judges whether
 	 * it is one. Null when the mover was in check, or for a game analyzed
