@@ -3,9 +3,13 @@
  *
  * - **Loose pieces** — attacked pieces the exchange count says are lost
  *   (`hanging`: nothing defends them; `underdefended`: defended, but not
- *   enough, or attacked by something cheaper).
+ *   enough, or attacked by something cheaper). A piece pinned to its king
+ *   neither attacks nor defends off its line, and the side to move takes
+ *   only with a legal capture — so a check or a pin on the capturing piece
+ *   is respected.
  * - **Control** — which side attacks each square more often.
- * - **Pins** — pieces that cannot move without exposing their king, with the
+ * - **Pins** — pieces that cannot move without exposing their king, or a
+ *   piece worth more than both them and the piece pinning them, with the
  *   line from the pinning piece.
  * - **King safety** — the squares around each king the other side attacks.
  * - **Files** — open files (no pawns) and half-open ones (no pawns of one
@@ -30,7 +34,12 @@ export const OVERLAYS: { name: OverlayName; label: string; title: string }[] = [
 		label: 'Control',
 		title: 'Squares White (light) or Black (dark) attacks more often'
 	},
-	{ name: 'pins', label: 'Pins', title: 'Pieces that cannot move without exposing their king' },
+	{
+		name: 'pins',
+		label: 'Pins',
+		title:
+			'Pieces that cannot move without exposing their king, or a more valuable piece behind them'
+	},
 	{ name: 'king', label: 'King safety', title: 'Squares around each king the other side attacks' },
 	{ name: 'files', label: 'Files', title: 'Open files (no pawns) and half-open ones' }
 ];
@@ -86,21 +95,53 @@ export interface LoosePiece {
 	kind: 'hanging' | 'underdefended';
 }
 
+/** The squares a piece pinned to its king may still move along: the line
+ * between the king and the pinning piece, the pinner's own square included. */
+function pinLine(pin: Pin): Set<Square> {
+	const line = new Set<Square>();
+	const df = Math.sign(pin.by.charCodeAt(0) - pin.behind.charCodeAt(0));
+	const dr = Math.sign(Number(pin.by[1]) - Number(pin.behind[1]));
+	let file = pin.behind.charCodeAt(0) + df;
+	let rank = Number(pin.behind[1]) + dr;
+	for (;;) {
+		const square = `${String.fromCharCode(file)}${rank}` as Square;
+		line.add(square);
+		if (square === pin.by) return line;
+		file += df;
+		rank += dr;
+	}
+}
+
 /** Pieces the other side would win material by taking (kings excepted). */
 export function loosePieces(fen: string): LoosePiece[] {
 	const chess = new Chess(fen);
+	const held = pins(fen)
+		.filter((pin) => pin.absolute)
+		.map((pin) => ({ square: pin.pinned, line: pinLine(pin) }));
+	// what the side to move can actually take now: a pinned piece or one
+	// whose king is in check has fewer captures than it has attacks
+	const legalTakers = new Map<Square, Square[]>();
+	for (const move of chess.moves({ verbose: true })) {
+		if (!move.captured) continue;
+		legalTakers.set(move.to, [...(legalTakers.get(move.to) ?? []), move.from]);
+	}
 	const loose: LoosePiece[] = [];
 	for (const square of allSquares()) {
 		const piece = chess.get(square);
 		if (!piece || piece.type === 'k') continue;
 		const enemy = opposite(piece.color);
-		const attackers = chess.attackers(square, enemy);
+		// pinned pieces that can't reach this square without leaving their line
+		const blocked = new Set(held.filter((pin) => !pin.line.has(square)).map((pin) => pin.square));
+		const attackers =
+			enemy === chess.turn()
+				? (legalTakers.get(square) ?? [])
+				: chess.attackers(square, enemy).filter((sq) => !blocked.has(sq));
 		if (attackers.length === 0) continue;
 		const cheapest = attackers.reduce((best, sq) =>
 			VALUE[chess.get(sq)!.type] < VALUE[chess.get(best)!.type] ? sq : best
 		);
-		if (staticExchange(fen, cheapest, square) < 1) continue;
-		const defended = chess.attackers(square, piece.color).length > 0;
+		if (staticExchange(fen, cheapest, square, blocked) < 1) continue;
+		const defended = chess.attackers(square, piece.color).some((sq) => !blocked.has(sq));
 		loose.push({ square, color: piece.color, kind: defended ? 'underdefended' : 'hanging' });
 	}
 	return loose;
@@ -122,28 +163,57 @@ export function control(fen: string): Map<Square, Color> {
 export interface Pin {
 	pinned: Square;
 	by: Square;
-	king: Square;
+	/** The piece the pin is against. */
+	behind: Square;
+	/** Pinned to the king: the piece may not leave the line at all. Otherwise
+	 * it may, at the cost of the more valuable piece behind it. */
+	absolute: boolean;
 }
 
-/** Pieces that cannot leave their line without exposing their own king:
- * lift the piece off and see which enemy slider then attacks the king. */
+/** Pieces that cannot leave their line without exposing what stands behind
+ * them: their king, or a piece worth more than both the pinned piece and
+ * the one pinning it (moving would lose material — a queen behind a knight
+ * pinned by a bishop). Lift the piece off and see which enemy slider then
+ * newly attacks the piece behind. A piece pinned to its king is reported
+ * against the king only. */
 export function pins(fen: string): Pin[] {
 	const chess = new Chess(fen);
 	const found: Pin[] = [];
 	for (const color of ['w', 'b'] as Color[]) {
-		const king = findKing(chess, color);
-		if (!king) continue;
 		const enemy = opposite(color);
-		const before = new Set(chess.attackers(king, enemy));
+		// what a pin can be against, king first so an absolute pin wins
+		const targets = allSquares()
+			.filter((sq) => {
+				const piece = chess.get(sq);
+				return piece?.color === color && 'kqr'.includes(piece.type);
+			})
+			.sort((a, b) => VALUE[chess.get(b)!.type] - VALUE[chess.get(a)!.type])
+			.map((sq) => ({
+				square: sq,
+				value: VALUE[chess.get(sq)!.type],
+				before: new Set(chess.attackers(sq, enemy))
+			}));
 		for (const square of allSquares()) {
 			const piece = chess.get(square);
 			if (!piece || piece.color !== color || piece.type === 'k') continue;
 			chess.remove(square);
-			const newcomers = chess
-				.attackers(king, enemy)
-				.filter((sq) => !before.has(sq) && 'brq'.includes(chess.get(sq)!.type));
+			for (const target of targets) {
+				if (target.square === square || target.value <= VALUE[piece.type]) continue;
+				const absolute = target.value === VALUE.k;
+				const by = chess.attackers(target.square, enemy).find((sq) => {
+					const pinner = chess.get(sq)!;
+					return (
+						!target.before.has(sq) &&
+						'brq'.includes(pinner.type) &&
+						(absolute || VALUE[pinner.type] < target.value)
+					);
+				});
+				if (by) {
+					found.push({ pinned: square, by, behind: target.square, absolute });
+					break;
+				}
+			}
 			chess.put(piece, square);
-			if (newcomers.length > 0) found.push({ pinned: square, by: newcomers[0], king });
 		}
 	}
 	return found;
@@ -260,7 +330,7 @@ export function overlayMarks(
 		for (const { square, kind } of loosePieces(fen)) add(square, `ov-${kind}`);
 	}
 	const pinLines = enabled.has('pins') ? pins(fen) : [];
-	for (const pin of pinLines) add(pin.pinned, 'ov-pinned');
+	for (const pin of pinLines) add(pin.pinned, pin.absolute ? 'ov-pinned' : 'ov-pinned-relative');
 	return { classes, pinLines };
 }
 

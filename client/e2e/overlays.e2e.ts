@@ -49,6 +49,22 @@ test('a pin is drawn from the pinning piece to the king', async ({ page }) => {
 	await expect(page.locator('.cg-shapes line[stroke="#68217a"]')).toHaveCount(1);
 });
 
+test('a pin against the queen is drawn too, marked apart from one against the king', async ({
+	page
+}) => {
+	// 3.Bg5 Nf6: the knight shields the queen on d8 — it may move, at a price
+	await restoreActiveGame(page, {
+		moves: ['e2e4', 'e7e5', 'd2d4', 'd7d6', 'c1g5', 'g8f6']
+	});
+	await page.goto('/');
+	await waitForEngineReady(page);
+	await page.getByTestId('hint-mode-full').click();
+	await page.getByTestId('overlay-pins').click();
+	await expect(page.locator('cg-board square.ov-pinned-relative')).toHaveCount(1);
+	await expect(page.locator('cg-board square.ov-pinned')).toHaveCount(0);
+	await expect(page.locator('.cg-shapes line[stroke="#68217a"]')).toHaveCount(1);
+});
+
 test('overlays never hide the dots that show where a piece can go', async ({ page }) => {
 	// 1.e4 d5 2.exd5: White has no e-pawn, so the e-file is half-open — the
 	// Files overlay stripes it, and the knight on g1 can go to e2

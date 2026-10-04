@@ -351,7 +351,7 @@
 	const pinShapes = $derived<DrawShape[]>(
 		(overlays?.pinLines ?? []).map((pin) => ({
 			orig: pin.by as Key,
-			dest: pin.king as Key,
+			dest: pin.behind as Key,
 			brush: 'purple'
 		}))
 	);

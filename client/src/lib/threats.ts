@@ -126,8 +126,15 @@ export function passTurn(fen: string): string | null {
  * stop when continuing would lose. Pieces lined up behind each other (a queen
  * behind a rook) join in as the ones in front are used up, because the
  * attackers are recounted on the board as each capture is made. Zero when
- * `to` is empty. */
-export function staticExchange(fen: string, from: Square, to: Square): number {
+ * `to` is empty. Pieces on `blocked` squares never join in — the board
+ * overlays pass the ones a pin holds off the line (the threat search and
+ * its server port count every attacker). */
+export function staticExchange(
+	fen: string,
+	from: Square,
+	to: Square,
+	blocked?: ReadonlySet<Square>
+): number {
 	const board = new Chess(fen);
 	const target = board.get(to);
 	const mover = board.get(from);
@@ -140,7 +147,7 @@ export function staticExchange(fen: string, from: Square, to: Square): number {
 	let side = opposite(mover.color);
 
 	for (;;) {
-		const attackers = board.attackers(to, side);
+		const attackers = board.attackers(to, side).filter((square) => !blocked?.has(square));
 		if (attackers.length === 0) break;
 		const cheapest = attackers.reduce((best, square) =>
 			VALUE[board.get(square)!.type] < VALUE[board.get(best)!.type] ? square : best

@@ -157,3 +157,8 @@ cg-board square:where(.ov-pinned) {
 	outline: 3px dashed rgba(120, 40, 160, 0.9);
 	outline-offset: -5px;
 }
+/* pinned to a more valuable piece, not the king: it may move, at a price */
+cg-board square:where(.ov-pinned-relative) {
+	outline: 3px dotted rgba(120, 40, 160, 0.75);
+	outline-offset: -5px;
+}

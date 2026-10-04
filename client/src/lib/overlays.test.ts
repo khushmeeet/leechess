@@ -37,7 +37,35 @@ describe('pins', () => {
 		const fen = 'r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3';
 		expect(pins(fen)).toEqual([]); // d7 pawn still blocks: no pin yet
 		const pinned = 'r1bqkbnr/ppp2ppp/2np4/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4';
-		expect(pins(pinned)).toEqual([{ pinned: 'c6', by: 'b5', king: 'e8' }]);
+		expect(pins(pinned)).toEqual([{ pinned: 'c6', by: 'b5', behind: 'e8', absolute: true }]);
+	});
+
+	it('finds a piece pinned to a more valuable one, not only to the king', () => {
+		// Bg5 pins the f6 knight to the queen on d8
+		const fen = 'rnbqkb1r/ppp2ppp/3p1n2/4p1B1/3PP3/8/PPP2PPP/RN1QKBNR b KQkq - 1 4';
+		expect(pins(fen)).toEqual([{ pinned: 'f6', by: 'g5', behind: 'd8', absolute: false }]);
+	});
+
+	it('is no pin when the piece pinning is worth as much as the one behind', () => {
+		// Qa4 lines up the c6 knight with the queen on e8: queen for queen
+		expect(pins('4q2k/8/2n5/8/Q7/8/8/7K w - - 0 1')).toEqual([]);
+	});
+});
+
+describe('loosePieces with pins and checks', () => {
+	it('does not count a pinned defender', () => {
+		// the d6 pawn guards e5, but Bb4 pins it to the king on e7
+		const fen = '8/4k3/3p4/4n3/1B6/5N2/8/6K1 w - - 0 1';
+		expect(loosePieces(fen)).toContainEqual({ square: 'e5', color: 'b', kind: 'hanging' });
+	});
+
+	it('only counts captures the side to move can make', () => {
+		// Nc3 hits the bishop on d5, but White is in check from the e8 rook
+		expect(loosePieces('4r1k1/8/8/3b4/8/2N5/8/4K3 w - - 0 1')).toEqual([]);
+		// the same position out of check: the bishop is there to take
+		expect(loosePieces('5rk1/8/8/3b4/8/2N5/8/4K3 w - - 0 1')).toEqual([
+			{ square: 'd5', color: 'b', kind: 'hanging' }
+		]);
 	});
 });
 

@@ -14,6 +14,32 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Overlays: pins to the queen, and loose pieces that respect pins (2026-10-04)
+
+**Goal:** two known limits of the board overlays. "Pins" showed only pins against the
+king. "Loose pieces" counted every attacker and defender, so a piece defended only by
+a pinned pawn looked safe, and a piece the side in check could not take looked lost.
+
+- **Pins** (`pins` in `overlays.ts`): a piece is also pinned when the piece behind it
+  is worth more than both it and the pinning piece. Example: Bg5 pins the f6 knight to
+  the queen on d8. Queen for queen is not a pin. A piece pinned to its king is reported
+  against the king only. `Pin` now says what it is against (`behind`) and whether it is
+  `absolute`.
+  - **On the board:** the arrow ends on the piece behind. A pin against the king keeps
+    the dashed outline; a pin against another piece gets a dotted one
+    (`ov-pinned-relative`). The chip's tooltip says both.
+- **Loose pieces** (`loosePieces`):
+  - A piece pinned to its king neither attacks nor defends a square off its pin line.
+    `staticExchange` takes an optional `blocked` set for this; the threat search and
+    its server port do not pass one, so they are unchanged.
+  - The side to move counts only its legal captures, so a check or a pin on the
+    capturing piece is respected.
+- **Testing:** unit tests for the relative pin, queen-for-queen, a pinned defender, and
+  a capture ruled out by check (and the same position out of check).
+  `overlays.e2e.ts` covers the relative pin on the board (4 passed).
+
+---
+
 ## Addendum — Smaller threats, when the board can show them (2026-10-04)
 
 **Goal:** the threat row reported a quiet move only when it was a named tactic worth
