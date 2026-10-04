@@ -53,7 +53,7 @@ vi.mock('$lib/openings', () => ({
 	inBook: vi.fn(() => false)
 }));
 
-import { ApiError } from '$lib/api/client';
+import { ApiError, type LiveGrade } from '$lib/api/client';
 import { inBook } from '$lib/openings';
 import { passTurn } from '$lib/threats';
 import { PlaySession } from './play.svelte';
@@ -719,7 +719,7 @@ describe('finishing games', () => {
 		// Play's own grades ride along for Review to compare with — the mating
 		// move's too, though the game ended before its grade was in: completion
 		// waits for it. Badges on the player's moves only.
-		const live = api.completeGame.mock.calls[0][2]!;
+		const live: LiveGrade[] = api.completeGame.mock.calls[0][2];
 		expect(live.map((grade) => grade.ply)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 		expect(live.filter((grade) => grade.classification !== null).map((g) => g.ply)).toEqual([
 			1, 3, 5, 7
