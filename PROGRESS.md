@@ -14,6 +14,34 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Defence puzzles take any defence that works (2026-10-04)
+
+**Goal:** a defence puzzle stored one answer, the engine's, and refused every other move.
+After 3.Qh5, …g6, …Qe7 and …Qf6 all stop Qxf7#. Marking two of them wrong taught that a
+threat has one answer, which is the opposite of the habit the puzzle trains.
+
+- **A move other than the stored answer is weighed** (`PuzzleSession.weighDefence`). The
+  browser engine searches the position after it and the position after the stored
+  answer, both at depth 12, while the board waits ("Checking Qe7…").
+  - **Accepted** when the threat is no longer their best reply and the move keeps the
+    solver's winning chances within 5 points of the stored answer (move grading's
+    inaccuracy bar). The puzzle is solved and recorded as correct: "Qe7 deals with it
+    too — the engine's answer was g6."
+  - **Refused** otherwise, with the reason in the retry box. Either "a6 leaves Qxf7# on
+    the board", or, for a move that dodges the threat but loses more, "Nh6 gets out of
+    it, but then their best is d4". It counts as a wrong try, as before.
+  - **No engine:** if the engine fails, only the stored answer counts.
+- **Only defence puzzles** (and only their first move) are weighed. The other puzzles keep
+  their stored line, plus the existing rule that any mate counts.
+- **Testing:** four `PuzzleSession` cases with a mocked engine cover an accepted
+  alternative (both searches at the same depth), a refused move that leaves the threat, a
+  refused sidestep naming the reply, and a failed engine. A browser spec on Scholar's
+  mate covers …a6 refused with its reason, then a different real defence accepted on the
+  real engine. Results: vitest 24 passed in the puzzle store; Playwright puzzles and
+  hint-ladder, 8 passed.
+
+---
+
 ## Addendum — Board overlays, and a coach that names the piece (2026-10-04)
 
 **Goal:** each overlay teaches one way of looking at a position, drawn on the board until

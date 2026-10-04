@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
 	getNextPuzzle: vi.fn(),
 	recordAttempt: vi.fn()
 }));
+const engine = vi.hoisted(() => ({ evaluate: vi.fn() }));
+vi.mock('$lib/stores/stockfish', () => ({ stockfish: engine }));
 
 vi.mock('$lib/api/client', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/api/client')>();
@@ -413,5 +415,65 @@ describe('defence puzzles', () => {
 		expect(session.phase).toBe('solve');
 		session.spotSquare('e8');
 		expect(session.spotted).toBeNull();
+	});
+});
+
+describe('defence puzzles: any defence that works counts', () => {
+	beforeEach(() => {
+		api.getNextPuzzle.mockResolvedValue({ ...defencePuzzle });
+	});
+
+	/** The engine's view after the tried move, then after the stored g6. */
+	function weighs(tried: object, stored: object = { cp: 30, bestMove: 'h5f3' }) {
+		engine.evaluate
+			.mockResolvedValueOnce({ depth: 12, lines: [], ...tried })
+			.mockResolvedValueOnce({ depth: 12, lines: [], ...stored });
+	}
+
+	async function spotted() {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('f7');
+		return session;
+	}
+
+	it('accepts another move that takes the threat off the board', async () => {
+		weighs({ cp: 40, bestMove: 'g1f3' }); // …Qe7: about as good as …g6
+		const session = await spotted();
+		session.handleBoardMove('d8', 'e7');
+		expect(session.checking).toBe('Qe7');
+		await vi.waitFor(() => expect(session.status).toBe('solved'));
+		expect(session.alternative).toBe('Qe7');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, true, 0);
+		// both positions were weighed at the same depth
+		expect(engine.evaluate.mock.calls.map((call) => call[1])).toEqual([12, 12]);
+	});
+
+	it('refuses a move that leaves the threat on the board, and says so', async () => {
+		weighs({ mate: 1, bestMove: 'h5f7' });
+		const session = await spotted();
+		session.handleBoardMove('a7', 'a6');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.status).toBe('solving');
+		expect(session.refusal).toBe('a6 leaves Qxf7# on the board.');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, false, 0);
+	});
+
+	it('refuses a move that dodges the threat only to lose more, naming the reply', async () => {
+		weighs({ cp: 400, bestMove: 'd2d4' }); // far worse for Black than …g6
+		const session = await spotted();
+		session.handleBoardMove('g8', 'h6');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.refusal).toBe('Nh6 gets out of it, but then their best is d4.');
+		expect(session.wrong).toBe(true);
+	});
+
+	it('falls back to the stored answer alone when the engine fails', async () => {
+		engine.evaluate.mockRejectedValue(new Error('worker died'));
+		const session = await spotted();
+		session.handleBoardMove('d8', 'e7');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.status).toBe('solving');
+		expect(session.wrong).toBe(true);
 	});
 });

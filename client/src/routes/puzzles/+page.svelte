@@ -128,8 +128,17 @@
 	const turnColor = $derived(
 		session.fen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
 	);
+	// no input while spotting, or while the engine weighs a defence
 	const movableColor = $derived(
-		session.status === 'solving' && session.phase === 'solve' ? session.playerColor : undefined
+		session.status === 'solving' && session.phase === 'solve' && !session.checking
+			? session.playerColor
+			: undefined
+	);
+	// the stored answer, for "also works" when the solver found another
+	const answerSan = $derived(
+		session.puzzle
+			? (playLine(session.puzzle.fen, session.puzzle.solution.slice(0, 1))[0]?.san ?? null)
+			: null
 	);
 </script>
 
@@ -208,6 +217,11 @@
 					data-testid="puzzle-correct"
 				>
 					<p class="font-semibold">Correct!</p>
+					{#if session.alternative}
+						<p class="mt-0.5" data-testid="puzzle-alternative">
+							{session.alternative} deals with it too — the engine’s answer was {answerSan}.
+						</p>
+					{/if}
 					{#if session.wrong || session.hintLevel > 0}
 						<p class="mt-0.5">
 							{session.wrong
@@ -250,7 +264,12 @@
 									fens={threatFens}
 									onhover={(target) => (notationTarget = target)}
 								/>
-								Now find the move that deals with it.
+								Now find the move that deals with it — any move that does counts.
+							</p>
+						{/if}
+						{#if session.checking}
+							<p class="mt-1 text-muted" data-testid="defence-checking">
+								Checking {session.checking}…
 							</p>
 						{/if}
 					</section>
@@ -261,7 +280,9 @@
 						class="verdict flex items-center justify-between gap-2 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err"
 						data-testid="puzzle-retry"
 					>
-						<span>Not quite — try again.</span>
+						<span data-testid="puzzle-retry-text"
+							>{session.refusal ? `${session.refusal} Try again.` : 'Not quite — try again.'}</span
+						>
 						<button
 							data-testid="reveal-answer"
 							onclick={() => session.revealAnswer()}
