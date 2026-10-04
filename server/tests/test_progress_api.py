@@ -115,6 +115,7 @@ def test_empty_database_returns_zeroes_not_errors(client):
     assert body == {
         "days": None,
         "motifs": [],
+        "motif_trends": [],
         "weakest_motifs": [],
         "cpl_trend": [],
         "streak_days": 0,
@@ -148,6 +149,52 @@ def test_motif_success_rates_are_exact(client, seed):
     assert motifs["pin"] == {
         "motif": "pin", "attempts": 4, "correct": 1, "success_rate": 0.25,
     }  # fmt: skip
+
+
+def test_motif_trend_compares_first_tries_with_the_latest(client, seed):
+    fork = seed.puzzle("fork")
+    # oldest first: missed three of the first four, then solved three of four
+    seed.attempts(fork, False, False, True, False, at=days_ago(20))
+    seed.attempts(fork, True, True, False, True, at=days_ago(2))
+
+    assert get(client)["motif_trends"] == [
+        {
+            "motif": "fork",
+            "earlier": {"attempts": 4, "correct": 1},
+            "recent": {"attempts": 4, "correct": 3},
+        }
+    ]
+
+
+def test_motif_trend_counts_the_odd_middle_attempt_as_latest(client, seed):
+    pin = seed.puzzle("pin")
+    seed.attempts(pin, False, False, False, at=days_ago(9))
+    seed.attempts(pin, True, True, True, True, at=days_ago(1))
+
+    (trend,) = get(client)["motif_trends"]
+    assert trend["earlier"] == {"attempts": 3, "correct": 0}
+    assert trend["recent"] == {"attempts": 4, "correct": 4}
+
+
+def test_motif_trend_needs_enough_attempts_and_respects_the_window(client, seed):
+    few = seed.puzzle("skewer")
+    seed.attempts(few, True, False, True, False, True)  # five: too few to split
+    windowed = seed.puzzle("fork")
+    seed.attempts(windowed, False, False, False, at=days_ago(60))
+    seed.attempts(windowed, True, True, True, at=days_ago(5))
+
+    assert [t["motif"] for t in get(client)["motif_trends"]] == ["fork"]
+    # inside 30 days only the three latest remain — not enough to compare
+    assert get(client, days=30)["motif_trends"] == []
+
+
+def test_motif_trends_list_the_weakest_latest_first(client, seed):
+    strong = seed.puzzle("fork")
+    weak = seed.puzzle("pin")
+    seed.attempts(strong, False, False, False, True, True, True)
+    seed.attempts(weak, True, True, True, False, False, True)
+
+    assert [t["motif"] for t in get(client)["motif_trends"]] == ["pin", "fork"]
 
 
 def test_motifs_ordered_weakest_first(client, seed):

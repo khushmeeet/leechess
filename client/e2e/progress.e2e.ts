@@ -136,3 +136,27 @@ test('mistake causes name the habit that broke, and link to the move', async ({
 		'ask what their last move threatens'
 	);
 });
+
+test('a motif’s first tries are compared with its latest', async ({ page, request }) => {
+	const gameId = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, gameId);
+	const puzzle = await (await request.get(`${API}/puzzles/next`)).json();
+	// missed the first three, solved the latest three
+	for (const correct of [false, false, false, true, true, true]) {
+		const response = await request.post(`${API}/puzzles/${puzzle.id}/attempt`, {
+			data: { correct }
+		});
+		expect(response.ok()).toBe(true);
+	}
+
+	await page.goto('/progress');
+	const row = page.getByTestId('motif-trend');
+	await expect(row).toHaveCount(1);
+	await expect(row).toContainText(puzzle.motif.replaceAll('_', ' '));
+	await expect(row).toContainText('0% → 100%');
+	// the whole reading, for the pointer and for screen readers
+	await expect(row).toHaveAttribute(
+		'title',
+		'First 3 tries: 0 solved (0%). Latest 3 tries: 3 solved (100%).'
+	);
+});

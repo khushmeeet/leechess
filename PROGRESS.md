@@ -14,6 +14,29 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Motifs over time on Progress (2026-10-04)
+
+**Goal:** Progress showed each motif's success rate as one total, so it could not
+answer "am I getting better at forks?"
+
+- **Server** (`motif_trends` in `routers/progress.py`): the attempts at each motif in
+  the window, oldest first, split into two halves by time. An odd middle attempt counts
+  as latest. A motif needs 6 attempts (3 a side) to be compared, so one lucky attempt
+  cannot make the whole difference. Rows are sorted weakest latest first, like the
+  totals.
+  - **Halves, not calendar weeks:** a week of puzzles often has one or two attempts at
+    a motif, and a rate over one attempt is noise.
+- **Progress: "Getting better? First tries against latest"** (`MotifTrends.svelte`).
+  Each motif is one row on a 0–100% track. A hollow dot marks the first tries and a
+  filled dot the latest, with a line between them. The numbers ("33% → 100%") sit
+  beside the row, and the full reading is in the row's tooltip and in screen-reader
+  text, so nothing depends on the marks. Below six attempts it says what it needs.
+- **Testing:** `test_progress_api.py` checks the split, the odd middle attempt, the
+  minimum and the window, and the order. `progress.e2e.ts` checks a seeded 0% → 100%
+  row and its tooltip. Light, dark and phone-width screenshots were checked by eye.
+
+---
+
 ## Addendum — Live grades and Review grades, reconciled (2026-10-04)
 
 **Goal:** Play could show "Mistake" on a move that Review then called "Blunder", with

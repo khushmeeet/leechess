@@ -448,6 +448,19 @@ class MotifProgress(BaseModel):
     success_rate: float  # correct / attempts, 0..1
 
 
+class Tries(BaseModel):
+    attempts: int
+    correct: int
+
+
+class MotifTrend(BaseModel):
+    """A motif's first tries in the window against its latest ones."""
+
+    motif: str
+    earlier: Tries
+    recent: Tries
+
+
 class GameCplPoint(BaseModel):
     """One analyzed game's average centipawn loss, from the player's side
     (engine games count only the side you played, per the game's user_color;
@@ -541,6 +554,9 @@ class ProgressOut(BaseModel):
 
     days: int | None  # echo of the window filter; None = all-time
     motifs: list[MotifProgress]  # weakest first
+    # First tries against latest, per motif with enough attempts to compare;
+    # weakest latest first.
+    motif_trends: list[MotifTrend]
     weakest_motifs: list[MotifProgress]  # ≤3, enough attempts, <100% success
     cpl_trend: list[GameCplPoint]  # oldest → newest
     streak_days: int

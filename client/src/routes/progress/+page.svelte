@@ -6,6 +6,7 @@
 	import { humanizeMotif } from '$lib/motifs';
 	import AccountGate from '$lib/components/AccountGate.svelte';
 	import CplTrend from '$lib/components/CplTrend.svelte';
+	import MotifTrends from '$lib/components/MotifTrends.svelte';
 	import { session } from '$lib/stores/session.svelte';
 
 	const windows = [
@@ -354,6 +355,23 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+		</section>
+
+		<section data-testid="motifs-over-time">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Getting better? First tries against latest
+			</h2>
+			{#if progress.motif_trends.length === 0}
+				<p class="text-sm text-muted">
+					After six puzzles of one motif{days ? ' in this window' : ''}, this compares your first
+					tries with your latest ones.
+				</p>
+			{:else}
+				<MotifTrends trends={progress.motif_trends} />
+				<p class="mt-2 text-xs text-muted">
+					Each motif’s puzzles{days ? ' in this window' : ''}, split in two by time.
+				</p>
 			{/if}
 		</section>
 

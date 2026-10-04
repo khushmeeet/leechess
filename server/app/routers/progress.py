@@ -31,10 +31,12 @@ from app.schemas import (
     MistakeCauseCount,
     MistakeExample,
     MotifProgress,
+    MotifTrend,
     ProgressOut,
     RepertoireExit,
     RepertoireLine,
     ThinkingSummary,
+    Tries,
 )
 
 router = APIRouter(prefix="/progress", tags=["progress"])
@@ -45,16 +47,21 @@ MIN_CALLOUT_ATTEMPTS = 3
 WEAKEST_LIMIT = 3
 
 
-def motif_progress(
+# A motif needs this many attempts in the window before Progress compares
+# its first tries with its latest: three a side, so one lucky or unlucky
+# attempt can't make the whole difference.
+MIN_TREND_ATTEMPTS = 6
+
+
+def motif_attempts(
     db: Session, user: User, since: datetime | None
-) -> list[MotifProgress]:
-    """All-attempt success rate per motif within the window, weakest first.
-    (The puzzle queue's "weakest" uses a recent-attempts window instead —
-    that one drives scheduling, this one reports totals.)"""
+) -> dict[str, list[bool]]:
+    """Each motif's attempt results within the window, oldest first."""
     query = (
         select(Puzzle.motif, PuzzleAttempt.correct)
         .join(Puzzle, PuzzleAttempt.puzzle_id == Puzzle.id)
         .where(PuzzleAttempt.user_id == user.id)
+        .order_by(PuzzleAttempt.attempted_at, PuzzleAttempt.id)
     )
     if since is not None:
         query = query.where(PuzzleAttempt.attempted_at >= since)
@@ -62,7 +69,13 @@ def motif_progress(
     by_motif: dict[str, list[bool]] = {}
     for motif, correct in db.execute(query):
         by_motif.setdefault(motif, []).append(correct)
+    return by_motif
 
+
+def motif_progress(by_motif: dict[str, list[bool]]) -> list[MotifProgress]:
+    """All-attempt success rate per motif within the window, weakest first.
+    (The puzzle queue's "weakest" uses a recent-attempts window instead —
+    that one drives scheduling, this one reports totals.)"""
     stats = [
         MotifProgress(
             motif=motif,
@@ -74,6 +87,36 @@ def motif_progress(
     ]
     stats.sort(key=lambda s: (s.success_rate, -s.attempts, s.motif))
     return stats
+
+
+def motif_trends(by_motif: dict[str, list[bool]]) -> list[MotifTrend]:
+    """Is the player getting better at each motif? Its attempts in the window,
+    split in two by time: the first tries against the latest (an odd middle
+    attempt counts as latest). Halves of the attempts rather than calendar
+    weeks, because a week of puzzles is often one or two attempts at a motif,
+    and a rate over one attempt is noise. Weakest latest first, like the
+    totals; motifs with too few attempts to compare are left out."""
+    trends = []
+    for motif, results in by_motif.items():
+        if len(results) < MIN_TREND_ATTEMPTS:
+            continue
+        half = len(results) // 2
+        earlier, recent = results[:half], results[half:]
+        trends.append(
+            MotifTrend(
+                motif=motif,
+                earlier=Tries(attempts=len(earlier), correct=sum(earlier)),
+                recent=Tries(attempts=len(recent), correct=sum(recent)),
+            )
+        )
+    trends.sort(
+        key=lambda t: (
+            t.recent.correct / t.recent.attempts,
+            -(t.earlier.attempts + t.recent.attempts),
+            t.motif,
+        )
+    )
+    return trends
 
 
 def game_cpl(game: Game) -> GameCplPoint | None:
@@ -223,7 +266,8 @@ def get_progress(
     now = utcnow()
     since = now - timedelta(days=days) if days is not None else None
 
-    motifs = motif_progress(db, user, since)
+    attempts_by_motif = motif_attempts(db, user, since)
+    motifs = motif_progress(attempts_by_motif)
     # "Weakest" needs enough attempts to be a trend, and a perfect record —
     # however small the sample pool ranks it — isn't a weakness to drill.
     weakest = [
@@ -292,6 +336,7 @@ def get_progress(
     return ProgressOut(
         days=days,
         motifs=motifs,
+        motif_trends=motif_trends(attempts_by_motif),
         weakest_motifs=weakest,
         cpl_trend=trend,
         streak_days=day_streak(activity, now.date()),

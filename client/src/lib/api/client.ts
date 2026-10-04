@@ -438,6 +438,19 @@ export interface MotifProgress {
 	success_rate: number; // 0..1
 }
 
+export interface Tries {
+	attempts: number;
+	correct: number;
+}
+
+/** A motif's first tries in the window against its latest ones — the
+ * attempts split in two by time. Only motifs with enough attempts to compare. */
+export interface MotifTrend {
+	motif: string;
+	earlier: Tries;
+	recent: Tries;
+}
+
 /** One analyzed game's avg centipawn loss from the player's side (engine
  * games count only the side you played, per user_color; local games count
  * both sides). Phase values are null when the game never reached that
@@ -467,6 +480,7 @@ export interface MistakeCauseCount {
 export interface ProgressSummary {
 	days: number | null; // echo of the window filter; null = all-time
 	motifs: MotifProgress[]; // weakest first
+	motif_trends: MotifTrend[]; // weakest latest first
 	weakest_motifs: MotifProgress[]; // ≤3, enough attempts, <100% success
 	cpl_trend: GameCplPoint[]; // oldest → newest
 	streak_days: number;
