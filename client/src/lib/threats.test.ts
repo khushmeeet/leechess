@@ -119,7 +119,7 @@ describe('classifyThreat', () => {
 			kind: 'mate',
 			by: 'black',
 			san: '…Bxh3',
-			text: 'Black threatens a forced mate starting with …Bxh3 (mate in 3).'
+			text: 'Black threatens a forced mate starting with Bxh3 (mate in 3).'
 		});
 	});
 
@@ -127,7 +127,7 @@ describe('classifyThreat', () => {
 		expect(threat(BISHOP_HIT, 'c8f5', { cp: -657 }, { cp: -156 })).toMatchObject({
 			kind: 'material',
 			target: 'f5',
-			text: 'Black threatens …Bxf5, winning the bishop on f5 (attacked twice, defended once).'
+			text: 'Black threatens Bxf5, winning the bishop on f5 (attacked twice, defended once).'
 		});
 	});
 
@@ -135,7 +135,7 @@ describe('classifyThreat', () => {
 		const fen = '4k3/8/8/8/8/2b5/8/R6K w - - 0 1';
 		expect(threat(fen, 'c3a1', { cp: -300 }, { cp: 200 })).toMatchObject({
 			kind: 'material',
-			text: 'Black threatens …Bxa1, winning the rook on a1, which nothing defends.'
+			text: 'Black threatens Bxa1, winning the rook on a1, which nothing defends.'
 		});
 	});
 
@@ -143,7 +143,7 @@ describe('classifyThreat', () => {
 		const fen = '4k3/8/8/3p4/4N3/5P2/8/4K3 w - - 0 1';
 		expect(threat(fen, 'd5e4', { cp: -150 }, { cp: 200 })).toMatchObject({
 			kind: 'material',
-			text: 'Black threatens …dxe4, winning material: the knight on e4 is worth more than the pawn that takes it.'
+			text: 'Black threatens dxe4, winning material: the knight on e4 is worth more than the pawn that takes it.'
 		});
 	});
 
@@ -152,7 +152,7 @@ describe('classifyThreat', () => {
 			kind: 'motif',
 			motif: 'fork',
 			san: '…Nxf2',
-			text: 'Black threatens …Nxf2, a fork: the knight on f2 hits the rook on d1 and the rook on h1 at once.'
+			text: 'Black threatens Nxf2, a fork: the knight on f2 hits the rook on d1 and the rook on h1 at once.'
 		});
 	});
 
@@ -162,7 +162,7 @@ describe('classifyThreat', () => {
 			kind: 'motif',
 			motif: 'fork',
 			san: '…Nc2+',
-			text: 'Black threatens …Nc2+, a fork: the knight on c2 hits the rook on a1 and the king on e1 at once.'
+			text: 'Black threatens Nc2+, a fork: the knight on c2 hits the rook on a1 and the king on e1 at once.'
 		});
 	});
 
@@ -192,7 +192,7 @@ describe('classifyThreat', () => {
 		// it was not rescued and takes nothing off the swing.
 		expect(threat(SMALL_THREAT, 'c7f4', { cp: -129 }, { cp: -9 })).toMatchObject({
 			kind: 'attack',
-			text: 'Black threatens …Qf4, aiming the queen at White’s king: from f4 it hits f2 and h2, next to the king.'
+			text: 'Black threatens Qf4, aiming the queen at White’s king: from f4 it hits f2 and h2, next to the king.'
 		});
 	});
 
@@ -200,7 +200,7 @@ describe('classifyThreat', () => {
 		const loose = '4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1';
 		expect(threat(loose, 'h7b7', { cp: -180 }, { cp: 0 })).toMatchObject({
 			kind: 'attack',
-			text: 'Black threatens …Rb7 and then …Rxb2, winning the knight on b2, which nothing defends.'
+			text: 'Black threatens Rb7 and then Rxb2, winning the knight on b2, which nothing defends.'
 		});
 	});
 
@@ -244,7 +244,7 @@ describe('threatOutcome', () => {
 	it('names what a blunder allowed instead of calling the threat answered', () => {
 		expect(
 			threatOutcome(bishopThreat, { fenAfter: AFTER_BE6, classification: 'blunder' }, 'c8e6')
-		).toEqual({ kind: 'replaced', replySan: '…Bxe6' });
+		).toEqual({ kind: 'replaced', replySan: 'Bxe6' });
 	});
 
 	it('calls the threat answered after a sound move', () => {

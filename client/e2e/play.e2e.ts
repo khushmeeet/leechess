@@ -404,7 +404,7 @@ test('Full states the threat their last move made, with an arrow', async ({ page
 	await waitForEngineReady(page);
 
 	await page.getByTestId('hint-mode-full').click();
-	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens …Qh4#, checkmate.', {
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens Qh4#, checkmate.', {
 		timeout: 15_000
 	});
 	await expect(page.getByTestId('threat-reveal')).toHaveCount(0);
@@ -424,7 +424,7 @@ test('Nudge asks what their move threatens before saying', async ({ page }) => {
 	await expect(threatArrow(page)).toHaveCount(0);
 
 	await reveal.click();
-	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens …Qh4#, checkmate.');
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens Qh4#, checkmate.');
 	await expect(threatArrow(page)).toHaveCount(1);
 });
 
@@ -445,7 +445,7 @@ test('pointing at a move in the panel lights up its piece', async ({ page }) => 
 	await page.getByTestId('hint-mode-full').click();
 
 	const move = page.getByTestId('threat-text').getByTestId('notation').first();
-	await expect(move).toHaveText('…Qh4#', { timeout: 15_000 });
+	await expect(move).toHaveText('Qh4#', { timeout: 15_000 });
 	const lit = page.locator('cg-board square.notation-focus');
 	const drawn = page.locator('.cg-shapes line[stroke="#003088"]');
 	await expect(lit).toHaveCount(0);

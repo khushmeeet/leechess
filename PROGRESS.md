@@ -14,6 +14,26 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — No "…" where the sentence already names the side (2026-10-04)
+
+**Goal:** "Black threatens …Qh4+" says whose move it is twice. The "…" marks a Black
+move in a line of moves; in a sentence that names the side it is noise.
+
+- **Threat sentences** (`classifyThreat`): "Black threatens Qh4#, checkmate.", "…a
+  forced mate starting with Bxh3", and the new "…Rb7 and then Rxb2". `Threat.san` keeps
+  the "…", for sentences that do not name the side ("Their threat, …Qh4, was answered
+  by …").
+- **Review:** "After Nf6, White's best move became Bxe6 instead." (`threatOutcome`'s
+  `replySan` is plain SAN now; Review's sentence is its only user).
+- **Unchanged:** move lines, move numbers ("3…Nf6"), and sentences that say "their" or
+  "they" rather than the side.
+- Pointing at the move still lights the piece: a bare "Qh4#" after "threatens" reads as
+  a move.
+- **Testing:** threat wording tests and the Play threat-row specs updated; Play,
+  Review, insight bar, Think first and puzzles browser tests pass (39).
+
+---
+
 ## Addendum — Overlays: pins to the queen, and loose pieces that respect pins (2026-10-04)
 
 **Goal:** two known limits of the board overlays. "Pins" showed only pins against the

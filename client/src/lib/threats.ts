@@ -56,14 +56,16 @@ export interface Threat {
 	by: 'white' | 'black';
 	/** The threatening move, UCI — for the board arrow. */
 	uci: string;
-	/** The same move as SAN, "…" prefixed for Black ("…Bxf5"). */
+	/** The same move as SAN, "…" prefixed for Black ("…Bxf5") — for a
+	 * sentence that doesn't name the side ("Their threat, …Bxf5"). */
 	san: string;
 	/** The square under attack, for `material` threats — circled on the board. */
 	target: Square | null;
 	/** Humanized motif name, for `motif` threats. */
 	motif: string | null;
-	/** The whole sentence: "Black threatens …Bxf5, winning the bishop on f5
-	 * (attacked twice, defended once)." */
+	/** The whole sentence: "Black threatens Bxf5, winning the bishop on f5
+	 * (attacked twice, defended once)." It names the side, so the move goes
+	 * without the "…" that marks a Black move in a line. */
 	text: string;
 }
 
@@ -238,7 +240,6 @@ function kingZone(chess: Chess, color: Color): Square[] {
  * for anything vaguer, which is left unreported below the attack bar. */
 function setsUp(passed: Chess, after: Chess, from: Square, to: Square): string | null {
 	const mover = after.get(to)!;
-	const prefix = mover.color === 'b' ? '…' : '';
 	// the threatener's next move, as though the player passed in turn; none
 	// when the move gives check, which is a threat of its own kind
 	const againFen = passTurn(after.fen());
@@ -253,7 +254,7 @@ function setsUp(passed: Chess, after: Chess, from: Square, to: Square): string |
 			}
 		}
 		if (best) {
-			return ` and then ${prefix}${best.san}, ${materialClause(again, best.from, best.to)}`;
+			return ` and then ${best.san}, ${materialClause(again, best.from, best.to)}`;
 		}
 	}
 	const defender = opposite(mover.color);
@@ -293,6 +294,7 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 	const threatener = passed.turn();
 	const by = COLOR_NAME[threatener];
 	const shown = threatener === 'b' ? `…${san}` : san;
+	// the sentences below say whose move it is, so the move needs no "…"
 	const subject = by === 'white' ? 'White' : 'Black';
 	const sign = threatener === 'w' ? 1 : -1;
 	const base = { by, uci: threatUci, san: shown } as const;
@@ -300,8 +302,8 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 	const mate = threatScore.mate;
 	if (mate !== undefined && mate !== null && sign * mate > 0) {
 		const text = after.isCheckmate()
-			? `${subject} threatens ${shown}, checkmate.`
-			: `${subject} threatens a forced mate starting with ${shown} (mate in ${Math.abs(mate)}).`;
+			? `${subject} threatens ${san}, checkmate.`
+			: `${subject} threatens a forced mate starting with ${san} (mate in ${Math.abs(mate)}).`;
 		return { ...base, kind: 'mate', target: null, motif: null, text };
 	}
 
@@ -317,7 +319,7 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 				kind: 'motif',
 				target: null,
 				motif: humanizeMotif(FORK),
-				text: `${subject} threatens ${shown}, a fork: ${fork}.`
+				text: `${subject} threatens ${san}, a fork: ${fork}.`
 			};
 		}
 		return {
@@ -325,7 +327,7 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 			kind: 'material',
 			target: to,
 			motif: null,
-			text: `${subject} threatens ${shown}, ${materialClause(passed, from, to)}.`
+			text: `${subject} threatens ${san}, ${materialClause(passed, from, to)}.`
 		};
 	}
 
@@ -351,7 +353,7 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 				kind: 'motif',
 				target: null,
 				motif: name,
-				text: `${subject} threatens ${shown}, a ${name}: ${why}.`
+				text: `${subject} threatens ${san}, a ${name}: ${why}.`
 			};
 		}
 	}
@@ -365,7 +367,7 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 			kind: 'attack',
 			target: null,
 			motif: null,
-			text: `${subject} threatens ${shown}${setup}.`
+			text: `${subject} threatens ${san}${setup}.`
 		};
 	}
 
@@ -376,13 +378,14 @@ export function classifyThreat(input: ThreatInput): Threat | null {
 			kind: 'attack',
 			target: null,
 			motif: null,
-			text: `${subject} threatens ${shown}, which would gain about ${pawns} pawns’ worth.`
+			text: `${subject} threatens ${san}, which would gain about ${pawns} pawns’ worth.`
 		};
 	}
 	return null;
 }
 
-/** What became of a threat once the move that faced it was played. */
+/** What became of a threat once the move that faced it was played.
+ * `replySan` is plain SAN: Review's sentence names the side that plays it. */
 export type ThreatOutcome =
 	{ kind: 'ignored' } | { kind: 'replaced'; replySan: string } | { kind: 'answered' };
 
@@ -409,7 +412,7 @@ export function threatOutcome(
 			to: replyUci.slice(2, 4),
 			promotion: replyUci[4]
 		});
-		return { kind: 'replaced', replySan: reply.color === 'b' ? `…${reply.san}` : reply.san };
+		return { kind: 'replaced', replySan: reply.san };
 	} catch {
 		return null; // a stored move that doesn't fit the position — claim nothing
 	}
