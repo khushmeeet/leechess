@@ -175,6 +175,12 @@ def _migrate_existing_tables(bind=None) -> None:
                 conn.execute(text(f"ALTER TABLE moves ADD COLUMN {column} {sql_type}"))
                 conn.commit()
 
+        # Defence puzzles carry the threat the solver has to spot first;
+        # every other puzzle leaves it null.
+        if "threat_move" not in columns_of("puzzles"):
+            conn.execute(text("ALTER TABLE puzzles ADD COLUMN threat_move VARCHAR"))
+            conn.commit()
+
         _move_schedules_off_the_content_rows(conn, columns_of)
 
 

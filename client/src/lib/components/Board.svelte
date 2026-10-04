@@ -55,6 +55,10 @@
 		 * a piece back after a legal-but-rejected move (wrong puzzle answer),
 		 * where the FEN stays the same but chessground moved the piece. */
 		syncKey?: number;
+		/** Called with the square the user clicks — for answers that are a
+		 * square rather than a move (a defence puzzle's "where does their
+		 * threat land?"). Needs a board that isn't view-only. */
+		onselect?: (key: Key) => void;
 		/** Called when the user completes a move on the board. For promotions,
 		 * `promotion` is the piece letter (q/n/r/b) chosen in the picker. */
 		onmove?: (orig: Key, dest: Key, promotion?: string) => void;
@@ -72,6 +76,7 @@
 		highlights,
 		startFen,
 		syncKey = 0,
+		onselect,
 		onmove
 	}: Props = $props();
 
@@ -197,7 +202,10 @@
 		// then push state changes into it via api.set() (see $effect below).
 		api = Chessground(el, {
 			...config(),
-			events: { move: (orig, dest) => handleMove(orig, dest) }
+			events: {
+				move: (orig, dest) => handleMove(orig, dest),
+				select: (key) => onselect?.(key)
+			}
 		});
 		api.setAutoShapes(autoShapes);
 

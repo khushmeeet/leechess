@@ -294,6 +294,9 @@ class PuzzleOut(BaseModel):
     # move first, opponent replies interleaved.
     solution: list[str]
     motif: str
+    # Defence puzzles: the opponent's threat to spot first, UCI in the
+    # position with the turn passed. None for every other puzzle.
+    threat: str | None = None
     difficulty: int | None
     source_move_id: int | None  # None = generic Lichess import
     box: int

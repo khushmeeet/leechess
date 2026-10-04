@@ -8,6 +8,9 @@
 	import { explainMotif } from '$lib/liveMotifs';
 	import { humanizeMotif, motifReason } from '$lib/motifs';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import { playLine } from '$lib/lines';
+	import { passTurn } from '$lib/threats';
 	import { PuzzleSession } from '$lib/stores/puzzle.svelte';
 	// Aliased: `session` on this page already means the puzzle session.
 	import { session as account } from '$lib/stores/session.svelte';
@@ -30,11 +33,37 @@
 		loadNext();
 	});
 
+	// A defence puzzle's threat, as the solver would write it ("…Qxf7#"):
+	// played in the position with the turn passed, where it was found.
+	const threatSan = $derived.by((): string | null => {
+		const puzzle = session.puzzle;
+		const passed = puzzle?.threat ? passTurn(puzzle.fen) : null;
+		if (!puzzle?.threat || !passed) return null;
+		const [move] = playLine(passed, [puzzle.threat]);
+		if (!move) return null;
+		return passed.split(' ')[1] === 'b' ? `…${move.san}` : move.san;
+	});
+	const threatFens = $derived(
+		session.puzzle ? [passTurn(session.puzzle.fen) ?? session.puzzle.fen, session.fen] : []
+	);
+
 	// Ladder content: only while solving — once solved the banner takes over.
+	// A defence puzzle's ladder waits until the threat is spotted: that is the
+	// first question, and the ladder answers the second.
 	const hint = $derived.by((): HintContent | null => {
 		const puzzle = session.puzzle;
 		const next = session.nextPlayerMove;
 		if (!puzzle || session.status !== 'solving' || !next) return null;
+		if (session.phase === 'spot') return null;
+		if (puzzle.threat && threatSan) {
+			return {
+				category: `Their last move threatens ${threatSan}.`,
+				motif: humanizeMotif(puzzle.motif),
+				moveSan: next.san,
+				reason: `${next.san} deals with ${threatSan}`,
+				line: session.solutionSans
+			};
+		}
 		return {
 			category: 'There’s a tactic in this position.',
 			motif: humanizeMotif(puzzle.motif),
@@ -76,7 +105,15 @@
 			notationTarget = null;
 		}
 	});
+	// the threat as an orange arrow once it has been found (or shown), as on
+	// Play's threat row
+	const threatShapes = $derived.by((): DrawShape[] => {
+		const squares = session.threatSquares;
+		if (!squares || !session.spotted || session.status !== 'solving') return [];
+		return [{ orig: squares.from, dest: squares.to, brush: 'yellow' }];
+	});
 	const boardShapes = $derived<DrawShape[]>([
+		...threatShapes,
 		...shapes,
 		...(notationTarget?.kind === 'move'
 			? [{ orig: notationTarget.from as Key, dest: notationTarget.to as Key, brush: 'blue' }]
@@ -91,7 +128,9 @@
 	const turnColor = $derived(
 		session.fen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
 	);
-	const movableColor = $derived(session.status === 'solving' ? session.playerColor : undefined);
+	const movableColor = $derived(
+		session.status === 'solving' && session.phase === 'solve' ? session.playerColor : undefined
+	);
 </script>
 
 <div class="mb-4 flex items-baseline justify-between">
@@ -143,6 +182,7 @@
 				autoShapes={boardShapes}
 				highlights={notationHighlights}
 				syncKey={session.boardSyncKey}
+				onselect={(key) => session.spotSquare(key)}
 				onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
 			/>
 		</div>
@@ -185,6 +225,37 @@
 					Next puzzle →
 				</button>
 			{:else}
+				{#if session.puzzle.threat}
+					<!-- Defence: where does their threat land, then what answers it. -->
+					<section
+						class="rounded-xs border border-warn-line bg-warn-bg px-3 py-2 text-sm text-body"
+						data-testid="defence-spot"
+						data-phase={session.phase}
+					>
+						{#if session.phase === 'spot'}
+							<p class="font-semibold text-ink">Their last move threatens something.</p>
+							<p class="mt-0.5">Click the square their threat lands on — or the piece making it.</p>
+							{#if session.spotMisses > 0}
+								<p class="mt-1 text-err" data-testid="defence-miss">
+									Not that one — look at what their last move attacks.
+								</p>
+							{/if}
+						{:else if threatSan}
+							<p data-testid="defence-threat">
+								<span class="font-semibold text-ink"
+									>{session.spotted === 'found' ? 'Found it:' : 'Their threat:'}</span
+								>
+								<NotationText
+									text={`${threatSan}.`}
+									fens={threatFens}
+									onhover={(target) => (notationTarget = target)}
+								/>
+								Now find the move that deals with it.
+							</p>
+						{/if}
+					</section>
+				{/if}
+
 				{#if session.wrong}
 					<div
 						class="verdict flex items-center justify-between gap-2 rounded-xs border border-err-line bg-err-bg px-3 py-2 text-sm text-err"

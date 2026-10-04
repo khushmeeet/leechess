@@ -134,6 +134,16 @@ export async function moveUntil(
 /** One pass of the same clicks, with no retry and no board-change assertion —
  * for input the board is meant to REJECT, or that opens a picker rather than
  * moving a piece (promotion). */
+/** One click on one square — for answers that are a square, not a move. */
+export async function clickSquare(
+	page: Page,
+	square: string,
+	orientation: 'white' | 'black' = 'white'
+) {
+	const { x, y } = await squareCenter(page, square, orientation);
+	await page.mouse.click(x, y);
+}
+
 export async function clickSquares(
 	page: Page,
 	from: string,

@@ -6,6 +6,11 @@ import { computeDests } from './game.svelte';
 import { soundPrefs } from './soundPrefs.svelte';
 
 export type PuzzleStatus = 'loading' | 'empty' | 'solving' | 'solved' | 'error';
+/** A defence puzzle is two questions: where does their threat land (`spot`),
+ * then what answers it (`solve`). Every other puzzle is `solve` alone. */
+export type PuzzlePhase = 'spot' | 'solve';
+/** Wrong squares before the threat is shown instead. */
+const SPOT_TRIES = 2;
 
 const REPLY_DELAY_MS = 350;
 
@@ -32,6 +37,10 @@ export class PuzzleSession {
 	hintLevel = $state(0);
 	/** At least one wrong try on the current puzzle. */
 	wrong = $state(false);
+	phase = $state<PuzzlePhase>('solve');
+	/** How the threat was found: by the solver, or shown after misses. */
+	spotted = $state<'found' | 'shown' | null>(null);
+	spotMisses = $state(0);
 	completedCount = $state(0);
 
 	/** Index into puzzle.solution of the next expected move (either side). */
@@ -116,6 +125,9 @@ export class PuzzleSession {
 			this.wrong = false;
 			this.attemptRecorded = false;
 			this.solutionIndex = 0;
+			this.phase = puzzle.threat ? 'spot' : 'solve';
+			this.spotted = null;
+			this.spotMisses = 0;
 			this.status = 'solving';
 		} catch (e) {
 			// A stale failure must not bury a newer success either.
@@ -130,8 +142,35 @@ export class PuzzleSession {
 		}
 	}
 
+	/** The threat's squares: where it lands, and the piece that makes it. */
+	get threatSquares(): { from: Key; to: Key } | null {
+		const threat = this.puzzle?.threat;
+		return threat ? { from: threat.slice(0, 2) as Key, to: threat.slice(2, 4) as Key } : null;
+	}
+
+	/** A square clicked while spotting. The square the threat lands on is
+	 * the answer, and so is the piece making it — either way the solver has
+	 * seen it. After `SPOT_TRIES` misses the threat is shown, which counts
+	 * as a hint (the ladder's motif level), and the solve step begins. */
+	spotSquare(key: Key): void {
+		const squares = this.threatSquares;
+		if (this.status !== 'solving' || this.phase !== 'spot' || !squares) return;
+		if (key === squares.to || key === squares.from) {
+			this.spotted = 'found';
+			this.phase = 'solve';
+			return;
+		}
+		this.spotMisses += 1;
+		if (this.spotMisses >= SPOT_TRIES) {
+			this.spotted = 'shown';
+			this.hintLevel = Math.max(this.hintLevel, 2);
+			this.phase = 'solve';
+		}
+	}
+
 	handleBoardMove(orig: Key, dest: Key, promotion?: string): void {
 		if (this.status !== 'solving' || !this.puzzle || !this.isPlayersTurn) return;
+		if (this.phase !== 'solve') return;
 		const expected = this.puzzle.solution[this.solutionIndex];
 		if (!expected) return;
 

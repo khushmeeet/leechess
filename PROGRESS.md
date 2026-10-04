@@ -14,6 +14,42 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Defence puzzles from your own games (2026-10-04)
+
+**Goal:** the puzzle generator made attacking puzzles only: punish the blunder, or find the
+tactic you missed. But the most common way to lose a game under 1400 is a threat left on
+the board, and nothing trained answering one.
+
+- **Where they come from.** A mistake whose cause is `missed_threat` becomes a defence
+  puzzle (`puzzle_generation.py`), in place of an attacking one: same position, the
+  engine's answer as the solution, motif `defence`. The opponent's threat is stored on
+  the puzzle (`puzzles.threat_move`, added by the migration) and served as `threat`.
+  `scripts/retag.py` backfills them for analyzed games, as for every personal puzzle.
+- **Two questions, in order** (`PuzzleSession.phase`):
+  - **Spot:** "Their last move threatens something. Click the square their threat lands
+    on — or the piece making it." The board takes clicks, not moves; `Board` gained an
+    `onselect` for chessground's square clicks.
+    - **After two misses** the threat is shown, which counts as hint level 2. The ladder
+      stays hidden until this step is done: it answers the second question.
+  - **Defend:** the threat is drawn as an orange arrow, as on Play, with "Found it:
+    Qxf7#. Now find the move that deals with it." The ladder's rungs become "Their last
+    move threatens Qxf7#" and "g6 deals with Qxf7#".
+- **Everything else is the existing queue.** Leitner scheduling, the `?motif=defence`
+  filter, and the Progress motif chart all apply, so a defence success rate shows up
+  beside the others with nothing new on the screen.
+- **Testing:**
+  - Server: a unit test turns Scholar's …Nf6 into a defence puzzle with its threat. An
+    engine-marked end-to-end test analyzes the game, then serves the puzzle with
+    `threat: h5f7`.
+  - Client: four `PuzzleSession` cases cover a move refused while spotting, the target
+    or the threatening piece as answers, the threat shown after two misses as a hint,
+    and other puzzles untouched.
+  - Browser: a Puzzles spec seeds the game, misses once, spots f7, and solves.
+  - **Results:** vitest 528 passed, pytest 648 passed. Playwright: puzzles and
+    hint-ladder specs, 7 passed.
+
+---
+
 ## Addendum — The LLM gets facts, not a FEN (2026-10-04)
 
 **Goal:** the "Why" prompt sent the board as a raw FEN, which LLMs often misread, plus bare

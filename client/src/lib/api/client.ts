@@ -267,6 +267,9 @@ export interface PuzzleRecord {
 	/** UCI moves, solver's move first, opponent replies interleaved. */
 	solution: string[];
 	motif: string;
+	/** Defence puzzles: the opponent's threat to spot first, UCI in the
+	 * position with the turn passed. Null for every other puzzle. */
+	threat?: string | null;
 	difficulty: number | null;
 	source_move_id: number | null; // null = generic Lichess import
 	box: number;

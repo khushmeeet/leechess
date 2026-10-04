@@ -348,3 +348,70 @@ describe('overlapping loads', () => {
 		expect(session.puzzle).toBeNull();
 	});
 });
+
+/** Scholar's mate, 3.Qh5: Black to move, Qxf7# is threatened, and …g6 is
+ * the defence the analysis found. */
+const defencePuzzle = {
+	id: 3,
+	fen: 'r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3',
+	solution: ['g7g6'],
+	motif: 'defence',
+	threat: 'h5f7',
+	difficulty: null,
+	source_move_id: 9,
+	box: 1,
+	due_at: '2026-01-01T00:00:00Z'
+};
+
+describe('defence puzzles', () => {
+	beforeEach(() => {
+		api.getNextPuzzle.mockResolvedValue({ ...defencePuzzle });
+	});
+
+	it('asks where the threat lands before taking a move', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		expect(session.phase).toBe('spot');
+
+		session.handleBoardMove('g7', 'g6'); // the right move, asked too early
+		expect(session.status).toBe('solving');
+		expect(api.recordAttempt).not.toHaveBeenCalled();
+
+		session.spotSquare('f7'); // where Qxf7# lands
+		expect(session.spotted).toBe('found');
+		expect(session.phase).toBe('solve');
+		expect(session.hintLevel).toBe(0);
+
+		session.handleBoardMove('g7', 'g6');
+		expect(session.status).toBe('solved');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, true, 0);
+	});
+
+	it('takes the piece making the threat as an answer too', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('h5');
+		expect(session.spotted).toBe('found');
+	});
+
+	it('shows the threat after two misses, and counts it as a hint', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('a1');
+		expect(session.phase).toBe('spot');
+		expect(session.spotMisses).toBe(1);
+		session.spotSquare('b2');
+		expect(session.spotted).toBe('shown');
+		expect(session.phase).toBe('solve');
+		expect(session.hintLevel).toBe(2);
+	});
+
+	it('leaves every other puzzle to the move alone', async () => {
+		api.getNextPuzzle.mockResolvedValue({ ...underpromotionPuzzle });
+		const session = new PuzzleSession();
+		await session.load();
+		expect(session.phase).toBe('solve');
+		session.spotSquare('e8');
+		expect(session.spotted).toBeNull();
+	});
+});

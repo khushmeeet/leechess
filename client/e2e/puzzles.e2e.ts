@@ -3,11 +3,15 @@ import { expect, test } from './fixtures';
 import {
 	API,
 	HUNG_QUEEN,
+	clickSquare,
 	clickSquares,
 	move,
 	moveUntil,
+	scholarsMateSans,
+	seedGame,
 	seedHungQueenPuzzle,
-	seedSecondPuzzle
+	seedSecondPuzzle,
+	waitForAnalysis
 } from './helpers';
 
 // Phase 3 Puzzles screen: solve flows + attempt recording.
@@ -155,4 +159,37 @@ test('a motif filter with nothing due says so, and does not fall back to another
 	await page.goto('/puzzles?motif=fork');
 	await expect(page.getByText('No puzzles due for this motif.')).toBeVisible();
 	await expect(page.getByTestId('puzzle-heading')).toHaveCount(0);
+});
+
+test('a missed threat comes back as a defence puzzle: spot it, then answer it', async ({
+	page,
+	request
+}) => {
+	// Scholar's mate, played locally: 3…Nf6?? left Qxf7# on the board
+	const gameId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, gameId);
+	const response = await request.get(`${API}/puzzles/next?motif=defence`);
+	expect(response.ok()).toBe(true);
+	const puzzle = await response.json();
+	expect(puzzle.threat).toBe('h5f7');
+	const answer: string = puzzle.solution[0];
+
+	await page.goto('/puzzles?motif=defence');
+	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
+	const spot = page.getByTestId('defence-spot');
+	await expect(spot).toHaveAttribute('data-phase', 'spot');
+	// no ladder while the first question is open
+	await expect(page.getByTestId('hint-reveal')).toBeHidden();
+
+	// a wrong square first, then the one Qxf7# lands on
+	await clickSquare(page, 'a7', 'black');
+	await expect(page.getByTestId('defence-miss')).toBeVisible();
+	await clickSquare(page, 'f7', 'black');
+	await expect(spot).toHaveAttribute('data-phase', 'solve');
+	await expect(page.getByTestId('defence-threat')).toContainText('Found it: Qxf7#.');
+
+	await moveUntil(page, answer.slice(0, 2), answer.slice(2, 4), 'black', async () =>
+		page.getByTestId('puzzle-correct').isVisible()
+	);
+	await expect(page.getByTestId('puzzle-correct')).toBeVisible();
 });

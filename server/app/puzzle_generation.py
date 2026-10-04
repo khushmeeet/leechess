@@ -5,6 +5,11 @@ job already stored (FENs, best moves, classifications) — no engine calls,
 re-runnable over old games (scripts/retag.py backfills).
 
 Each flagged move yields at most one puzzle:
+- missed threat (app/mistakes.py): the opponent's last move threatened
+  something and the move left it on the board → a defence puzzle: drill that
+  position, spot the threat first (threat_move), then solution = the engine's
+  answer to it. Attacking is the only thing the queue used to train; most
+  games under 1400 are lost by not defending.
 - missed tactic: the engine's best move from the position the player faced
   executes a motif → drill that position, solution = the missed move
 - otherwise, allowed tactic: the opponent's best reply to the played move
@@ -17,13 +22,24 @@ import itertools
 import chess
 
 from app.cpl import player_moves
+from app.mistakes import MISSED_THREAT
 from app.models import Game, Move, Puzzle
 from app.motifs import FLAGGED_CLASSIFICATIONS, detect_motifs
+
+DEFENCE = "defence"
 
 
 def puzzle_for_move(move: Move, opponent_best_uci: str | None) -> Puzzle | None:
     if move.classification not in FLAGGED_CLASSIFICATIONS or not move.best_move:
         return None
+
+    if move.mistake_cause == MISSED_THREAT and move.threat_move:
+        return Puzzle(
+            fen=move.fen_before,
+            solution=move.best_move,
+            motif=DEFENCE,
+            threat_move=move.threat_move,
+        )
 
     board = chess.Board(move.fen_before)
     missed = detect_motifs(board, chess.Move.from_uci(move.best_move))

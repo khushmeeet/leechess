@@ -78,6 +78,32 @@ def test_missed_tactic_puzzle_drills_the_position_faced():
     assert created[0].motif == "fork"
 
 
+SCHOLAR_FEN = "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
+
+
+@pytest.mark.unit
+def test_a_missed_threat_becomes_a_defence_puzzle(db_session, client):
+    """3...Nf6?? left Qxf7# on the board: the puzzle is the position faced,
+    with the threat to spot first and the defence as the solution."""
+    board = chess.Board(SCHOLAR_FEN)
+    board.push_san("Nf6")
+    game = Game(pgn="", mode="local", analysis_status="complete")
+    game.moves.append(
+        Move(
+            ply=6, san="Nf6", fen_before=SCHOLAR_FEN, fen_after=board.fen(),
+            best_move="g7g6", classification="blunder",
+            threat_move="h5f7", threat_mate=1, mistake_cause="missed_threat",
+        )
+    )  # fmt: skip
+
+    created = create_puzzles_for_game(game)
+
+    assert len(created) == 1
+    puzzle = created[0]
+    assert (puzzle.fen, puzzle.solution, puzzle.motif) == (SCHOLAR_FEN, "g7g6", "defence")
+    assert puzzle.threat_move == "h5f7"
+
+
 @pytest.mark.unit
 def test_flagged_move_without_any_motif_generates_no_puzzle():
     """A blunder that neither missed nor allowed a detectable tactic stays
@@ -188,3 +214,29 @@ def test_analysis_job_creates_personal_puzzle(client, db_session, monkeypatch):
     assert puzzle.fen == qxe5.fen_after
     assert puzzle.solution == "c6e5"  # the punish: knight takes the hung queen
     assert puzzle.motif == "hanging_piece"
+
+
+@pytest.mark.engine
+@requires_stockfish
+def test_analysis_job_turns_a_missed_threat_into_a_defence_puzzle(
+    client, db_session, monkeypatch
+):
+    """Scholar's mate end to end: 3...Nf6?? ignored Qxf7#, so the queue gains
+    a defence puzzle on the position before it, served with its threat."""
+    monkeypatch.setenv("LEECHESS_ANALYSIS_DEPTH", "8")
+    game_id = client.post("/games", json={}).json()["id"]
+    for san in ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]:
+        assert client.post(f"/games/{game_id}/moves", json={"san": san}).status_code == 201
+    client.post(f"/games/{game_id}/complete", json={})
+
+    nf6 = db_session.scalars(
+        select(Move).where(Move.game_id == game_id, Move.san == "Nf6")
+    ).one()
+    (puzzle,) = nf6.puzzles
+    assert puzzle.motif == "defence"
+    assert puzzle.fen == nf6.fen_before
+
+    served = client.get("/puzzles/next", params={"motif": "defence"}).json()
+    assert served["id"] == puzzle.id
+    assert served["threat"] == "h5f7"
+    assert served["solution"] == [nf6.best_move]

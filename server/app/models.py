@@ -274,6 +274,10 @@ class Puzzle(Base):
     # interleaved for multi-move solutions.
     solution: Mapped[str] = mapped_column(String)
     motif: Mapped[str] = mapped_column(String, index=True)
+    # Defence puzzles (motif "defence") only: the opponent's threat in `fen`,
+    # UCI in the position with the turn passed — the move the solver must
+    # spot before finding the answer to it.
+    threat_move: Mapped[str | None] = mapped_column(String, nullable=True)
     # Lichess rating for imported puzzles; personal ones have no difficulty.
     difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
