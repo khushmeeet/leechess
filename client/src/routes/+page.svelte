@@ -21,6 +21,8 @@
 		type WeighedCandidate
 	} from '$lib/candidates';
 	import { playLine } from '$lib/lines';
+	import OverlayToggles from '$lib/components/OverlayToggles.svelte';
+	import { boardHighlights, overlayMarks, type OverlayName } from '$lib/overlays';
 	import { stockfish } from '$lib/stores/stockfish';
 	import NotationText from '$lib/components/NotationText.svelte';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
@@ -323,12 +325,26 @@
 			? [{ orig: notationTarget.from as Key, dest: notationTarget.to as Key, brush: 'blue' }]
 			: []
 	);
+	// Board overlays are help like the rest, so Off draws none — and zen has
+	// no board furniture at all.
+	const overlays = $derived(
+		displayPrefs.hintMode !== 'off' && !displayPrefs.zenMode && displayPrefs.overlays.length > 0
+			? overlayMarks(game.fen, new Set(displayPrefs.overlays as OverlayName[]))
+			: null
+	);
 	const notationHighlights = $derived(
-		notationTarget
-			? new Map<Key, string>([[targetSquare(notationTarget) as Key, 'notation-focus']])
-			: undefined
+		boardHighlights(overlays?.classes, notationTarget ? targetSquare(notationTarget) : null) as
+			Map<Key, string> | undefined
+	);
+	const pinShapes = $derived<DrawShape[]>(
+		(overlays?.pinLines ?? []).map((pin) => ({
+			orig: pin.by as Key,
+			dest: pin.king as Key,
+			brush: 'purple'
+		}))
 	);
 	const boardShapes = $derived<DrawShape[]>([
+		...pinShapes,
 		...candidateShapes,
 		...threatShapes,
 		...notationShapes,
@@ -872,6 +888,11 @@
 							{/each}
 						</div>
 					</div>
+					{#if displayPrefs.hintMode !== 'off'}
+						<div class="mt-2">
+							<OverlayToggles />
+						</div>
+					{/if}
 					<p class="mt-2 text-xs text-faint">
 						engine:
 						<span data-testid="engine-status" class="font-mono">

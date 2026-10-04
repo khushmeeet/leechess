@@ -6,6 +6,7 @@
  */
 import { Chess, type Color, type Square } from 'chess.js';
 import type { Classification } from '$lib/classification';
+import { leastActivePiece } from '$lib/overlays';
 
 export type GamePhase = 'opening' | 'middlegame' | 'endgame';
 
@@ -123,7 +124,13 @@ export function coachAdvice(ctx: CoachContext): string {
 	} else if (phase === 'endgame') {
 		primary = 'Activate your king and look for passed pawns.';
 	} else {
-		primary = 'Improve your worst-placed piece and keep your king safe.';
+		// name the piece, not the slogan: the one with the fewest squares it
+		// can go to without being lost there
+		const worst = leastActivePiece(ctx.fen, color);
+		primary = worst
+			? `Your least active piece is the ${worst.name} on ${worst.square} ` +
+				`(${worst.safe} safe square${worst.safe === 1 ? '' : 's'}) — find it a better one.`
+			: 'Improve your worst-placed piece and keep your king safe.';
 	}
 
 	return supporting ? `${primary} ${supporting}` : primary;

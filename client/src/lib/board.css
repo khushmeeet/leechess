@@ -110,3 +110,43 @@ coords.squares:nth-of-type(odd) :nth-child(odd),
 coords.squares:nth-of-type(even) :nth-child(even) {
 	color: var(--coord-on-dark, var(--sq-lt, #f0d9b5));
 }
+
+/* Board overlays ($lib/overlays): each a way of looking at the position.
+ * Tints for areas (control, files, the king's surroundings), rings for single
+ * pieces (loose, pinned), so a square can carry both and stay readable. */
+cg-board square.ov-control-w {
+	background-color: rgba(255, 255, 255, 0.28);
+}
+cg-board square.ov-control-b {
+	background-color: rgba(20, 20, 20, 0.22);
+}
+cg-board square.ov-file-open {
+	background-image: linear-gradient(
+		90deg,
+		transparent 44%,
+		rgba(0, 72, 186, 0.22) 44% 56%,
+		transparent 56%
+	);
+}
+cg-board square.ov-file-white,
+cg-board square.ov-file-black {
+	background-image: linear-gradient(
+		90deg,
+		transparent 46%,
+		rgba(0, 72, 186, 0.14) 46% 54%,
+		transparent 54%
+	);
+}
+cg-board square.ov-king {
+	background-color: rgba(200, 30, 30, 0.22);
+}
+cg-board square.ov-hanging {
+	box-shadow: inset 0 0 0 4px rgba(200, 30, 30, 0.85);
+}
+cg-board square.ov-underdefended {
+	box-shadow: inset 0 0 0 4px rgba(230, 143, 0, 0.9);
+}
+cg-board square.ov-pinned {
+	outline: 3px dashed rgba(120, 40, 160, 0.9);
+	outline-offset: -5px;
+}

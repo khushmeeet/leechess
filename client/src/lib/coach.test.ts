@@ -58,6 +58,14 @@ describe('coachAdvice', () => {
 		expect(coachAdvice(ctx({ fen: downAQueen, ply: 30 }))).toContain("You're down material");
 	});
 
+	it('names the least active piece instead of a slogan', () => {
+		// castled, but the rook on a1 has only b1 to go to
+		const fen = 'r1bq1rk1/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 4 6';
+		expect(coachAdvice(ctx({ fen, ply: 30 }))).toBe(
+			'Your least active piece is the rook on a1 (1 safe square) — find it a better one.'
+		);
+	});
+
 	it('gives endgame advice when material is low', () => {
 		const kingAndPawns = '4k3/8/8/8/8/4P3/8/4K3 w - - 0 40';
 		expect(coachAdvice(ctx({ fen: kingAndPawns, ply: 60 }))).toBe(

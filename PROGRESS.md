@@ -14,6 +14,50 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Board overlays, and a coach that names the piece (2026-10-04)
+
+**Goal:** each overlay teaches one way of looking at a position, drawn on the board until
+the player sees it without help. The coach's "Improve your worst-placed piece" never said
+which piece.
+
+- **Five overlays** (`client/src/lib/overlays.ts`, board arithmetic on chess.js, no
+  engine):
+
+  | Overlay | What it marks |
+  |---|---|
+  | Loose pieces | attacked pieces the exchange count says are lost: red ring if nothing defends them, orange if not enough does |
+  | Control | squares White (light tint) or Black (dark tint) attacks more often |
+  | Pins | pieces that can't leave the line to their king (lift the piece, see which slider then hits the king), dashed purple, with a purple line from the pinning piece to the king |
+  | King safety | the squares around each king the other side attacks |
+  | Files | open files, and half-open ones, as a thin stripe |
+
+- **Where.** Chips under the hint-mode switch on Play, and under the move controls in
+  Review, where they apply to whatever position is on the board: the decision, a step
+  along a line, or an exploration.
+  - **Persistence:** the choice is saved (`displayPrefs.overlays`).
+  - **Off and zen:** overlays are help, so Off draws none and hides the chips, and zen
+    has no board furniture.
+  - **Rendering:** classes go through the board's `highlight.custom`. chessground joins
+    several classes on one square, and `boardHighlights` merges them with the notation
+    focus.
+- **The coach names the piece.** `safeSquares` counts where a piece can go without being
+  lost there. `leastActivePiece` picks the knight, bishop, rook or queen with the fewest,
+  when that is three or fewer. The middlegame fallback becomes "Your least active piece
+  is the knight on d2 (2 safe squares) — find it a better one." The slogan stays only
+  when every piece has room.
+- **Testing:**
+  - `overlays.test.ts` covers loose pieces on the play-tested position, hanging versus
+    under-defended, a pin appearing once the d-pawn moves, control at the start,
+    open/half-open files, king danger, safe squares, the least active piece (and none),
+    and merging the marks.
+  - A coach case for the named piece.
+  - `overlays.e2e.ts` covers three loose pieces after …Qh4, control, persistence across a
+    reload, Off hiding everything, and the Ruy Lopez pin drawn from b5 to e8.
+  - **Results:** vitest 547 passed. Playwright: overlays, play, review and insight-bar,
+    31 passed.
+
+---
+
 ## Addendum — Guess the move through the landmark games (2026-10-04)
 
 **Goal:** Literature's landmark games could only be read. Guessing each move before seeing

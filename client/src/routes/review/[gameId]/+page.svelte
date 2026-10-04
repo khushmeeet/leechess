@@ -15,6 +15,8 @@
 	import { winChances, type Classification } from '$lib/classification';
 	import Board from '$lib/components/Board.svelte';
 	import MoveLine from '$lib/components/MoveLine.svelte';
+	import OverlayToggles from '$lib/components/OverlayToggles.svelte';
+	import { boardHighlights, overlayMarks, type OverlayName } from '$lib/overlays';
 	import { lineText, parseLine, playLine, sanToUci, type LineMove } from '$lib/lines';
 	import { computeDests } from '$lib/stores/game.svelte';
 	import { stockfish } from '$lib/stores/stockfish';
@@ -392,12 +394,6 @@
 	// The move or square in the threat line the player is pointing at: its
 	// piece lights up, and a move is drawn too (the arrow is added above).
 	let notationTarget = $state<NotationTarget | null>(null);
-	const notationHighlights = $derived(
-		notationTarget
-			? new Map<Key, string>([[targetSquare(notationTarget) as Key, 'notation-focus']])
-			: undefined
-	);
-
 	const boardFen = $derived(
 		exploreFen ??
 			previewMove?.fenAfter ??
@@ -405,6 +401,19 @@
 			game?.moves[0]?.fen_before ??
 			'8/8/8/8/8/8/8/8 w - - 0 1'
 	);
+
+	// Board overlays for whatever position is on the board — the decision, a
+	// step along a line, or an exploration.
+	const overlays = $derived(
+		displayPrefs.overlays.length > 0 && game
+			? overlayMarks(boardFen, new Set(displayPrefs.overlays as OverlayName[]))
+			: null
+	);
+	const notationHighlights = $derived(
+		boardHighlights(overlays?.classes, notationTarget ? targetSquare(notationTarget) : null) as
+			Map<Key, string> | undefined
+	);
+
 	const boardTurn = $derived(
 		boardFen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
 	);
@@ -615,7 +624,14 @@
 						dests={exploreDests}
 						movableColor={explore ? boardTurn : undefined}
 						onmove={exploreMove}
-						autoShapes={shapes}
+						autoShapes={[
+							...(overlays?.pinLines ?? []).map((pin) => ({
+								orig: pin.by as Key,
+								dest: pin.king as Key,
+								brush: 'purple'
+							})),
+							...shapes
+						]}
 						highlights={notationHighlights}
 					/>
 				{/key}
@@ -671,6 +687,10 @@
 						</span>
 					</span>
 				{/if}
+			</div>
+
+			<div class="mt-2">
+				<OverlayToggles />
 			</div>
 
 			{#if selectedMove && selectedMove.motifs.length > 0}
