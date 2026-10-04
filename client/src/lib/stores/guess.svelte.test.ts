@@ -56,4 +56,27 @@ describe('GuessSession', () => {
 		expect(session.points).toBe(0);
 		expect(session.maxPoints).toBe(0);
 	});
+
+	it('reports its totals after each scored guess, finished on the last one', async () => {
+		const reports: unknown[] = [];
+		const session = new GuessSession(OPERA, 'white', 'Morphy', (totals) => reports.push(totals));
+		session.skip(); // a shown move scores nothing, so there is nothing to keep
+		session.next();
+		expect(reports).toEqual([]);
+
+		await session.guess('g1', 'f3'); // 2.Nf3, the master's move
+		expect(reports.at(-1)).toEqual({
+			points: 5,
+			maxPoints: 5,
+			matched: 1,
+			guessed: 1,
+			finished: false
+		});
+		session.next();
+		await session.guess('d2', 'd4'); // 3.d4 — White's last move in the score
+		expect(reports.at(-1)).toMatchObject({ points: 10, guessed: 2, finished: true });
+		session.next();
+		expect(session.status).toBe('done');
+		expect(reports.at(-1)).toMatchObject({ guessed: 2, finished: true });
+	});
 });

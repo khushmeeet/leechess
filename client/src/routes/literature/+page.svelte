@@ -1,9 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { getGuessSummary, type GuessSummary } from '$lib/api/client';
 	import MiniBoard from '$lib/components/MiniBoard.svelte';
+	import { guessRecordText } from '$lib/guess';
+	import { session } from '$lib/stores/session.svelte';
 	import { ERAS } from '$lib/literature/history';
 	import { GAMES } from '$lib/literature/games';
 	import { CATEGORY_LABELS, TERMS, type TermCategory } from '$lib/literature/terms';
+
+	// Guess-the-move scores saved to the account, shown on each game's card.
+	let guessing = $state<GuessSummary[]>([]);
+	$effect(() => {
+		if (!session.authenticated) return;
+		getGuessSummary()
+			.then((fetched) => (guessing = fetched))
+			.catch(() => {});
+	});
 
 	let query = $state('');
 	let category = $state<TermCategory | 'all'>('all');
@@ -177,6 +189,11 @@
 					target="_blank"
 					rel="noopener noreferrer">{game.sourceTitle} ↗</a
 				>
+				{#each guessing.filter((summary) => summary.game_id === game.id) as summary (summary.side)}
+					<p class="mt-1 text-xs text-muted" data-testid="guess-card-record">
+						{guessRecordText(summary, summary.side === 'white' ? game.white : game.black)}
+					</p>
+				{/each}
 			</article>
 		{/each}
 	</div>

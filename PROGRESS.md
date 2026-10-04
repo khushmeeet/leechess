@@ -14,6 +14,44 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Guess-the-move scores are kept (2026-10-04)
+
+**Goal:** a guess-the-move run lived only in the page; closing it lost the score.
+
+- **Server** (`routers/guessing.py`, new `guess_runs` table):
+  - `POST /guess/runs` creates a run on its first scored guess. `PUT /guess/runs/{id}`
+    updates it after each guess after that, so a run left halfway is kept too.
+  - The totals are checked: 5 points per guess exactly, points no more than that,
+    exact matches no more than guesses. A run keeps its game and side, and its guesses
+    only grow.
+  - Another account's run is a 404. Anonymous play saves nothing (401).
+  - `GET /guess/summary` gives, per game and side: the run count, the best finished run
+    (highest share of points) and the latest run. Progress carries the same summary
+    for its window (`ProgressOut.guessing`).
+- **Client:**
+  - `GuessSession` reports its totals after every scored guess. The run counts as
+    finished as soon as the player's last move is revealed, without waiting for the
+    "Next move" click.
+  - `GuessRunRecorder` queues the calls so an update never overtakes the creation. A
+    failed save is dropped quietly and retried on the next guess.
+  - The account check happens when a guess is scored, so the sign-in state settling
+    can never restart a run under way.
+- **Where the scores show:**
+  - **The guess page:** "Your best as Paul Morphy: 31 of 45 points (69%)", or "Started
+    as …, not finished yet" until a run is finished.
+  - **Literature:** the same line on the game's card.
+  - **Progress:** a "Guess the move" table with game, side, best, latest and runs.
+- **Testing:**
+  - `test_guessing.py`: create and update, no account, six kinds of impossible totals,
+    the game/side/guesses rules, another account, best vs latest, sides kept apart, the
+    order, the window, and Progress.
+  - Unit tests: the session's reports (none for shown moves, finished on the last
+    guess), the recorder's queue and retry, and the record text.
+  - `guess.e2e.ts`: two exact guesses are saved, then shown after a reload, on the
+    card and on Progress.
+
+---
+
 ## Addendum — Motifs over time on Progress (2026-10-04)
 
 **Goal:** Progress showed each motif's success rate as one total, so it could not

@@ -133,6 +133,7 @@ def test_empty_database_returns_zeroes_not_errors(client):
         ],
         "thinking": {"moments": 0, "found": 0, "threats": 0, "answered": 0, "recent": []},
         "repertoire": [],
+        "guessing": [],
     }
 
 

@@ -3,9 +3,14 @@
 	import type { Key } from 'chessground/types';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import { getGuessSummary, type GuessSummary } from '$lib/api/client';
 	import Board from '$lib/components/Board.svelte';
+	import { guessRecordText } from '$lib/guess';
+	import { GuessRunRecorder } from '$lib/guessRuns';
 	import { GAMES } from '$lib/literature/games';
 	import { GuessSession } from '$lib/stores/guess.svelte';
+	// Aliased: `session` in this file is the guessing session.
+	import { session as account } from '$lib/stores/session.svelte';
 
 	// Guess the move through a landmark game: the winner's side by default,
 	// the other on request. Literature's games were only ever read; this is
@@ -14,8 +19,38 @@
 
 	let side = $state<'white' | 'black' | null>(null);
 	const playing = $derived(side ?? (game?.result === '0-1' ? 'black' : 'white'));
-	const session = $derived(
-		game ? new GuessSession(game.pgn, playing, playing === 'white' ? game.white : game.black) : null
+	// Each run is saved to the account as it goes (anonymous play keeps
+	// nothing). Checked when a guess is scored rather than here, so the
+	// sign-in state settling can never restart a run under way.
+	const session = $derived.by(() => {
+		if (!game) return null;
+		const recorder = new GuessRunRecorder(game.id, playing);
+		return new GuessSession(
+			game.pgn,
+			playing,
+			playing === 'white' ? game.white : game.black,
+			(totals) => {
+				if (!account.authenticated) return;
+				void recorder.record(totals).then(() => {
+					if (totals.finished) loadRecord();
+				});
+			}
+		);
+	});
+
+	// The saved runs at this game, for "your best" beside the score.
+	let summaries = $state<GuessSummary[]>([]);
+	function loadRecord(): void {
+		if (!account.authenticated) return;
+		getGuessSummary()
+			.then((fetched) => (summaries = fetched))
+			.catch(() => {});
+	}
+	$effect(() => {
+		if (account.authenticated) loadRecord();
+	});
+	const record = $derived(
+		summaries.find((summary) => summary.game_id === game?.id && summary.side === playing) ?? null
 	);
 
 	const shapes = $derived.by((): DrawShape[] => {
@@ -130,6 +165,11 @@
 			<p class="text-xs text-muted" data-testid="guess-score">
 				{session.points} / {session.maxPoints} points · {session.matched} exact
 			</p>
+			{#if record}
+				<p class="text-xs text-body" data-testid="guess-record">
+					{guessRecordText(record, session.player)}
+				</p>
+			{/if}
 			<p class="text-xs text-muted">
 				Each guess is weighed by the engine against the move actually played: 5 points for the same
 				move or one as good, less the further your winning chances fall short.

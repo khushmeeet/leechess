@@ -29,6 +29,7 @@ from app.live import sweep_abandoned
 from app.routers import (
     endgames,
     games,
+    guessing,
     live,
     progress,
     puzzles,
@@ -374,6 +375,7 @@ app.include_router(live.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
 app.include_router(thinking.router)
+app.include_router(guessing.router)
 app.include_router(endgames.router)
 app.include_router(wikibook.router)
 

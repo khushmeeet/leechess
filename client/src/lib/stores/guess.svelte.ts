@@ -16,6 +16,16 @@ export interface GuessFeedback {
 	text: string;
 }
 
+/** The run's totals, handed out after every scored guess and once more when
+ * the game is over — what gets saved to the account. */
+export interface GuessTotals {
+	points: number;
+	maxPoints: number;
+	matched: number;
+	guessed: number;
+	finished: boolean;
+}
+
 /** One pass through a landmark game, guessing one side's moves (see
  * $lib/guess). The other side's moves play themselves. */
 export class GuessSession {
@@ -33,12 +43,41 @@ export class GuessSession {
 	guessed = $state(0);
 
 	private generation = 0;
+	private readonly onprogress: ((totals: GuessTotals) => void) | undefined;
 
-	constructor(pgn: string, side: 'white' | 'black', player: string) {
+	constructor(
+		pgn: string,
+		side: 'white' | 'black',
+		player: string,
+		onprogress?: (totals: GuessTotals) => void
+	) {
 		this.moves = gameMoves(pgn);
 		this.side = side;
 		this.player = player;
+		this.onprogress = onprogress;
 		this.skipOpponent();
+	}
+
+	/** The player's moves are all behind them: the game is over, or the move
+	 * just revealed was their last one — finished without waiting for a
+	 * "Next move" click that only leads to the final position. */
+	private get finished(): boolean {
+		if (this.status === 'done') return true;
+		if (this.status !== 'revealed') return false;
+		return !this.moves.slice(this.index + 1).some((move) => this.isPlayers(move));
+	}
+
+	/** Nothing to report until a guess has been scored: a run of shown moves
+	 * only has no score to keep. */
+	private report(): void {
+		if (this.guessed === 0) return;
+		this.onprogress?.({
+			points: this.points,
+			maxPoints: this.maxPoints,
+			matched: this.matched,
+			guessed: this.guessed,
+			finished: this.finished
+		});
 	}
 
 	/** The position on the board: after the master's move once it is shown. */
@@ -75,6 +114,7 @@ export class GuessSession {
 			this.index += 1;
 		}
 		this.status = this.index >= this.moves.length ? 'done' : 'guessing';
+		if (this.status === 'done') this.report();
 	}
 
 	async guess(orig: Key, dest: Key, promotion?: string): Promise<void> {
@@ -142,6 +182,7 @@ export class GuessSession {
 			text: guessVerdict(guess, master, this.player, points)
 		};
 		this.status = 'revealed';
+		this.report();
 	}
 
 	/** Past the master's move and the reply to it, to the next guess. */

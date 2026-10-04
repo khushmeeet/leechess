@@ -438,6 +438,31 @@ class CriticalMoment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class GuessRun(Base):
+    """One pass at guessing the moves of a Literature landmark game from one
+    side (the client's $lib/guess scores each guess with its own engine).
+    Written after every scored guess, so a run left halfway is kept too;
+    `finished` once the game's last move is behind it. Literature and
+    Progress show the best finished run and the latest one per game."""
+
+    __tablename__ = "guess_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
+    # The landmark game's id in the client's catalog (lib/literature/games.ts).
+    game_id: Mapped[str] = mapped_column(String, index=True)
+    side: Mapped[str] = mapped_column(String)
+    points: Mapped[int] = mapped_column(Integer)
+    max_points: Mapped[int] = mapped_column(Integer)
+    # Guesses that were the master's own move, and guesses made at all
+    # (moves shown without a guess count in neither).
+    matched: Mapped[int] = mapped_column(Integer)
+    guessed: Mapped[int] = mapped_column(Integer)
+    finished: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class WikibookCache(Base):
     """One fetched Wikibooks opening-theory page, keyed by our computed page
     title. html is NULL when Wikibooks has no page for the line ("out of

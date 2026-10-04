@@ -70,3 +70,25 @@ export function guessVerdict(
 			: `${player}’s ${master.san} keeps ${theirs}%`;
 	return `${guess.san} keeps ${yours}%; ${comparison}. ${points} point${points === 1 ? '' : 's'}.`;
 }
+
+/** A saved run's score in one line, for Literature, the guess page and
+ * Progress: the best finished run, or the latest one while none is finished. */
+export function guessRecordText(
+	summary: {
+		best: { points: number; max_points: number } | null;
+		latest: { points: number; max_points: number; guessed: number };
+	},
+	player: string
+): string {
+	const share = (score: { points: number; max_points: number }) =>
+		score.max_points === 0 ? 0 : Math.round((score.points / score.max_points) * 100);
+	if (summary.best) {
+		const best = summary.best;
+		return `Your best as ${player}: ${best.points} of ${best.max_points} points (${share(best)}%).`;
+	}
+	const latest = summary.latest;
+	return (
+		`Started as ${player}: ${latest.points} of ${latest.max_points} points ` +
+		`after ${latest.guessed} guess${latest.guessed === 1 ? '' : 'es'}, not finished yet.`
+	);
+}

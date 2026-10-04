@@ -509,6 +509,54 @@ class CriticalMomentIn(BaseModel):
     candidates: int = Field(ge=1, le=3)
 
 
+# Points for one guess at most — the client's MAX_POINTS ($lib/guess).
+GUESS_MAX_POINTS = 5
+
+
+class GuessRunIn(BaseModel):
+    """A guess-the-move run's totals so far, as the client scored them."""
+
+    game_id: str = Field(pattern=r"^[a-z0-9-]{1,64}$")
+    side: Literal["white", "black"]
+    points: int = Field(ge=0)
+    max_points: int = Field(ge=0)
+    matched: int = Field(ge=0)
+    guessed: int = Field(ge=1, le=MAX_IMPORTED_PLIES)
+    finished: bool = False
+
+    @model_validator(mode="after")
+    def consistent_totals(self) -> "GuessRunIn":
+        if self.max_points != GUESS_MAX_POINTS * self.guessed:
+            raise ValueError("max_points must be 5 per guess")
+        if self.points > self.max_points:
+            raise ValueError("points cannot exceed max_points")
+        if self.matched > self.guessed:
+            raise ValueError("matched cannot exceed guessed")
+        return self
+
+
+class GuessScore(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    points: int
+    max_points: int
+    matched: int
+    guessed: int
+    finished: bool
+    updated_at: datetime
+
+
+class GuessSummary(BaseModel):
+    """One landmark game from one side: how many runs, the best finished run
+    (by share of points; None until one is finished) and the latest run."""
+
+    game_id: str
+    side: str
+    runs: int
+    best: GuessScore | None
+    latest: GuessScore
+
+
 class ThinkingSummary(BaseModel):
     """Critical moments in the window: how often the move to find was on the
     list, how often a threat was answered, and the latest results in order
@@ -569,6 +617,8 @@ class ProgressOut(BaseModel):
     # Openings you played as one side, most played first (games against the
     # engine or a friend — a pass-and-play game has no side of your own).
     repertoire: list[RepertoireLine]
+    # Guess the move, per landmark game and side, most recently played first.
+    guessing: list[GuessSummary]
 
 
 class WikibookPageOut(BaseModel):

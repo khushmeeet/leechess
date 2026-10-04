@@ -17,6 +17,7 @@ from app.auth.models import User
 from app.cpl import TWO_SIDED_MODES, aggregate_cpl, player_moves
 from app.db import get_db
 from app.mistakes import CAUSES
+from app.routers.guessing import guess_summary
 from app.openings import left_book, opening_of
 from app.models import (
     CriticalMoment,
@@ -345,4 +346,5 @@ def get_progress(
         mistake_causes=mistake_causes(games),
         thinking=thinking_summary(db, user, since),
         repertoire=repertoire(games),
+        guessing=guess_summary(db, user, since),
     )

@@ -7,6 +7,7 @@
 	import AccountGate from '$lib/components/AccountGate.svelte';
 	import CplTrend from '$lib/components/CplTrend.svelte';
 	import MotifTrends from '$lib/components/MotifTrends.svelte';
+	import { GAMES } from '$lib/literature/games';
 	import { session } from '$lib/stores/session.svelte';
 
 	const windows = [
@@ -44,8 +45,25 @@
 			progress.motifs.length === 0 &&
 			progress.cpl_trend.length === 0 &&
 			progress.drills_passed === 0 &&
-			progress.thinking.moments === 0
+			progress.thinking.moments === 0 &&
+			progress.guessing.length === 0
 	);
+
+	// Guess the move: each run's game by its catalog id, with the side's player.
+	const guessing = $derived(
+		(progress?.guessing ?? []).map((summary) => {
+			const game = GAMES.find((candidate) => candidate.id === summary.game_id);
+			return {
+				summary,
+				game,
+				player: game ? (summary.side === 'white' ? game.white : game.black) : summary.side
+			};
+		})
+	);
+
+	function score(points: number, max: number): string {
+		return `${points}/${max} (${max === 0 ? 0 : Math.round((points / max) * 100)}%)`;
+	}
 
 	// Which step of the thinking routine broke, most common first. The bars
 	// are scaled to the biggest count so the leader always fills its row.
@@ -286,6 +304,64 @@
 										<span class="text-faint">your opponent left it first</span>
 									{/if}
 								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
+	{#if guessing.length > 0}
+		<!-- Guess the move through the Literature games: the best finished run
+		     per game and side, and the latest — a run left halfway counts there. -->
+		<section class="mb-6" data-testid="guessing">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Guess the move
+			</h2>
+			<div class="overflow-x-auto rounded-xs border border-line bg-card">
+				<table class="w-full text-left text-sm">
+					<thead class="text-xs text-muted">
+						<tr class="border-b border-line">
+							<th class="px-3 py-1.5 font-normal">Game</th>
+							<th class="px-2 py-1.5 font-normal">As</th>
+							<th class="px-2 py-1.5 font-normal">Best</th>
+							<th class="px-2 py-1.5 font-normal">Latest</th>
+							<th class="px-3 py-1.5 font-normal">Runs</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each guessing as row (`${row.summary.game_id}-${row.summary.side}`)}
+							{@const latest = row.summary.latest}
+							<tr class="border-b border-line last:border-0" data-testid="guessing-row">
+								<td class="px-3 py-1.5">
+									{#if row.game}
+										<a
+											class="text-ink hover:underline"
+											href={resolve('/literature/guess/[gameId]', { gameId: row.summary.game_id })}
+											>{row.game.title}</a
+										>
+									{:else}
+										{row.summary.game_id}
+									{/if}
+								</td>
+								<td class="px-2 py-1.5">{row.player}</td>
+								<td class="px-2 py-1.5 tabular-nums">
+									{#if row.summary.best}
+										{score(row.summary.best.points, row.summary.best.max_points)}
+									{:else}
+										<span class="text-faint">not finished</span>
+									{/if}
+								</td>
+								<td class="px-2 py-1.5 tabular-nums">
+									{score(latest.points, latest.max_points)}
+									{#if !latest.finished}
+										<span class="text-faint"
+											>after {latest.guessed} guess{latest.guessed === 1 ? '' : 'es'}</span
+										>
+									{/if}
+								</td>
+								<td class="px-3 py-1.5 tabular-nums">{row.summary.runs}</td>
 							</tr>
 						{/each}
 					</tbody>

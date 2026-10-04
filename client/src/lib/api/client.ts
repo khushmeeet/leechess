@@ -404,6 +404,48 @@ export function recordCriticalMoment(moment: CriticalMomentResult): Promise<{ id
 	return request('/thinking/moments', { method: 'POST', body: JSON.stringify(moment) });
 }
 
+/** A guess-the-move run's totals so far (see $lib/guess). */
+export interface GuessRunTotals {
+	game_id: string;
+	side: 'white' | 'black';
+	points: number;
+	max_points: number;
+	matched: number;
+	guessed: number;
+	finished: boolean;
+}
+
+export function startGuessRun(totals: GuessRunTotals): Promise<{ id: number }> {
+	return request('/guess/runs', { method: 'POST', body: JSON.stringify(totals) });
+}
+
+export function updateGuessRun(id: number, totals: GuessRunTotals): Promise<{ id: number }> {
+	return request(`/guess/runs/${id}`, { method: 'PUT', body: JSON.stringify(totals) });
+}
+
+export interface GuessScore {
+	points: number;
+	max_points: number;
+	matched: number;
+	guessed: number;
+	finished: boolean;
+	updated_at: string;
+}
+
+/** One landmark game from one side: the best finished run (null until one
+ * is finished) and the latest run, finished or not. */
+export interface GuessSummary {
+	game_id: string;
+	side: 'white' | 'black';
+	runs: number;
+	best: GuessScore | null;
+	latest: GuessScore;
+}
+
+export function getGuessSummary(): Promise<GuessSummary[]> {
+	return request('/guess/summary');
+}
+
 /** One opening you play from one side (Progress's "Your openings"). */
 export interface RepertoireLine {
 	color: 'white' | 'black';
@@ -489,6 +531,7 @@ export interface ProgressSummary {
 	mistake_causes: MistakeCauseCount[]; // every cause, most common first
 	thinking: ThinkingSummary;
 	repertoire: RepertoireLine[]; // most played first
+	guessing: GuessSummary[]; // most recently played first
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {
