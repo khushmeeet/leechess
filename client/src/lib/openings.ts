@@ -1,10 +1,12 @@
 /** Opening-book lookup for the in-game insight bar.
  *
- * The book is static/openings.json — every named opening from the lichess
- * chess-openings dataset keyed by EPD (FEN minus move counters), built at
- * dev/build time by scripts/build-openings.js. Positions are matched by EPD
- * so transpositions into a known line still resolve. The JSON (~450KB) is
- * fetched lazily and failure is soft: lookups just return null.
+ * The book is static/openings.json — every position along every named
+ * opening in the lichess chess-openings dataset, keyed by EPD (FEN minus move
+ * counters), built at dev/build time by scripts/build-openings.js. A line's
+ * final position carries its [eco, name]; positions on the way there are null
+ * (book, but unnamed). Positions are matched by EPD so transpositions into a
+ * known line still resolve. The JSON (~700KB) is fetched lazily and failure
+ * is soft: lookups just return null, and nothing counts as book.
  */
 
 export interface Opening {
@@ -13,6 +15,8 @@ export interface Opening {
 }
 
 let book: Map<string, Opening> | null = null;
+/** Every book position, named or passed through on the way to one. */
+let bookPositions: Set<string> | null = null;
 let loading: Promise<boolean> | null = null;
 
 /** FEN without the halfmove/fullmove counters — the book's key format. */
@@ -25,8 +29,12 @@ export function loadOpenings(fetchFn: typeof fetch = fetch): Promise<boolean> {
 	loading ??= fetchFn('/openings.json')
 		.then(async (response) => {
 			if (!response.ok) throw new Error(`openings.json: HTTP ${response.status}`);
-			const data = (await response.json()) as Record<string, [string, string]>;
-			book = new Map(Object.entries(data).map(([epd, [eco, name]]) => [epd, { eco, name }]));
+			const data = (await response.json()) as Record<string, [string, string] | null>;
+			book = new Map();
+			for (const [epd, entry] of Object.entries(data)) {
+				if (entry) book.set(epd, { eco: entry[0], name: entry[1] });
+			}
+			bookPositions = new Set(Object.keys(data));
 			return true;
 		})
 		.catch((error) => {
@@ -43,6 +51,13 @@ export function openingsReady(): boolean {
 
 export function lookupEpd(fen: string): Opening | null {
 	return book?.get(epdFromFen(fen)) ?? null;
+}
+
+/** The position is on a known opening line — a move into it is a book move,
+ * which move grading leaves ungraded (see `classifyMove`). False until the
+ * book has loaded. */
+export function inBook(fen: string): boolean {
+	return bookPositions?.has(epdFromFen(fen)) ?? false;
 }
 
 /** Dataset names read "Family: Variation"; no colon = family umbrella only. */

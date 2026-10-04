@@ -90,6 +90,24 @@ describe('StockfishClient', () => {
 		expect(result.lines[0].pvUci).toEqual(['e2e4', 'e7e5']);
 	});
 
+	it('caps a depth search by time when asked, and keeps the last exact score', async () => {
+		configureNextWorker = (w) => {
+			w.onGo = () =>
+				queueMicrotask(() => {
+					w.send('info depth 14 score cp 25 multipv 1 pv e2e4 e7e5');
+					// cut off mid-iteration: a bound, not a score
+					w.send('info depth 15 score cp 60 lowerbound multipv 1 pv d2d4');
+					w.send('bestmove e2e4');
+				});
+		};
+		const client = new StockfishClient();
+		const result = await client.evaluate(START_FEN, 16, 1, 420);
+		expect(createdWorkers[0].posted).toContain('go depth 16 movetime 420');
+		expect(result.cp).toBe(25);
+		expect(result.depth).toBe(14);
+		expect(result.lines[0].pvUci).toEqual(['e2e4', 'e7e5']);
+	});
+
 	it('rejects (instead of hanging) when bestmove never arrives', async () => {
 		configureNextWorker = (w) => {
 			w.onGo = null; // boots fine, but the search never answers

@@ -12,7 +12,6 @@ function ctx(overrides: Partial<CoachContext>): CoachContext {
 		ply: 0,
 		evalCp: 0,
 		lastUserClassification: null,
-		bestMoveSan: null,
 		userColor: 'white',
 		inBook: false,
 		...overrides
@@ -24,11 +23,10 @@ describe('coachAdvice', () => {
 		expect(coachAdvice(ctx({}))).toBe('Fight for the center and develop quickly.');
 	});
 
-	it('composes the king-safety line with the engine preference (mockup shape)', () => {
-		const advice = coachAdvice(ctx({ fen: ITALIAN, ply: 6, bestMoveSan: 'c3' }));
+	it('composes the king-safety line with its supporting sentence', () => {
+		const advice = coachAdvice(ctx({ fen: ITALIAN, ply: 6 }));
 		expect(advice).toBe(
-			'King safety is the priority. Stockfish prefers c3. ' +
-				'Finish development and castle before opening the position.'
+			'King safety is the priority. Finish development and castle before opening the position.'
 		);
 	});
 
@@ -60,17 +58,19 @@ describe('coachAdvice', () => {
 		expect(coachAdvice(ctx({ fen: downAQueen, ply: 30 }))).toContain("You're down material");
 	});
 
+	it('names the least active piece instead of a slogan', () => {
+		// castled, but the rook on a1 has only b1 to go to
+		const fen = 'r1bq1rk1/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 4 6';
+		expect(coachAdvice(ctx({ fen, ply: 30 }))).toBe(
+			'Your least active piece is the rook on a1 (1 safe square) — find it a better one.'
+		);
+	});
+
 	it('gives endgame advice when material is low', () => {
 		const kingAndPawns = '4k3/8/8/8/8/4P3/8/4K3 w - - 0 40';
 		expect(coachAdvice(ctx({ fen: kingAndPawns, ply: 60 }))).toBe(
 			'Activate your king and look for passed pawns.'
 		);
-	});
-
-	it('appends the engine preference whenever a best move is known', () => {
-		const advice = coachAdvice(ctx({ ply: 8, fen: ITALIAN, bestMoveSan: 'Nc3' }));
-		expect(advice).toContain('Stockfish prefers Nc3.');
-		expect(coachAdvice(ctx({ ply: 8, fen: ITALIAN }))).not.toContain('Stockfish prefers');
 	});
 });
 

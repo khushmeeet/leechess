@@ -3,11 +3,15 @@ import { expect, test } from './fixtures';
 import {
 	API,
 	HUNG_QUEEN,
+	clickSquare,
 	clickSquares,
 	move,
 	moveUntil,
+	scholarsMateSans,
+	seedGame,
 	seedHungQueenPuzzle,
-	seedSecondPuzzle
+	seedSecondPuzzle,
+	waitForAnalysis
 } from './helpers';
 
 // Phase 3 Puzzles screen: solve flows + attempt recording.
@@ -155,4 +159,92 @@ test('a motif filter with nothing due says so, and does not fall back to another
 	await page.goto('/puzzles?motif=fork');
 	await expect(page.getByText('No puzzles due for this motif.')).toBeVisible();
 	await expect(page.getByTestId('puzzle-heading')).toHaveCount(0);
+});
+
+test('a missed threat comes back as a defence puzzle: spot it, then answer it', async ({
+	page,
+	request
+}) => {
+	// Scholar's mate, played locally: 3…Nf6?? left Qxf7# on the board
+	const gameId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, gameId);
+	const response = await request.get(`${API}/puzzles/next?motif=defence`);
+	expect(response.ok()).toBe(true);
+	const puzzle = await response.json();
+	expect(puzzle.threat).toBe('h5f7');
+	const answer: string = puzzle.solution[0];
+
+	await page.goto('/puzzles?motif=defence');
+	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
+	const spot = page.getByTestId('defence-spot');
+	await expect(spot).toHaveAttribute('data-phase', 'spot');
+	// no ladder while the first question is open
+	await expect(page.getByTestId('hint-reveal')).toBeHidden();
+
+	// a wrong square first, then the one Qxf7# lands on
+	await clickSquare(page, 'a7', 'black');
+	await expect(page.getByTestId('defence-miss')).toBeVisible();
+	await clickSquare(page, 'f7', 'black');
+	await expect(spot).toHaveAttribute('data-phase', 'solve');
+	await expect(page.getByTestId('defence-threat')).toContainText('Found it: Qxf7#.');
+
+	await moveUntil(page, answer.slice(0, 2), answer.slice(2, 4), 'black', async () =>
+		page.getByTestId('puzzle-correct').isVisible()
+	);
+	await expect(page.getByTestId('puzzle-correct')).toBeVisible();
+});
+
+test('a defence puzzle takes any move that deals with the threat, and says why one does not', async ({
+	page,
+	request
+}) => {
+	// four engine searches in the browser on top of a game analysis: more
+	// than the default budget on a small CI runner
+	test.setTimeout(60_000);
+	const gameId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, gameId);
+	const puzzle = await (await request.get(`${API}/puzzles/next?motif=defence`)).json();
+	const stored: string = puzzle.solution[0];
+	// …g6, …Qe7 and …Qf6 all stop Qxf7#; play one the analysis didn't store
+	const defences: Record<string, string> = { d8e7: 'Qe7', g7g6: 'g6', d8f6: 'Qf6' };
+	const other = Object.keys(defences).find((uci) => uci !== stored)!;
+
+	await page.goto('/puzzles?motif=defence');
+	await expect(page.getByTestId('puzzle-heading')).toContainText(`Puzzle #${puzzle.id}`);
+	await clickSquare(page, 'f7', 'black');
+	await expect(page.getByTestId('defence-spot')).toHaveAttribute('data-phase', 'solve');
+
+	// a move that ignores the threat is refused, with the reason. The retry
+	// stops as soon as the move registers — the check starting is enough —
+	// since a click after the refusal has put the pawn back would play …a6
+	// again, and the check of that would swallow the next move.
+	await moveUntil(
+		page,
+		'a7',
+		'a6',
+		'black',
+		async () =>
+			(await page.getByTestId('defence-checking').isVisible()) ||
+			(await page.getByTestId('puzzle-retry').isVisible())
+	);
+	await expect(page.getByTestId('puzzle-retry-text')).toHaveText(
+		'a6 leaves Qxf7# on the board. Try again.',
+		{ timeout: 30_000 }
+	);
+	await expect(page.getByTestId('defence-checking')).toBeHidden();
+
+	// another real defence counts as solving it — registered once the check
+	// names it (or it is already through)
+	await moveUntil(
+		page,
+		other.slice(0, 2),
+		other.slice(2, 4),
+		'black',
+		async () =>
+			(await page.getByTestId('defence-checking').allTextContents())
+				.join(' ')
+				.includes(defences[other]) || (await page.getByTestId('puzzle-correct').isVisible())
+	);
+	await expect(page.getByTestId('puzzle-correct')).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByTestId('puzzle-alternative')).toContainText('deals with it too');
 });

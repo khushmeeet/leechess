@@ -273,6 +273,13 @@ def complete_game(
 
     if not game.pgn:  # imported games keep their original PGN
         game.pgn = _rebuild_pgn(game)
+    # Play's live grades, kept beside the ones the analysis job will write. A
+    # ply past the record (a takeback the client never synced) is dropped.
+    for live in payload.live:
+        if live.ply <= len(game.moves):
+            move = game.moves[live.ply - 1]
+            move.live_eval_after = live.eval_after
+            move.live_classification = live.classification
     game.analysis_status = "analyzing"
     # This is where a game becomes one of the account's — number it now, so
     # the number counts saved games rather than attempts at one.

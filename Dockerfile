@@ -9,7 +9,8 @@ COPY client/ ./
 COPY shared/ /build/shared/
 # empty VITE_API_URL = same-origin requests; FastAPI serves the SPA below
 ENV VITE_API_URL=""
-RUN bun scripts/copy-stockfish.js && bunx vite build
+# build-openings.js reads ../../shared/chess-openings — the sibling copy above
+RUN bun scripts/copy-stockfish.js && bun scripts/build-openings.js && bunx vite build
 
 # ---- server ----
 FROM python:3.14-slim

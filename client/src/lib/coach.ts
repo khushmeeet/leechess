@@ -1,10 +1,12 @@
 /** Rule-based coach line for the insight bar: one primary sentence picked by
- * priority, the engine's preference when known, and sometimes a supporting
- * sentence. Deliberately template-driven — advice a club coach would give,
- * not engine analysis.
+ * priority, and sometimes a supporting sentence. Deliberately template-driven
+ * — advice a club coach would give, not engine analysis. The engine's own
+ * pick used to ride along ("Stockfish prefers Nxe4") and arrived before the
+ * player had thought at all; it is its own reveal on Play now.
  */
 import { Chess, type Color, type Square } from 'chess.js';
 import type { Classification } from '$lib/classification';
+import { leastActivePiece } from '$lib/overlays';
 
 export type GamePhase = 'opening' | 'middlegame' | 'endgame';
 
@@ -16,8 +18,6 @@ export interface CoachContext {
 	/** Current eval, white POV, clamped (reserved for future rules). */
 	evalCp: number | null;
 	lastUserClassification: Classification | null;
-	/** SAN of the engine's top choice in this position, when fresh. */
-	bestMoveSan: string | null;
 	userColor: 'white' | 'black';
 	/** Still inside known opening theory (reserved for future rules). */
 	inBook: boolean;
@@ -124,11 +124,14 @@ export function coachAdvice(ctx: CoachContext): string {
 	} else if (phase === 'endgame') {
 		primary = 'Activate your king and look for passed pawns.';
 	} else {
-		primary = 'Improve your worst-placed piece and keep your king safe.';
+		// name the piece, not the slogan: the one with the fewest squares it
+		// can go to without being lost there
+		const worst = leastActivePiece(ctx.fen, color);
+		primary = worst
+			? `Your least active piece is the ${worst.name} on ${worst.square} ` +
+				`(${worst.safe} safe square${worst.safe === 1 ? '' : 's'}) — find it a better one.`
+			: 'Improve your worst-placed piece and keep your king safe.';
 	}
 
-	const parts = [primary];
-	if (ctx.bestMoveSan) parts.push(`Stockfish prefers ${ctx.bestMoveSan}.`);
-	if (supporting) parts.push(supporting);
-	return parts.join(' ');
+	return supporting ? `${primary} ${supporting}` : primary;
 }

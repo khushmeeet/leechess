@@ -1,11 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import type { NotationTarget } from '$lib/notation';
 	import type { Idea } from '$lib/ideas';
 	import type { OpeningState } from '$lib/stores/play.svelte';
 
 	// Play's single in-game coaching panel: where you are (opening), what the
-	// position holds (the tactic row), and what the engine suggests (coach +
-	// ideas). These used to be two stacked cards, which let the Ideas chips
+	// position holds (the threat against you, then your own tactic), and what
+	// the engine suggests (coach + ideas). These used to be two stacked cards, which let the Ideas chips
 	// name the best move while a hint ladder was still asking the player to
 	// look for it — one panel makes that contradiction visible, and Play's
 	// hint mode now decides which rows exist at all.
@@ -14,6 +16,13 @@
 		openingState: 'loading' | 'ready' | 'failed';
 		/** Plies played so far. */
 		ply: number;
+		/** The opponent's threat — what their last move wants. Rendered before
+		 * the tactic row because it is the question to answer first: your own
+		 * tactic is no good if theirs lands before it. */
+		threat?: Snippet;
+		/** "Think first" at a critical moment: candidates before the move.
+		 * Above the threat row — while it is up, the move waits on it. */
+		think?: Snippet;
 		/** The live tactic row, rendered under the opening line. */
 		tactic?: Snippet;
 		/** The "take back and think again" offer, shown while the last move
@@ -23,25 +32,37 @@
 		/** Coach row renders when true; a null sentence shows a pending dash. */
 		showCoach: boolean;
 		coach: string | null;
+		/** The engine's own pick, behind its own reveal — under the coach,
+		 * whose sentence used to carry it. */
+		enginePick?: Snippet;
 		showIdeas: boolean;
 		ideas: Idea[];
 		gameOver: boolean;
 		/** Fired with a uci on chip hover/focus, null when it ends. */
 		onideahover?: (uci: string | null) => void;
+		/** The position on the board, for resolving moves the coach names. */
+		fen: string;
+		/** A move or square in the coach line under the pointer. */
+		onnotationhover?: (target: NotationTarget | null) => void;
 	}
 
 	let {
 		opening,
 		openingState,
 		ply,
+		threat,
+		think,
 		tactic,
 		takeback,
 		showCoach,
 		coach,
+		enginePick,
 		showIdeas,
 		ideas,
 		gameOver,
-		onideahover
+		onideahover,
+		fen,
+		onnotationhover
 	}: Props = $props();
 
 	const title = $derived.by(() => {
@@ -102,18 +123,26 @@
 
 	{@render takeback?.()}
 
+	{@render think?.()}
+
+	{@render threat?.()}
+
 	{@render tactic?.()}
 
 	{#if showCoach}
 		<div class="panel-row" data-testid="coach-line">
 			<span class="panel-row-label"> Coach </span>
 			{#if coach}
-				<p class="text-body">{coach}</p>
+				<p class="text-body">
+					<NotationText text={coach} fens={[fen]} onhover={onnotationhover} />
+				</p>
 			{:else}
 				<span class="text-faint">…</span>
 			{/if}
 		</div>
 	{/if}
+
+	{@render enginePick?.()}
 
 	{#if showIdeas}
 		<div class="panel-row" data-testid="ideas-row">

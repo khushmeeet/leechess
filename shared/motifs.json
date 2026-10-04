@@ -293,9 +293,18 @@
 		},
 		{
 			"id": "deflection-pawn-hits-the-sole-defender",
-			"fen": "6k1/3n4/8/2P1n3/8/8/8/4R1K1 w - - 0 1",
+			"fen": "6k1/3n4/8/1PP1n3/8/8/8/4R2K w - - 0 1",
 			"uci": "c5c6",
 			"motifs": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-not-when-the-guarded-piece-takes-the-hitter",
+			"fen": "6k1/3n4/8/2P1n3/8/8/8/4R1K1 w - - 0 1",
+			"uci": "c5c6",
+			"motifs": [],
+			"nearMissFor": [
 				"deflection"
 			]
 		},
@@ -312,6 +321,24 @@
 			"id": "deflection-not-when-the-defender-can-stay-put",
 			"fen": "6k1/3n4/8/4n3/8/8/8/3RR1K1 w - - 0 1",
 			"uci": "d1d6",
+			"motifs": [],
+			"nearMissFor": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-not-when-the-hitting-piece-can-be-taken",
+			"fen": "r1b3rk/pp3p1p/2n2p2/3p1B2/P4q2/1P5P/2QN1PP1/2R2RK1 w - - 5 21",
+			"uci": "f5c8",
+			"motifs": [],
+			"nearMissFor": [
+				"deflection"
+			]
+		},
+		{
+			"id": "deflection-not-when-the-defender-is-cheaper-to-lose",
+			"fen": "6k1/1p6/2n5/5B2/8/8/2Q5/6K1 w - - 0 1",
+			"uci": "f5c8",
 			"motifs": [],
 			"nearMissFor": [
 				"deflection"

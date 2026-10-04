@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app import openings
 from app.analysis import reset_stale_analyses
 from app.auth import router as auth_router
 from app.auth.backend import fastapi_users
@@ -24,7 +26,17 @@ from app.endgame_drills import seed_catalog
 from app.legacy_ownership import claim_legacy_rows
 from app.limits import BodySizeLimit
 from app.live import sweep_abandoned
-from app.routers import endgames, games, live, progress, puzzles, testing, wikibook
+from app.routers import (
+    endgames,
+    games,
+    guessing,
+    live,
+    progress,
+    puzzles,
+    testing,
+    thinking,
+    wikibook,
+)
 from app.seeding import maybe_autoseed
 
 logger = logging.getLogger(__name__)
@@ -57,6 +69,9 @@ async def lifespan(app: FastAPI):
     # into Game rows when they ended, so what is left is links nobody took up
     # and boards both players walked away from.
     sweep_abandoned()
+    # The opening book (app/openings.py) takes most of a second to build;
+    # build it now, off the request path, rather than in the first review.
+    threading.Thread(target=openings.warm, name="opening-book", daemon=True).start()
     sweeper = asyncio.create_task(_sweep_periodically())
     try:
         yield
@@ -152,6 +167,37 @@ def _migrate_existing_tables(bind=None) -> None:
             conn.execute(text("ALTER TABLE games ADD COLUMN number INTEGER"))
             conn.commit()
             _number_the_saved_games(conn)
+
+        # The null-move threat search (app/threats.py). Nullable with no
+        # default: a game analyzed before it simply has no threats on record
+        # until scripts/backfill_threats.py runs the searches.
+        # The forced mates beside the evals likewise: a game analyzed before
+        # them keeps its grades, and scripts/retag.py re-grades it on its
+        # clamped evals alone. Mistake causes are derived, and retag.py fills
+        # them in for older games too. The engine lines need a re-analysis;
+        # Review simply shows none for a game analyzed before them. Play's
+        # live grades exist only for games completed after they were sent.
+        for column, sql_type in (
+            ("threat_move", "VARCHAR"),
+            ("threat_cp", "FLOAT"),
+            ("threat_mate", "INTEGER"),
+            ("mate_before", "INTEGER"),
+            ("mate_after", "INTEGER"),
+            ("mistake_cause", "VARCHAR"),
+            ("best_line", "VARCHAR"),
+            ("reply_line", "VARCHAR"),
+            ("live_eval_after", "FLOAT"),
+            ("live_classification", "VARCHAR"),
+        ):
+            if column not in columns_of("moves"):
+                conn.execute(text(f"ALTER TABLE moves ADD COLUMN {column} {sql_type}"))
+                conn.commit()
+
+        # Defence puzzles carry the threat the solver has to spot first;
+        # every other puzzle leaves it null.
+        if "threat_move" not in columns_of("puzzles"):
+            conn.execute(text("ALTER TABLE puzzles ADD COLUMN threat_move VARCHAR"))
+            conn.commit()
 
         _move_schedules_off_the_content_rows(conn, columns_of)
 
@@ -328,6 +374,8 @@ app.include_router(games.router)
 app.include_router(live.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
+app.include_router(thinking.router)
+app.include_router(guessing.router)
 app.include_router(endgames.router)
 app.include_router(wikibook.router)
 

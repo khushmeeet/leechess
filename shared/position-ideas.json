@@ -1,0 +1,35 @@
+{
+	"_comment": "Cross-language conformance table for the position ideas: client/src/lib/positionIdeas.ts and server/app/strategy.py (outposts, weak back rank, isolated/doubled/backward pawns — the bad bishop is client-only). Per case and side: outpost squares, whether the back rank is weak, isolated and backward pawns (squares), doubled pawns (files). All positions are constructed.",
+	"cases": [
+		{
+			"id": "start-position-has-none",
+			"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+			"white": { "outposts": [], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] },
+			"black": { "outposts": [], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] }
+		},
+		{
+			"id": "sicilian-structure-d5-hole-and-backward-d6",
+			"fen": "6k1/pp3ppp/3p4/4p3/4P3/2N5/PP3PPP/6K1 w - - 0 1",
+			"white": { "outposts": ["d5"], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] },
+			"black": { "outposts": ["d4"], "weakBackRank": false, "isolated": [], "doubled": [], "backward": ["d6"] }
+		},
+		{
+			"id": "no-way-off-the-back-rank",
+			"fen": "3r2k1/2R2ppp/8/8/8/8/5PPP/6K1 w - - 0 1",
+			"white": { "outposts": [], "weakBackRank": true, "isolated": [], "doubled": [], "backward": [] },
+			"black": { "outposts": [], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] }
+		},
+		{
+			"id": "luft-on-h3-is-a-way-off",
+			"fen": "3r2k1/2R2ppp/8/8/8/7P/5PP1/6K1 w - - 0 1",
+			"white": { "outposts": [], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] },
+			"black": { "outposts": [], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] }
+		},
+		{
+			"id": "isolated-d-pawn-and-doubled-f-pawns",
+			"fen": "6k1/pp3ppp/4p3/8/3P4/5P2/PP3PPP/6K1 w - - 0 1",
+			"white": { "outposts": [], "weakBackRank": false, "isolated": ["d4"], "doubled": ["f"], "backward": [] },
+			"black": { "outposts": ["d5"], "weakBackRank": false, "isolated": [], "doubled": [], "backward": [] }
+		}
+	]
+}

@@ -17,7 +17,20 @@
 		]}"
 		title={classification}
 	>
-		{classification === 'blunder' ? '??' : classification[0]}
+		{#if classification === 'book'}
+			<!-- an open book: "b" is already best's letter -->
+			<svg viewBox="0 0 16 16" class="h-2.5 w-2.5" aria-hidden="true">
+				<path
+					d="M8 4.5C6.5 3.3 4.4 3 2 3.2v8.6c2.4-.2 4.5.1 6 1.3 1.5-1.2 3.6-1.5 6-1.3V3.2c-2.4-.2-4.5.1-6 1.3Zm0 0v8.6"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linejoin="round"
+				/>
+			</svg>
+		{:else}
+			{classification === 'blunder' ? '??' : classification[0]}
+		{/if}
 	</span>
 {:else}
 	<span

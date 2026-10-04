@@ -346,20 +346,33 @@ function discoveredAttack(
 	return null;
 }
 
-/** The moved piece attacks an enemy defender that can't stay put (a capture it
- * can't answer, or an undefended hit), and that defender is the sole guard of a
- * valuable piece — so wherever it runs, the piece it was holding falls. */
+/** The moved piece attacks an enemy defender that can't stay put, and that
+ * defender is the sole guard of a valuable piece — so wherever it runs, the
+ * piece it was holding falls.
+ *
+ * "Can't stay put" means staying costs more than leaving: it is hit by a
+ * cheaper piece, or it is undefended and worth at least what it guards. An
+ * unguarded pawn holding a knight just stays — losing the pawn is the cheaper
+ * answer. And the hit has to stick: a piece that can itself be taken for free
+ * forces nothing (the false positive that tagged a plain bishop trade, Bxc8
+ * met by …Rxc8, as a deflection of the b7 pawn). */
 function deflection(after: Chess, to: Square): { defender: Square; guarded: Square } | null {
 	const enemy = after.turn();
 	const friendly = opposite(enemy);
+	if (!isSafe(after, to)) return null;
+	const hitter = VALUE[after.get(to)!.type];
 	for (const defender of enemyPieces(after, friendly)) {
 		if (!attacks(after, to, defender)) continue;
 		// not our piece to deflect, or not actually forced away
 		if (after.get(defender)!.type === 'k' || isSafe(after, defender)) continue;
+		const defenderValue = VALUE[after.get(defender)!.type];
+		const hitByCheaper = hitter < defenderValue;
 		for (const guarded of piecesOf(after, enemy)) {
 			if (guarded === defender || after.get(guarded)!.type === 'k') continue;
 			if (VALUE[after.get(guarded)!.type] < 3) continue;
 			if (after.attackers(guarded, friendly).length === 0) continue;
+			// cheaper to let the defender go than what it holds
+			if (!hitByCheaper && defenderValue < VALUE[after.get(guarded)!.type]) continue;
 			if (soleDefender(after, guarded, defender)) return { defender, guarded };
 		}
 	}

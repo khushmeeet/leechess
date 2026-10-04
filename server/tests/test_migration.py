@@ -107,6 +107,24 @@ def test_ownership_columns_are_added(legacy_engine):
         assert "user_id" in _columns(legacy_engine, table), table
 
 
+def test_threat_columns_are_added(legacy_engine):
+    assert {"threat_move", "threat_cp", "threat_mate"} <= _columns(legacy_engine, "moves")
+
+
+def test_mate_cause_and_line_columns_are_added(legacy_engine):
+    assert {
+        "mate_before",
+        "mate_after",
+        "mistake_cause",
+        "best_line",
+        "reply_line",
+    } <= _columns(legacy_engine, "moves")
+
+
+def test_live_grade_columns_are_added(legacy_engine):
+    assert {"live_eval_after", "live_classification"} <= _columns(legacy_engine, "moves")
+
+
 def test_the_scheduling_columns_are_gone(legacy_engine):
     """They are NOT NULL with no server default, so leaving them behind makes
     every insert fail — see the next test."""

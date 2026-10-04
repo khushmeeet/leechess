@@ -11,8 +11,9 @@ const E4_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
 const E4_EPD = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -';
 
 // stub book; keys are fake EPDs (any 4-field string round-trips epdFromFen)
-const BOOK: Record<string, [string, string]> = {
+const BOOK: Record<string, [string, string] | null> = {
 	[E4_EPD]: ['B00', "King's Pawn Game"],
+	'passed-through w - -': null,
 	'sicilian w - -': ['B20', 'Sicilian Defense'],
 	'sicilian-modern w - -': ['B50', 'Sicilian Defense: Modern Variations'],
 	'sicilian-coarse w - -': ['B50', 'Sicilian Defense'],
@@ -94,7 +95,16 @@ describe('loadOpenings / lookupEpd', () => {
 		expect(openings.lookupEpd('8/8/8/8/8/8/8/K6k w - - 0 1')).toBeNull();
 	});
 
-	it('fetches the 450KB book only once, however many callers ask', async () => {
+	it('counts a position passed through on the way to a named line as book, unnamed', async () => {
+		expect(openings.inBook(E4_FEN)).toBe(false); // nothing is book before the load
+		await withBook();
+		expect(openings.inBook(E4_FEN)).toBe(true);
+		expect(openings.inBook('passed-through w - - 0 3')).toBe(true);
+		expect(openings.lookupEpd('passed-through w - - 0 3')).toBeNull();
+		expect(openings.inBook('8/8/8/8/8/8/8/K6k w - - 0 1')).toBe(false);
+	});
+
+	it('fetches the book only once, however many callers ask', async () => {
 		const fetchSpy = okFetch();
 		// concurrent callers (the Play screen and a restored game race on mount)
 		const [first, second] = await Promise.all([

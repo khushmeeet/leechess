@@ -12,8 +12,14 @@
 		type MoveRecord,
 		type WikibookPage
 	} from '$lib/api/client';
-	import type { Classification } from '$lib/classification';
+	import { winChances, type Classification } from '$lib/classification';
 	import Board from '$lib/components/Board.svelte';
+	import MoveLine from '$lib/components/MoveLine.svelte';
+	import OverlayToggles from '$lib/components/OverlayToggles.svelte';
+	import { boardHighlights, overlayMarks, type OverlayName } from '$lib/overlays';
+	import { lineText, parseLine, playLine, sanToUci, type LineMove } from '$lib/lines';
+	import { computeDests } from '$lib/stores/game.svelte';
+	import { stockfish } from '$lib/stores/stockfish';
 	import ClassificationBadge from '$lib/components/ClassificationBadge.svelte';
 	import CplGraph from '$lib/components/CplGraph.svelte';
 	import WikiBookPanel from '$lib/components/WikiBookPanel.svelte';
@@ -22,6 +28,18 @@
 	import { session } from '$lib/stores/session.svelte';
 	import { gameOutcome, OUTCOME_LABELS } from '$lib/result';
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import { isMistakeCause, MISTAKE_CAUSES } from '$lib/mistakes';
+	import { gradeChange, gradeChangeText } from '$lib/gradeChange';
+	import { ideaChanges } from '$lib/positionIdeas';
+	import { targetSquare, type NotationTarget } from '$lib/notation';
+	import {
+		classifyThreat,
+		passTurn,
+		threatOutcome,
+		type Threat,
+		type ThreatOutcome
+	} from '$lib/threats';
 
 	let game = $state<GameDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -84,6 +102,13 @@
 				game = fetched;
 				error = null;
 				pollStalled = false;
+				// a link straight to one move (Progress's examples): ?ply=N
+				if (!loadedOnce) {
+					const wanted = Number(page.url.searchParams.get('ply'));
+					if (Number.isInteger(wanted) && wanted >= 1) {
+						selectedPly = Math.min(wanted, Math.max(1, fetched.moves.length));
+					}
+				}
 				loadedOnce = true;
 				const status = fetched.analysis_status;
 				if (status === 'pending' || status === 'analyzing') scheduleNext();
@@ -105,6 +130,126 @@
 	});
 
 	const selectedMove = $derived(game?.moves[selectedPly - 1] ?? null);
+	/** Where the deeper analysis changed the badge Play showed during the game. */
+	const selectedGradeChange = $derived(
+		selectedMove ? gradeChange(selectedMove, game?.moves[selectedMove.ply - 2]) : null
+	);
+
+	// The two lines from the decision under review, as stored by the analysis
+	// job: what the engine wanted, and what followed the move that was
+	// played. Either can be stepped through on the board.
+	const playedUci = $derived(
+		selectedMove ? sanToUci(selectedMove.fen_before, selectedMove.san) : null
+	);
+	const engineLine = $derived(
+		selectedMove ? playLine(selectedMove.fen_before, parseLine(selectedMove.best_line)) : []
+	);
+	const playedLine = $derived(
+		selectedMove && playedUci
+			? playLine(selectedMove.fen_before, [playedUci, ...parseLine(selectedMove.reply_line)])
+			: []
+	);
+	const playedWasEngines = $derived(engineLine[0]?.uci === playedUci);
+	/** What the selected move changed strategically — empty for most moves. */
+	const positionChanges = $derived(
+		selectedMove && playedUci ? ideaChanges(selectedMove.fen_before, playedUci) : []
+	);
+
+	/** The mover's winning chances before and after the selected move. */
+	const chances = $derived.by(() => {
+		const move = selectedMove;
+		if (!move || move.eval_before === null || move.eval_after === null) return null;
+		const white = move.ply % 2 === 1;
+		return {
+			side: white ? 'White' : 'Black',
+			before: winChances({ cp: move.eval_before, mate: move.mate_before }, white),
+			after: winChances({ cp: move.eval_after, mate: move.mate_after }, white)
+		};
+	});
+
+	// A position from one of the lines, on the board in place of the
+	// decision: which line, and how far along it.
+	let preview = $state<{ line: 'engine' | 'played'; index: number } | null>(null);
+	const previewMove = $derived.by((): LineMove | null => {
+		if (!preview) return null;
+		return (preview.line === 'engine' ? engineLine : playedLine)[preview.index] ?? null;
+	});
+
+	// "What if I'd played…?": from the decision, the player makes moves of
+	// their own (for both sides) and the browser engine weighs each position.
+	interface Exploration {
+		startFen: string;
+		moves: LineMove[];
+		/** The engine's view of the current position, once it has one. */
+		verdict: { chances: number; forWhite: boolean; line: LineMove[] } | null;
+	}
+	let explore = $state<Exploration | null>(null);
+	let exploreEpoch = 0;
+	const exploreFen = $derived(
+		explore ? (explore.moves.at(-1)?.fenAfter ?? explore.startFen) : null
+	);
+
+	function startExploring() {
+		if (!selectedMove) return;
+		preview = null;
+		exploreEpoch += 1;
+		explore = { startFen: selectedMove.fen_before, moves: [], verdict: null };
+	}
+
+	function stopExploring() {
+		exploreEpoch += 1;
+		explore = null;
+	}
+
+	async function weigh(fen: string) {
+		const epoch = exploreEpoch;
+		const chess = new Chess(fen);
+		const lastMover = chess.turn() === 'w' ? 'b' : 'w';
+		if (chess.isGameOver()) {
+			const mated = chess.isCheckmate();
+			if (explore) {
+				explore.verdict = {
+					chances: mated ? 100 : 50,
+					forWhite: lastMover === 'w',
+					line: []
+				};
+			}
+			return;
+		}
+		const result = await stockfish.evaluate(fen, 14, 1);
+		if (epoch !== exploreEpoch || !explore || exploreFen !== fen) return;
+		const forWhite = lastMover === 'w';
+		explore.verdict = {
+			chances: winChances(
+				{ cp: result.cp ?? (result.mate! > 0 ? 1000 : -1000), mate: result.mate ?? null },
+				forWhite
+			),
+			forWhite,
+			// the stored lines' length: past that the tail is noise
+			line: playLine(fen, (result.lines[0]?.pvUci ?? [result.bestMove]).slice(0, 10))
+		};
+	}
+
+	function exploreMove(orig: Key, dest: Key, promotion?: string) {
+		if (!explore || !exploreFen) return;
+		const [played] = playLine(exploreFen, [orig + dest + (promotion ?? '')]);
+		if (!played) return;
+		exploreEpoch += 1;
+		explore.moves = [...explore.moves, played];
+		explore.verdict = null;
+		void weigh(played.fenAfter);
+	}
+
+	function undoExplore() {
+		if (!explore || explore.moves.length === 0) return;
+		exploreEpoch += 1;
+		explore.moves = explore.moves.slice(0, -1);
+		explore.verdict = null;
+		const fen = explore.moves.at(-1)?.fenAfter;
+		if (fen) void weigh(fen);
+	}
+
+	const exploreDests = $derived(exploreFen ? computeDests(new Chess(exploreFen)) : undefined);
 
 	// Wikibooks opening theory for the game's move sequence, one page per
 	// ply until the line leaves the book. Off by default (Settings toggle);
@@ -158,6 +303,32 @@
 		}
 	}
 
+	// The threat the selected move had to answer: the other side's best move
+	// had the mover passed, as the analysis job stored it, judged by the same
+	// rules Play uses. Null for a quiet position, a move made in check, and a
+	// game analyzed before threats were recorded.
+	const selectedThreat = $derived.by((): Threat | null => {
+		if (!selectedMove?.threat_move) return null;
+		return classifyThreat({
+			fen: selectedMove.fen_before,
+			threatUci: selectedMove.threat_move,
+			threatScore: { cp: selectedMove.threat_cp, mate: selectedMove.threat_mate },
+			currentScore: selectedMove.eval_before === null ? null : { cp: selectedMove.eval_before }
+		});
+	});
+
+	// What became of it: left on the board, replaced by a bigger problem, or
+	// answered — read off the next ply's stored best move.
+	const selectedThreatOutcome = $derived.by((): ThreatOutcome | null => {
+		if (!selectedThreat || !selectedMove || !game) return null;
+		const reply = game.moves[selectedPly]; // selectedPly is 1-based: the next move
+		return threatOutcome(
+			selectedThreat,
+			{ fenAfter: selectedMove.fen_after, classification: selectedMove.classification },
+			reply?.best_move
+		);
+	});
+
 	/** True when the engine's best move differs from what was played. */
 	const bestDiffers = $derived.by(() => {
 		if (!selectedMove?.best_move) return false;
@@ -166,14 +337,51 @@
 		return played !== null && played[0] + played[1] !== best.slice(0, 4);
 	});
 
+	/** Graded as no loss, though it may differ from the engine's pick. */
+	const playedWasSound = $derived(
+		selectedMove?.classification === 'book' ||
+			selectedMove?.classification === 'best' ||
+			selectedMove?.classification === 'good'
+	);
+
 	// Board shows the position where the decision was made, with the played
 	// move and (when it differs) the engine's best move as arrows.
 	const shapes = $derived.by((): DrawShape[] => {
 		if (!selectedMove) return [];
 		const result: DrawShape[] = [];
+		// off the decision itself: the move that led here is the only arrow
+		const away = explore ? (explore.moves.at(-1) ?? null) : previewMove;
+		if (explore || previewMove) {
+			if (away) {
+				result.push({
+					orig: away.uci.slice(0, 2) as Key,
+					dest: away.uci.slice(2, 4) as Key,
+					brush: 'paleBlue'
+				});
+			}
+			if (notationTarget?.kind === 'move') {
+				result.push({
+					orig: notationTarget.from as Key,
+					dest: notationTarget.to as Key,
+					brush: 'blue'
+				});
+			}
+			return result;
+		}
+		// drawn first so the played and best arrows sit on top where they cross
+		if (selectedThreat) {
+			result.push({
+				orig: selectedThreat.uci.slice(0, 2) as Key,
+				dest: selectedThreat.uci.slice(2, 4) as Key,
+				brush: 'yellow'
+			});
+		}
 		const played = sanToKeys(selectedMove.fen_before, selectedMove.san);
 		if (played) {
-			result.push({ orig: played[0], dest: played[1], brush: bestDiffers ? 'red' : 'green' });
+			// red only for a move that cost something: a book move, or one as
+			// good as the engine's pick, gets a quiet grey beside the green
+			const brush = !bestDiffers ? 'green' : playedWasSound ? 'paleGrey' : 'red';
+			result.push({ orig: played[0], dest: played[1], brush });
 		}
 		if (bestDiffers && selectedMove.best_move) {
 			result.push({
@@ -183,12 +391,39 @@
 			});
 		}
 		if (citedShape) result.push(citedShape);
+		if (notationTarget?.kind === 'move') {
+			result.push({
+				orig: notationTarget.from as Key,
+				dest: notationTarget.to as Key,
+				brush: 'blue'
+			});
+		}
 		return result;
 	});
 
+	// The move or square in the threat line the player is pointing at: its
+	// piece lights up, and a move is drawn too (the arrow is added above).
+	let notationTarget = $state<NotationTarget | null>(null);
 	const boardFen = $derived(
-		selectedMove?.fen_before ?? game?.moves[0]?.fen_before ?? '8/8/8/8/8/8/8/8 w - - 0 1'
+		exploreFen ??
+			previewMove?.fenAfter ??
+			selectedMove?.fen_before ??
+			game?.moves[0]?.fen_before ??
+			'8/8/8/8/8/8/8/8 w - - 0 1'
 	);
+
+	// Board overlays for whatever position is on the board — the decision, a
+	// step along a line, or an exploration.
+	const overlays = $derived(
+		displayPrefs.overlays.length > 0 && game
+			? overlayMarks(boardFen, new Set(displayPrefs.overlays as OverlayName[]))
+			: null
+	);
+	const notationHighlights = $derived(
+		boardHighlights(overlays?.classes, notationTarget ? targetSquare(notationTarget) : null) as
+			Map<Key, string> | undefined
+	);
+
 	const boardTurn = $derived(
 		boardFen.split(' ')[1] === 'b' ? ('black' as const) : ('white' as const)
 	);
@@ -206,6 +441,9 @@
 		if (!game) return;
 		selectedPly = Math.min(Math.max(1, ply), game.moves.length);
 		citedShape = null;
+		notationTarget = null;
+		preview = null;
+		stopExploring();
 	}
 
 	// Move references in the LLM texts ("4. Bc4") become board links.
@@ -311,6 +549,30 @@
 		<p class="text-sm text-muted">
 			{game.white} vs {game.black} · {outcome ? OUTCOME_LABELS[outcome] : game.result} · {game.mode}
 		</p>
+		{#if game.opening}
+			<!-- The opening, and where the game left known theory: the move to
+			     look at when the opening is the part that went wrong. -->
+			<p class="w-full text-sm text-body" data-testid="review-opening">
+				<span
+					class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-1.5 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent"
+					>{game.opening.eco}</span
+				>
+				<span class="font-semibold text-ink"
+					>{game.opening.family}{game.opening.variation ? `: ${game.opening.variation}` : ''}</span
+				>
+				{#if game.left_book}
+					{@const left = game.left_book}
+					·
+					<button
+						type="button"
+						class="text-accent hover:underline"
+						data-testid="review-left-book-link"
+						onclick={() => select(left.ply)}
+						>left the book at {Math.ceil(left.ply / 2)}{left.ply % 2 ? '.' : '…'}{left.san}</button
+					>
+				{/if}
+			</p>
+		{/if}
 		{#if game.analysis_status === 'complete'}
 			<div class="flex flex-wrap items-center gap-3 sm:ml-auto">
 				{#if practiceQueued !== null}
@@ -385,7 +647,28 @@
 			     fit on screen without page scrolling (22rem ≈ the chrome above
 			     and below the board). -->
 			<div class="w-full" style="max-width: min(100%, clamp(20rem, 100dvh - 22rem, 36rem))">
-				<Board fen={boardFen} turnColor={boardTurn} viewOnly autoShapes={shapes} />
+				<!-- Keyed on exploring: chessground only binds its pointer events
+				     when a board is created movable, so a view-only board can't
+				     be switched to taking moves in place. -->
+				{#key explore !== null}
+					<Board
+						fen={boardFen}
+						turnColor={boardTurn}
+						viewOnly={!explore}
+						dests={exploreDests}
+						movableColor={explore ? boardTurn : undefined}
+						onmove={exploreMove}
+						autoShapes={[
+							...(overlays?.pinLines ?? []).map((pin) => ({
+								orig: pin.by as Key,
+								dest: pin.behind as Key,
+								brush: 'purple'
+							})),
+							...shapes
+						]}
+						highlights={notationHighlights}
+					/>
+				{/key}
 			</div>
 
 			<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -427,13 +710,21 @@
 					</span>
 				{/if}
 				{#if selectedMove?.best_move && bestDiffers}
+					<!-- a move graded best or book can still differ from the engine's
+					     pick: as good as it, not worse -->
 					<span class="text-sm text-body" data-testid="best-move-hint">
-						— best was
+						{selectedMove.classification === 'best' || selectedMove.classification === 'book'
+							? '— the engine’s pick was'
+							: '— best was'}
 						<span class="font-mono font-semibold text-ok">
 							{uciToSan(selectedMove.fen_before, selectedMove.best_move)}
 						</span>
 					</span>
 				{/if}
+			</div>
+
+			<div class="mt-2">
+				<OverlayToggles />
 			</div>
 
 			{#if selectedMove && selectedMove.motifs.length > 0}
@@ -446,6 +737,238 @@
 							{motif.replaceAll('_', ' ')}
 						</span>
 					{/each}
+				</div>
+			{/if}
+
+			{#if selectedMove && selectedThreat}
+				{@const side = selectedThreat.by === 'white' ? 'White' : 'Black'}
+				<p class="mt-2 text-sm text-body" data-testid="review-threat">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Threat</span>
+					<span data-testid="review-threat-text"
+						><NotationText
+							text={selectedThreat.text}
+							fens={[passTurn(selectedMove.fen_before) ?? selectedMove.fen_before]}
+							onhover={(target) => (notationTarget = target)}
+						/></span
+					>
+					{#if selectedThreatOutcome}
+						{@const outcome = selectedThreatOutcome}
+						<span
+							class="font-semibold {outcome.kind === 'answered' ? 'text-ok' : 'text-err'}"
+							data-testid="review-threat-{outcome.kind}"
+							><NotationText
+								text={outcome.kind === 'ignored'
+									? `${selectedMove.san} left it on the board — it was still ${side}’s best move.`
+									: outcome.kind === 'replaced'
+										? `After ${selectedMove.san}, ${side}’s best move became ${outcome.replySan} instead.`
+										: `${selectedMove.san} answered it.`}
+								fens={[selectedMove.fen_before, selectedMove.fen_after]}
+								onhover={(target) => (notationTarget = target)}
+							/></span
+						>
+					{/if}
+				</p>
+			{/if}
+
+			{#if selectedMove && isMistakeCause(selectedMove.mistake_cause)}
+				{@const cause = MISTAKE_CAUSES[selectedMove.mistake_cause]}
+				<!-- Which step of the thinking routine broke on this move — the same
+				     cause Progress counts across games. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-cause">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Cause</span>
+					<span class="font-semibold" data-testid="review-cause-label">{cause.label}.</span>
+					{cause.what}
+					<span class="text-muted">Next time: {cause.habit}</span>
+				</p>
+			{/if}
+
+			{#if selectedMove && positionChanges.length > 0}
+				<!-- The strategic side of the move: outposts and open files taken,
+				     back ranks and pawns left weak — only what changed. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-position">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Position</span
+					>
+					{#each positionChanges as sentence, i (sentence)}
+						<NotationText
+							text={sentence}
+							fens={[selectedMove.fen_before, selectedMove.fen_after]}
+							onhover={(target) => (notationTarget = target)}
+						/>{i < positionChanges.length - 1 ? ' ' : ''}
+					{/each}
+				</p>
+			{/if}
+
+			{#if selectedMove && selectedGradeChange}
+				<!-- Play's badge came from a quicker search; say so when this one
+				     disagrees, rather than contradicting it without a word. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-grade-change">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">In play</span>
+					<NotationText
+						text={gradeChangeText(selectedGradeChange, selectedMove.san)}
+						fens={[selectedMove.fen_before]}
+						onhover={(target) => (notationTarget = target)}
+					/>
+				</p>
+			{/if}
+
+			{#if selectedMove && game.left_book?.ply === selectedMove.ply}
+				{@const left = game.left_book}
+				<p class="mt-2 text-sm text-body" data-testid="review-left-book">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Book</span>
+					<NotationText
+						text={`${left.san} left the opening book.`}
+						fens={[selectedMove.fen_before]}
+						onhover={(target) => (notationTarget = target)}
+					/>
+					{#if left.book_moves.length > 0}
+						<!-- each one its own move: a bare "e5" in a list would read as a square -->
+						Book moves here:
+						{#each left.book_moves as san, i (san)}<NotationText
+								text={san}
+								fens={[selectedMove.fen_before]}
+								line
+								onhover={(target) => (notationTarget = target)}
+							/>{i < left.book_moves.length - 1 ? ', ' : '.'}{/each}
+					{/if}
+				</p>
+			{/if}
+
+			{#if selectedMove && !explore}
+				<!-- The decision in winning chances, and the two lines from it: the
+				     engine's, and what followed the move played. Clicking a move
+				     shows its position; the player's own ideas go in "Try a move". -->
+				<div class="mt-3 flex flex-col gap-1.5 text-sm" data-testid="review-lines">
+					{#if chances}
+						<p class="text-body" data-testid="review-chances">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>Chances</span
+							>
+							{chances.side}’s winning chances:
+							<span class="font-semibold tabular-nums">{Math.round(chances.before)}%</span>
+							→
+							<span
+								class="font-semibold tabular-nums {chances.before - chances.after >= 10
+									? 'text-err'
+									: chances.before - chances.after >= 5
+										? 'text-mist'
+										: 'text-ok'}">{Math.round(chances.after)}%</span
+							>
+						</p>
+					{/if}
+					{#if engineLine.length > 0 && !playedWasEngines}
+						<p class="text-body" data-testid="review-engine-line">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>Engine</span
+							>
+							<MoveLine
+								moves={engineLine}
+								active={preview?.line === 'engine' ? preview.index : null}
+								onpick={(index) => (preview = { line: 'engine', index })}
+								onhover={(target) => (notationTarget = target)}
+								testid="engine-line"
+							/>
+						</p>
+					{/if}
+					{#if playedLine.length > 1 || (playedLine.length > 0 && selectedMove.reply_line)}
+						<p class="text-body" data-testid="review-played-line">
+							<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase"
+								>{playedWasEngines ? 'Engine (your move)' : 'Your move'}</span
+							>
+							<MoveLine
+								moves={playedLine}
+								active={preview?.line === 'played' ? preview.index : null}
+								onpick={(index) => (preview = { line: 'played', index })}
+								onhover={(target) => (notationTarget = target)}
+								testid="played-line"
+							/>
+						</p>
+					{/if}
+					<div class="flex flex-wrap items-center gap-2">
+						{#if preview}
+							<button
+								type="button"
+								class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+								data-testid="preview-exit"
+								onclick={() => (preview = null)}
+							>
+								Back to the decision
+							</button>
+						{/if}
+						<button
+							type="button"
+							class="rounded-xs border border-accent-line px-2 py-0.5 text-xs font-semibold text-accent hover:bg-accent-soft"
+							data-testid="explore-start"
+							onclick={startExploring}
+						>
+							Try a move of your own
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			{#if selectedMove && explore}
+				{@const verdict = explore.verdict}
+				<div
+					class="mt-3 flex flex-col gap-1.5 rounded-xs border border-accent-line bg-accent-soft/40 p-3 text-sm"
+					data-testid="explore-panel"
+				>
+					<p class="text-body">
+						<span class="mr-1 text-xs font-semibold tracking-wide text-accent uppercase"
+							>What if</span
+						>
+						{#if explore.moves.length === 0}
+							Play the move you were thinking of on the board — the engine will weigh it.
+						{:else}
+							<MoveLine
+								moves={explore.moves}
+								onhover={(target) => (notationTarget = target)}
+								testid="explore-moves"
+							/>
+						{/if}
+					</p>
+					{#if explore.moves.length > 0}
+						<p class="text-body" data-testid="explore-verdict">
+							{#if verdict}
+								{verdict.forWhite ? 'White' : 'Black'}’s winning chances:
+								<span class="font-semibold tabular-nums">{Math.round(verdict.chances)}%</span>
+								{#if explore.moves.length === 1 && chances}
+									<span class="text-muted"
+										>— in the game, {selectedMove.san} left {Math.round(chances.after)}%.</span
+									>
+								{/if}
+								{#if verdict.line.length > 0}
+									<span class="block text-muted"
+										>Engine’s answer: <MoveLine
+											moves={verdict.line}
+											onhover={(target) => (notationTarget = target)}
+											testid="explore-answer"
+										/></span
+									>
+								{/if}
+							{:else}
+								<span class="text-faint">Weighing {lineText(explore.moves.slice(-1))}…</span>
+							{/if}
+						</p>
+					{/if}
+					<div class="flex flex-wrap gap-2">
+						<button
+							type="button"
+							class="rounded-xs border border-line bg-card px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper disabled:opacity-40"
+							data-testid="explore-undo"
+							disabled={explore.moves.length === 0}
+							onclick={undoExplore}
+						>
+							Undo
+						</button>
+						<button
+							type="button"
+							class="rounded-xs border border-line bg-card px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+							data-testid="explore-exit"
+							onclick={stopExploring}
+						>
+							Back to the game
+						</button>
+					</div>
 				</div>
 			{/if}
 
@@ -532,6 +1055,13 @@
 													classification={move.classification as Classification}
 													compact
 												/>
+											{/if}
+											{#if game.left_book?.ply === move.ply}
+												<span
+													class="text-[10px] font-semibold tracking-wide text-muted uppercase"
+													title="The first move off the opening book"
+													data-testid="move-left-book">off book</span
+												>
 											{/if}
 											{#if move.motifs.length > 0}
 												<span

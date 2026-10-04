@@ -1,6 +1,14 @@
 import { type APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { API, gameNumber, scholarsMateSans } from './helpers';
+import {
+	API,
+	boardPosition,
+	gameNumber,
+	move,
+	scholarsMateSans,
+	seedGame,
+	waitForAnalysis
+} from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end
 // (real Stockfish, low depth via LEECHESS_ANALYSIS_DEPTH in the e2e server),
@@ -55,6 +63,72 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
 	await expect(page.getByTestId('best-move-hint')).toBeVisible();
 	await expect(page.getByTestId('best-move-hint')).toContainText('best was');
+});
+
+test('a grade the deeper check changed says so, with what Play showed', async ({
+	page,
+	request
+}) => {
+	// Scholar's Mate as Play would send it, with 3…Nf6?? (ply 6) graded only
+	// an inaccuracy live — it hangs mate in one, so the analysis job's grade
+	// is a blunder at any depth.
+	const created = await request.post(`${API}/games`, { data: { mode: 'local' } });
+	const gameId = (await created.json()).id;
+	for (const san of scholarsMateSans) {
+		await request.post(`${API}/games/${gameId}/moves`, { data: { san } });
+	}
+	const live = [
+		{ ply: 5, eval_after: -20, classification: null },
+		{ ply: 6, eval_after: 20, classification: 'inaccuracy' },
+		{ ply: 4, eval_after: 30, classification: 'book' }
+	];
+	const completed = await request.post(`${API}/games/${gameId}/complete`, {
+		data: { live }
+	});
+	expect(completed.ok()).toBe(true);
+	await waitForAnalysis(request, gameId);
+
+	await page.goto(`/review/${gameId}`);
+	await page.getByTestId('move-list').getByRole('button', { name: /Nf6/ }).click();
+	const note = page.getByTestId('review-grade-change');
+	await expect(note).toContainText(
+		'Play’s quick check called Nf6 an inaccuracy (4 points of winning chances lost)'
+	);
+	await expect(note).toContainText('The deeper check after the game sees more: it is a blunder');
+
+	// a move both checks agree on has no note
+	await page.getByTestId('move-list').getByRole('button', { name: /Nc6/ }).click();
+	await expect(page.getByTestId('selected-move')).toContainText('Nc6');
+	await expect(note).toBeHidden();
+});
+
+test('each move shows the threat it had to answer, and whether it did', async ({
+	page,
+	request
+}) => {
+	const gameId = await seedCompletedGame(request);
+	await page.goto(`/review/${gameId}`);
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`${API}/games/${gameId}/review`)).json()).analysis_status,
+			{ timeout: 60_000 }
+		)
+		.toBe('complete');
+	await expect(page.getByTestId('analysis-status')).toBeHidden({ timeout: 10_000 });
+
+	// 3.Qh5 threatened mate, and 3…Nf6 walked past it
+	const moveList = page.getByTestId('move-list');
+	await moveList.getByRole('button', { name: /Nf6/ }).click();
+	await expect(page.getByTestId('review-threat-text')).toHaveText(
+		'White threatens Qxf7#, checkmate.'
+	);
+	await expect(page.getByTestId('review-threat-ignored')).toContainText('Nf6 left it on the board');
+	await expect(page.locator('.cg-shapes line[stroke="#e68f00"]')).toHaveCount(1);
+
+	// the opening move faced nothing, and says nothing
+	await moveList.getByRole('button', { name: /^e4/ }).click();
+	await expect(page.getByTestId('review-threat')).toBeHidden();
 });
 
 test('arrow keys step through the game and yield to text fields', async ({ page, request }) => {
@@ -151,4 +225,87 @@ test('board shows each color’s eliminated pieces on its side', async ({ page, 
 	await expect(rows.last()).toHaveAttribute('data-testid', 'eliminated-white');
 	await expect(page.getByTestId('eliminated-black').locator('piece.pawn.black')).toHaveCount(1);
 	await expect(page.getByTestId('eliminated-white').locator('piece.pawn.white')).toHaveCount(1);
+});
+
+test('the lines from a move can be stepped through, and a move of your own weighed', async ({
+	page,
+	request
+}) => {
+	const gameId = await seedCompletedGame(request);
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`${API}/games/${gameId}/review`)).json()).analysis_status,
+			{
+				timeout: 60_000
+			}
+		)
+		.toBe('complete');
+
+	// 3…Nf6?? — the move that let Qxf7# in
+	await page.goto(`/review/${gameId}?ply=6`);
+	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
+	await expect(page.getByTestId('review-chances')).toContainText('Black’s winning chances');
+	await expect(page.getByTestId('review-chances')).toContainText('→ 0%'); // mated
+	await expect(page.getByTestId('engine-line').getByTestId('line-move').first()).toBeVisible();
+	const played = page.getByTestId('played-line').getByTestId('line-move');
+	await expect(played).toHaveText(['Nf6', 'Qxf7#']);
+
+	// a move of the line puts its position on the board, and back again
+	const decision = await boardPosition(page);
+	await played.nth(1).click();
+	await expect(played.nth(1)).toHaveAttribute('aria-pressed', 'true');
+	await expect.poll(() => boardPosition(page)).not.toBe(decision);
+	await page.getByTestId('preview-exit').click();
+	await expect.poll(() => boardPosition(page)).toBe(decision);
+
+	// "what if": …g6 shuts the queen out, and the engine weighs it
+	await page.getByTestId('explore-start').click();
+	await expect(page.getByTestId('explore-panel')).toBeVisible();
+	await move(page, 'g7', 'g6');
+	await expect(page.getByTestId('explore-moves')).toContainText('g6');
+	const verdict = page.getByTestId('explore-verdict');
+	await expect(verdict).toContainText('Black’s winning chances', { timeout: 30_000 });
+	await expect(verdict).toContainText('in the game, Nf6 left 0%');
+	await expect(page.getByTestId('explore-answer').getByTestId('line-move').first()).toBeVisible();
+
+	await page.getByTestId('explore-undo').click();
+	await expect(page.getByTestId('explore-moves')).toBeHidden();
+	await page.getByTestId('explore-exit').click();
+	await expect(page.getByTestId('review-lines')).toBeVisible();
+	await expect.poll(() => boardPosition(page)).toBe(decision);
+});
+
+test('a move’s position ideas are named: a backward pawn made, an outpost taken', async ({
+	page,
+	request
+}) => {
+	// Najdorf: 6…e5 leaves d6 backward, and 10.Nd5 puts a knight on the hole
+	const najdorf = [
+		'e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6',
+		'Be2', 'e5', 'Nb3', 'Be7', 'O-O', 'O-O', 'Be3', 'Be6', 'Nd5'
+	]; // prettier-ignore
+	const gameId = await seedGame(request, najdorf, '*');
+	await waitForAnalysis(request, gameId);
+
+	const position = page.getByTestId('review-position');
+	await page.goto(`/review/${gameId}?ply=12`);
+	await expect(page.getByTestId('selected-move')).toContainText('e5');
+	await expect(position).toHaveText(/e5 leaves Black with a backward pawn on d6\./);
+
+	await page.goto(`/review/${gameId}?ply=19`);
+	await expect(page.getByTestId('selected-move')).toContainText('Nd5');
+	await expect(position).toContainText(
+		'Nd5 puts White’s knight on an outpost: the e4 pawn guards d5, and no Black pawn can chase it away.'
+	);
+
+	// a move that changes none of it says nothing
+	await page.goto(`/review/${gameId}?ply=14`);
+	await expect(page.getByTestId('selected-move')).toContainText('Be7');
+	await expect(position).toBeHidden();
+
+	// the Structure overlay marks the hole and the weak pawn on the board
+	await page.getByTestId('overlay-structure').click();
+	await expect(page.locator('cg-board square.ov-weak-pawn').first()).toBeAttached();
+	await expect(page.locator('cg-board square.ov-outpost-w').first()).toBeAttached();
 });

@@ -81,6 +81,7 @@ def puzzle_out(puzzle: Puzzle, state: PuzzleState | None) -> PuzzleOut:
         fen=puzzle.fen,
         solution=puzzle.solution,
         motif=puzzle.motif,
+        threat=puzzle.threat_move,
         difficulty=puzzle.difficulty,
         source_move_id=puzzle.source_move_id,
         box=state.box if state is not None else MIN_BOX,

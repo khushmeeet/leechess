@@ -115,11 +115,26 @@ def test_empty_database_returns_zeroes_not_errors(client):
     assert body == {
         "days": None,
         "motifs": [],
+        "motif_trends": [],
         "weakest_motifs": [],
         "cpl_trend": [],
         "streak_days": 0,
         "puzzles_solved": 0,
         "drills_passed": 0,
+        "mistake_causes": [
+            {"cause": cause, "mistakes": 0, "blunders": 0, "latest": None}
+            for cause in (
+                "missed_threat",
+                "hung_piece",
+                "allowed_reply",
+                "missed_tactic",
+                "positional",
+            )
+        ],
+        "position_ideas": [],
+        "thinking": {"moments": 0, "found": 0, "threats": 0, "answered": 0, "recent": []},
+        "repertoire": [],
+        "guessing": [],
     }
 
 
@@ -136,6 +151,52 @@ def test_motif_success_rates_are_exact(client, seed):
     assert motifs["pin"] == {
         "motif": "pin", "attempts": 4, "correct": 1, "success_rate": 0.25,
     }  # fmt: skip
+
+
+def test_motif_trend_compares_first_tries_with_the_latest(client, seed):
+    fork = seed.puzzle("fork")
+    # oldest first: missed three of the first four, then solved three of four
+    seed.attempts(fork, False, False, True, False, at=days_ago(20))
+    seed.attempts(fork, True, True, False, True, at=days_ago(2))
+
+    assert get(client)["motif_trends"] == [
+        {
+            "motif": "fork",
+            "earlier": {"attempts": 4, "correct": 1},
+            "recent": {"attempts": 4, "correct": 3},
+        }
+    ]
+
+
+def test_motif_trend_counts_the_odd_middle_attempt_as_latest(client, seed):
+    pin = seed.puzzle("pin")
+    seed.attempts(pin, False, False, False, at=days_ago(9))
+    seed.attempts(pin, True, True, True, True, at=days_ago(1))
+
+    (trend,) = get(client)["motif_trends"]
+    assert trend["earlier"] == {"attempts": 3, "correct": 0}
+    assert trend["recent"] == {"attempts": 4, "correct": 4}
+
+
+def test_motif_trend_needs_enough_attempts_and_respects_the_window(client, seed):
+    few = seed.puzzle("skewer")
+    seed.attempts(few, True, False, True, False, True)  # five: too few to split
+    windowed = seed.puzzle("fork")
+    seed.attempts(windowed, False, False, False, at=days_ago(60))
+    seed.attempts(windowed, True, True, True, at=days_ago(5))
+
+    assert [t["motif"] for t in get(client)["motif_trends"]] == ["fork"]
+    # inside 30 days only the three latest remain — not enough to compare
+    assert get(client, days=30)["motif_trends"] == []
+
+
+def test_motif_trends_list_the_weakest_latest_first(client, seed):
+    strong = seed.puzzle("fork")
+    weak = seed.puzzle("pin")
+    seed.attempts(strong, False, False, False, True, True, True)
+    seed.attempts(weak, True, True, True, False, False, True)
+
+    assert [t["motif"] for t in get(client)["motif_trends"]] == ["pin", "fork"]
 
 
 def test_motifs_ordered_weakest_first(client, seed):
@@ -359,3 +420,101 @@ def test_streak_alive_with_activity_only_yesterday():
 
 def test_game_cpl_returns_none_without_moves():
     assert game_cpl(Game(pgn="", analysis_status="complete")) is None
+
+
+def _with_causes(game: Game, db_session, causes: dict[int, tuple[str, str]]) -> None:
+    """Grade the given plies and give them a cause: {ply: (grade, cause)}."""
+    for move in game.moves:
+        if move.ply in causes:
+            move.classification, move.mistake_cause = causes[move.ply]
+    db_session.commit()
+
+
+def test_mistake_causes_count_the_players_side_most_common_first(
+    client, seed, db_session
+):
+    older = seed.game([(0, 0)] * 6, mode="engine", created_at=days_ago(3))
+    _with_causes(
+        older,
+        db_session,
+        {
+            1: ("blunder", "missed_threat"),
+            3: ("mistake", "hung_piece"),
+            # Black's moves are the engine's, not the player's: never counted
+            2: ("blunder", "missed_threat"),
+            4: ("blunder", "missed_threat"),
+        },
+    )
+    newer = seed.game([(0, 0)] * 4, mode="engine")
+    _with_causes(
+        newer,
+        db_session,
+        {1: ("mistake", "missed_threat"), 3: ("blunder", "missed_threat")},
+    )
+
+    causes = get(client)["mistake_causes"]
+    assert [entry["cause"] for entry in causes] == [
+        "missed_threat",
+        "hung_piece",
+        "allowed_reply",
+        "missed_tactic",
+        "positional",
+    ]
+    threat, hung = causes[0], causes[1]
+    assert (threat["mistakes"], threat["blunders"]) == (1, 2)
+    assert (hung["mistakes"], hung["blunders"]) == (1, 0)
+    # the example is the most recent one, for the link into Review
+    assert threat["latest"] == {
+        "game_id": newer.id,
+        "number": newer.number,
+        "ply": 3,
+        "san": "e4",
+    }
+
+
+def test_mistake_causes_respect_the_window(client, seed, db_session):
+    old = seed.game([(0, 0)], created_at=days_ago(40))
+    _with_causes(old, db_session, {1: ("blunder", "positional")})
+    windowed = {entry["cause"]: entry for entry in get(client, days=30)["mistake_causes"]}
+    assert windowed["positional"]["blunders"] == 0
+    everything = {entry["cause"]: entry for entry in get(client)["mistake_causes"]}
+    assert everything["positional"]["blunders"] == 1
+
+
+def test_position_ideas_count_the_players_mistakes_most_common_first(
+    client, seed, db_session
+):
+    from app.models import MotifTag
+
+    def tag(game, ply, classification, *motifs):
+        move = game.moves[ply - 1]
+        move.classification = classification
+        move.motif_tags = [MotifTag(motif=m, source="rule_based") for m in motifs]
+
+    older = seed.game([(0, 0)] * 4, mode="engine", created_at=days_ago(3))
+    tag(older, 1, "mistake", "outpost")
+    tag(older, 3, "blunder", "isolated_pawn")
+    tag(older, 2, "blunder", "outpost")  # the engine's move: not counted
+    newer = seed.game([(0, 0)] * 4, mode="engine")
+    tag(newer, 3, "mistake", "outpost")
+    tag(newer, 1, "good", "outpost")  # not a mistake: not counted
+    db_session.commit()
+
+    ideas = get(client)["position_ideas"]
+    assert [(entry["motif"], entry["count"]) for entry in ideas] == [
+        ("outpost", 2),
+        ("isolated_pawn", 1),
+    ]
+    assert ideas[0]["latest"] == {
+        "game_id": newer.id,
+        "number": newer.number,
+        "ply": 3,
+        "san": "e4",
+    }
+    # tactics are counted elsewhere (puzzles, mistake causes), never here
+    tag(newer, 3, "mistake", "fork")
+    db_session.commit()
+    assert [entry["motif"] for entry in get(client)["position_ideas"]] == [
+        "outpost",
+        "isolated_pawn",
+    ]

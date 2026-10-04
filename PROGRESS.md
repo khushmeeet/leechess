@@ -14,6 +14,915 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Position ideas: the strategic motifs (2026-10-04)
+
+**Goal:** the product spec's taxonomy (§4.4) has a strategic half (weak square/outpost,
+open file, bad bishop, isolated/doubled/backward pawns), and the architecture doc adds a
+weak back rank. The tagger knew only tactics, so every mistake without one was
+"positional: the position slipped", with nothing more to say.
+
+- **The ideas, as board facts** (`app/strategy.py`, `$lib/positionIdeas.ts`), all
+  without an engine:
+  - **Outpost:** a square on the 4th–6th rank that a pawn guards and no enemy pawn
+    can ever attack.
+  - **Open / half-open file:** a file with no pawns, or none of your own.
+  - **Weak back rank:** the king has no way off the back rank, no rook or queen of
+    its own guards that rank, and the other side has a rook or queen.
+  - **Weak pawns:**
+    - isolated: no pawn of its own on either side;
+    - doubled: two pawns on one file;
+    - backward: its neighbours are all further up, and an enemy pawn covers the
+      square in front.
+  - **Bad bishop** (browser only): three or more of its own pawns on its colour, two
+    of them fixed there by enemy pawns. Its first version also counted a pawn
+    stopped by a piece, and called Be2 bad because of White's own Nc3. Fixed before
+    commit.
+  - **Shared table:** `shared/position-ideas.json` runs five constructed positions
+    through both languages (a Sicilian d5 hole with a backward d6, a back rank with
+    and without luft, an isolated d-pawn with doubled f-pawns, and the start).
+- **Tags on positional mistakes** (`tags_for_move`): when a mistake or blunder has no
+  tactical tag, it gets the idea behind it:
+  - what the engine's move would have done: took an outpost with a knight or bishop,
+    put a rook or queen on an open file, or mended a weak back rank (only if the move
+    played did not do the same);
+  - or what the move played gave away: a weak back rank, or a new isolated, doubled
+    or backward pawn.
+  - **Shown in Review** as motif chips. **Puzzles:** none are made from these tags,
+    because puzzles use the tactical detector. Old games get the tags when
+    `scripts/retag.py` runs.
+- **Review: a "Position" row** (`ideaChanges`) for every move of both sides. It says
+  what the move changed, and only that, so most moves show nothing. Examples:
+  - "Nd5 puts White's knight on an outpost: the e4 pawn guards d5, and no Black pawn
+    can chase it away."
+  - "e5 leaves Black with a backward pawn on d6."
+  - "Rd7 leaves White's back rank weak: …" and "h3 mends White's weak back rank."
+- **Board: a "Structure" overlay.**
+  - Outposts get a green ring (with a dark inner ring for Black's).
+  - Weak pawns get orange dots, and a hemmed-in bishop orange dashes.
+  - A king with a weak back rank gets a red square.
+  - The saved overlay list is now derived from the overlay definitions, so a new
+    overlay is not dropped on reload.
+- **Progress: "Position ideas behind your mistakes"**, from `ProgressOut.position_ideas`.
+  Each idea that came up in the window is listed with its count, a plain explanation,
+  a question to ask at the board, and a link to the latest example.
+- **Game summary prompt:** these tags are listed as "position idea", apart from
+  "motifs", which the prompt asks for as tactics.
+- **Testing:**
+  - `test_strategy.py`: the shared table plus six tag cases (outpost, open file,
+    nothing missed when the move played was the idea, an unguarded square, an
+    isolated pawn made, the back rank left weak, luft).
+  - `test_motifs.py`: positional mistakes get the idea tag; a tactic keeps it out;
+    unflagged moves get none.
+  - `test_progress_api.py`: counting, order, the latest example, and the engine's
+    moves left out. `test_summaries.py`: the split listing.
+  - `positionIdeas.test.ts`: the table, the sentences, the bad-bishop rule and its
+    near-misses, and the overlay marks.
+  - **Browser:** `review.e2e.ts` covers the Najdorf's 6…e5 and 10.Nd5, a quiet move
+    with no row, and the overlay marks. `progress.e2e.ts` renders the section from an
+    injected entry. Light and dark screenshots were checked by eye.
+
+---
+
+## Addendum — No "…" where the sentence already names the side (2026-10-04)
+
+**Goal:** "Black threatens …Qh4+" says whose move it is twice. The "…" marks a Black
+move in a line of moves; in a sentence that names the side it is noise.
+
+- **Threat sentences** (`classifyThreat`): "Black threatens Qh4#, checkmate.", "…a
+  forced mate starting with Bxh3", and the new "…Rb7 and then Rxb2". `Threat.san` keeps
+  the "…", for sentences that do not name the side ("Their threat, …Qh4, was answered
+  by …").
+- **Review:** "After Nf6, White's best move became Bxe6 instead." (`threatOutcome`'s
+  `replySan` is plain SAN now; Review's sentence is its only user).
+- **Unchanged:** move lines, move numbers ("3…Nf6"), and sentences that say "their" or
+  "they" rather than the side.
+- Pointing at the move still lights the piece: a bare "Qh4#" after "threatens" reads as
+  a move.
+- **Testing:** threat wording tests and the Play threat-row specs updated; Play,
+  Review, insight bar, Think first and puzzles browser tests pass (39).
+
+---
+
+## Addendum — Overlays: pins to the queen, and loose pieces that respect pins (2026-10-04)
+
+**Goal:** two known limits of the board overlays. "Pins" showed only pins against the
+king. "Loose pieces" counted every attacker and defender, so a piece defended only by
+a pinned pawn looked safe, and a piece the side in check could not take looked lost.
+
+- **Pins** (`pins` in `overlays.ts`): a piece is also pinned when the piece behind it
+  is worth more than both it and the pinning piece. Example: Bg5 pins the f6 knight to
+  the queen on d8. Queen for queen is not a pin. A piece pinned to its king is reported
+  against the king only. `Pin` now says what it is against (`behind`) and whether it is
+  `absolute`.
+  - **On the board:** the arrow ends on the piece behind. A pin against the king keeps
+    the dashed outline; a pin against another piece gets a dotted one
+    (`ov-pinned-relative`). The chip's tooltip says both.
+- **Loose pieces** (`loosePieces`):
+  - A piece pinned to its king neither attacks nor defends a square off its pin line.
+    `staticExchange` takes an optional `blocked` set for this; the threat search and
+    its server port do not pass one, so they are unchanged.
+  - The side to move counts only its legal captures, so a check or a pin on the
+    capturing piece is respected.
+- **Testing:** unit tests for the relative pin, queen-for-queen, a pinned defender, and
+  a capture ruled out by check (and the same position out of check).
+  `overlays.e2e.ts` covers the relative pin on the board (4 passed).
+
+---
+
+## Addendum — Smaller threats, when the board can show them (2026-10-04)
+
+**Goal:** the threat row reported a quiet move only when it was a named tactic worth
+1.5 pawns, or anything worth 3. It missed …Qf4 in the play-tested game (move 19, worth
+about 1.2 pawns), the move the player then ignored twice.
+
+- **A new bar for quiet moves:** 1 pawn (`SMALL_SWING_CP`). It needs a fact the player
+  can check on the board (`setsUp` in `threats.ts`, `sets_up` in `threats.py`):
+  - the piece that moved could then win material by a capture: "Black threatens …Rb7
+    and then …Rxb2, winning the knight on b2, which nothing defends."; or
+  - it now hits more squares next to the king than before, two at least: "Black
+    threatens …Qf4, aiming the queen at White's king: from f4 it hits f2 and h2, next
+    to the king."
+  - A swing of 1–3 pawns with nothing to point at is still not reported. Above 3 pawns,
+    the same sentence replaces the bare "about N pawns' worth" when one is available.
+- **The rescue rule was too broad.** The swing subtracted every capture the player had,
+  to keep a rescue (the opponent saving a piece) from reading as a threat. In the …Qf4
+  position White's Bxh7 wins a pawn whether or not Black plays …Qf4, and that pawn
+  cancelled the whole threat. Now only what the free move takes away is subtracted:
+  the best capture before it, less the best capture after it.
+- **Same kind on the server:** `threat_kind` is ported, so the mistake causes on
+  Progress and the defence puzzles count these threats too.
+  `shared/threats.json`: the old "small-real-threat-unreported" case is now
+  "quiet-queen-move-aimed-at-the-king" (attack), plus four new cases: the same move
+  under a pawn, a quiet move then a winning capture, the same under a pawn, and a
+  swing with nothing to point at.
+- **Testing:** both conformance suites; the wording for both sentences; the browser
+  tests for Play, Review, the insight bar, puzzles, the hint ladder and Think first
+  (40 passed).
+
+---
+
+## Addendum — Guess-the-move scores are kept (2026-10-04)
+
+**Goal:** a guess-the-move run lived only in the page; closing it lost the score.
+
+- **Server** (`routers/guessing.py`, new `guess_runs` table):
+  - `POST /guess/runs` creates a run on its first scored guess. `PUT /guess/runs/{id}`
+    updates it after each guess after that, so a run left halfway is kept too.
+  - The totals are checked: 5 points per guess exactly, points no more than that,
+    exact matches no more than guesses. A run keeps its game and side, and its guesses
+    only grow.
+  - Another account's run is a 404. Anonymous play saves nothing (401).
+  - `GET /guess/summary` gives, per game and side: the run count, the best finished run
+    (highest share of points) and the latest run. Progress carries the same summary
+    for its window (`ProgressOut.guessing`).
+- **Client:**
+  - `GuessSession` reports its totals after every scored guess. The run counts as
+    finished as soon as the player's last move is revealed, without waiting for the
+    "Next move" click.
+  - `GuessRunRecorder` queues the calls so an update never overtakes the creation. A
+    failed save is dropped quietly and retried on the next guess.
+  - The account check happens when a guess is scored, so the sign-in state settling
+    can never restart a run under way.
+- **Where the scores show:**
+  - **The guess page:** "Your best as Paul Morphy: 31 of 45 points (69%)", or "Started
+    as …, not finished yet" until a run is finished.
+  - **Literature:** the same line on the game's card.
+  - **Progress:** a "Guess the move" table with game, side, best, latest and runs.
+- **Testing:**
+  - `test_guessing.py`: create and update, no account, six kinds of impossible totals,
+    the game/side/guesses rules, another account, best vs latest, sides kept apart, the
+    order, the window, and Progress.
+  - Unit tests: the session's reports (none for shown moves, finished on the last
+    guess), the recorder's queue and retry, and the record text.
+  - `guess.e2e.ts`: two exact guesses are saved, then shown after a reload, on the
+    card and on Progress.
+
+---
+
+## Addendum — Motifs over time on Progress (2026-10-04)
+
+**Goal:** Progress showed each motif's success rate as one total, so it could not
+answer "am I getting better at forks?"
+
+- **Server** (`motif_trends` in `routers/progress.py`): the attempts at each motif in
+  the window, oldest first, split into two halves by time. An odd middle attempt counts
+  as latest. A motif needs 6 attempts (3 a side) to be compared, so one lucky attempt
+  cannot make the whole difference. Rows are sorted weakest latest first, like the
+  totals.
+  - **Halves, not calendar weeks:** a week of puzzles often has one or two attempts at
+    a motif, and a rate over one attempt is noise.
+- **Progress: "Getting better? First tries against latest"** (`MotifTrends.svelte`).
+  Each motif is one row on a 0–100% track. A hollow dot marks the first tries and a
+  filled dot the latest, with a line between them. The numbers ("33% → 100%") sit
+  beside the row, and the full reading is in the row's tooltip and in screen-reader
+  text, so nothing depends on the marks. Below six attempts it says what it needs.
+- **Testing:** `test_progress_api.py` checks the split, the odd middle attempt, the
+  minimum and the window, and the order. `progress.e2e.ts` checks a seeded 0% → 100%
+  row and its tooltip. Light, dark and phone-width screenshots were checked by eye.
+
+---
+
+## Addendum — Live grades and Review grades, reconciled (2026-10-04)
+
+**Goal:** Play could show "Mistake" on a move that Review then called "Blunder", with
+nothing to say why. Both grade by the same rules (`shared/classification.json`), but
+Play's browser engine searches to depth 16 and the analysis job to depth 18 with native
+Stockfish, so the two can see different things. They cannot be made to agree on every
+move, so Review now says when they disagree, and why.
+
+- **Play sends its grades with the game** (`completeGame(id, result, live)`): the eval
+  after every ply and the badge on each of the player's moves. Completion first waits
+  for the engine chain, so the game-ending move's grade is included. The game id and
+  the grade lists are held across that wait, so "New game" straight after a
+  resignation cannot strand the old game.
+- **The server keeps them beside its own** (`Move.live_eval_after`,
+  `Move.live_classification`, migrated in). `GameComplete.live` checks each grade: the
+  ply is at least 1, the grade is a real one, and the eval is within the clamp. A ply
+  past the record is dropped.
+- **Review explains a change** (`$lib/gradeChange`): an "In play" row under the move.
+  Example: "During the game, Play's quick check called Nf6 an inaccuracy (4 points of
+  winning chances lost). The deeper check after the game sees more: it is a blunder
+  (N points of winning chances lost)." Each check's loss comes from its own evals; a
+  number is left out when an eval is not on record (the first move has no live eval
+  before it).
+  - It appears only when one of the two grades is an inaccuracy or worse. Book, best
+    and good count as one tier, because a one-point swing across the best/good line
+    is noise.
+- **Play's game-over panel** now says that Review checks every move again and explains
+  any change.
+- **Testing:**
+  - `test_games_api.py`: grades are stored, an out-of-range ply is dropped, and three
+    kinds of bad grade are rejected with nothing half-applied.
+  - `test_migration.py`: the two new columns are added.
+  - `gradeChange.test.ts`: losses from each side, harsher and milder changes, the tier
+    rule, missing grades, and the sentence.
+  - Play store tests: the mating move's grade is sent, and badges go on the player's
+    moves only.
+  - `review.e2e.ts`: a game completed with 3…Nf6 graded "inaccuracy" live shows the
+    note, and a move both checks agree on shows none.
+  - `play.e2e.ts`: a resigned game's record carries the live grades.
+
+---
+
+## Addendum — Opening repertoire tracker (2026-10-04)
+
+**Goal:** the architecture doc's V2 list asked for an opening repertoire "tied to your
+actual games, flags when you left book and what the book move was". Review named no
+opening at all; Play showed one only during the game.
+
+- **The server names openings now** (`app/openings.py`). The book loader keeps each line's
+  name as well as its positions, read from the same TSVs as the client, first name wins.
+  - `opening_of(moves)` ports the client's `openingForFens`: the deepest named position
+    names the line, and a family-only entry never erases a variation named earlier. So
+    Review and Progress name an opening exactly as Play does.
+  - `left_book(moves)` finds the first move into a position no line has, from one that
+    was on a line, with the legal moves there that stay on one (`book_moves`). A game
+    set up off the book, like an endgame drill, never "leaves" it.
+- **Review** (`GameDetail.opening` and `left_book`, computed from the moves):
+  - **Header:** "A13 English Opening: Agincourt Defense · left the book at 5…c5". The
+    link jumps to that move.
+  - **Move list:** an "off book" marker on that move.
+  - **Under the move:** "c5 left the opening book. Book moves here: O-O." Each book move
+    can be pointed at on the board; they are resolved one by one, because a bare "e5" in
+    a list reads as a square.
+- **Progress: "Your openings"** lists one row per side and opening family, most played
+  first.
+  - **Columns:** games, W–D–L from your side, and where you leave the book (your most
+    frequent first move off it, how often, and the book moves there). If the opponent
+    always left first, it says so.
+  - **What counts:** only games with a side of your own, against the engine or a friend.
+  - **Link:** the opening's name opens your latest game in it.
+- **Fixed on the way:** building the book took 2.6 s, paid by whichever request needed it
+  first; the first Review page after a restart sat on "Loading game…" past a browser
+  test's timeout. Lines share their first moves, so each position is now reached once
+  and reused (0.85 s). The book is also built in a background thread at boot, behind a
+  lock so a request arriving mid-build waits instead of building it again.
+- **Testing:**
+  - `test_openings_review.py` covers naming (including the Sicilian rule), the move off
+    the book and its book moves, a game still in the book, a set-up position, the review
+    endpoint's two fields, and the repertoire: per side, W–D–L, your exit counted twice,
+    the opponent leaving first, and local games left out. The empty-progress test
+    includes the new block.
+  - `openings.e2e.ts` covers the Review header, marker, link and book moves, and the
+    Progress row. It passed six runs in a row after the speed-up.
+  - **A race fixed in the takeback spec.** It took its snapshot of the move list as soon
+    as the takeback offer appeared, but the badge lands before the engine's reply. When
+    1. g4 itself graded a blunder, …e5 arrived between the snapshot and the comparison.
+    The spec now waits for the reply first; it passed four repeated runs.
+  - **Results:** pytest 663 passed, vitest 551 passed. Playwright full suite: 102 of 103
+    passed; the one failure was that race, fixed above.
+
+---
+
+## Addendum — Think first results are kept and counted (2026-10-04)
+
+**Goal:** a Think-first check ended in "Critical moments this session: 1 of 1 found", and
+the count was gone when the page closed. The thinking was the one thing Progress could
+not show.
+
+- **Stored.** After grading, Play posts each critical moment to `POST /thinking/moments`
+  (new `critical_moments` table, created by `create_all`, owner-stamped like attempts).
+  The client grades and the server only counts, the trust model puzzles and drills
+  already use. Anonymous play posts nothing. Each record holds:
+  - whether a move as good as the engine's was on the list;
+  - whether their last move threatened something, and whether a candidate dealt with it;
+  - the candidate count.
+- **Progress: "Thinking at critical moments"** sits above the weakest motifs. It shows
+  "3 of 5 critical moments: a move as good as the engine's was on your list of
+  candidates", how often a threat was answered when there was one, and a row of dots for
+  the latest 20 (green found, red missed, oldest first). It follows the 30/90/all-time
+  window.
+- **Fixed on the way:** Progress showed "Nothing to chart yet" until a game finished
+  analysis, even with moments recorded. Moments now count as something to chart.
+- **Testing:**
+  - `test_thinking.py` covers the record and its owner, 401 without an account, the
+    candidate count checked, an answer without a threat not kept, the Progress counts
+    and order, and the window. The empty-progress test includes the new block.
+  - The Think-first browser spec now waits for the 201 and finds "1 of 1 critical
+    moment" and one dot on Progress.
+  - **Results:** pytest `test_thinking.py` and `test_progress_api.py`, 32 passed.
+    Playwright think and progress specs, 5 passed.
+
+---
+
+## Addendum — Defence puzzles take any defence that works (2026-10-04)
+
+**Goal:** a defence puzzle stored one answer, the engine's, and refused every other move.
+After 3.Qh5, …g6, …Qe7 and …Qf6 all stop Qxf7#. Marking two of them wrong taught that a
+threat has one answer, which is the opposite of the habit the puzzle trains.
+
+- **A move other than the stored answer is weighed** (`PuzzleSession.weighDefence`). The
+  browser engine searches the position after it and the position after the stored
+  answer, both at depth 12, while the board waits ("Checking Qe7…").
+  - **Accepted** when the threat is no longer their best reply and the move keeps the
+    solver's winning chances within 10 points of the stored answer. That is the same
+    bar Think first draws between a threat answered and one sidestepped
+    (`SIDESTEP_LOSS`, now shared). The puzzle is solved and recorded as correct: "Qe7
+    deals with it too — the engine's answer was g6."
+  - **The first cut used 5 points**, move grading's inaccuracy bar. In a level position
+    …Qe7 and …g6 can differ by nearly that much, so acceptance depended on engine depth
+    and machine. On CI it failed the browser spec, which also needed 60 s for four
+    in-browser searches on a small runner.
+  - **Refused** otherwise, with the reason in the retry box. Either "a6 leaves Qxf7# on
+    the board", or, for a move that dodges the threat but loses more, "Nh6 gets out of
+    it, but then their best is d4". It counts as a wrong try, as before.
+  - **No engine:** if the engine fails, only the stored answer counts.
+- **Only defence puzzles** (and only their first move) are weighed. The other puzzles keep
+  their stored line, plus the existing rule that any mate counts.
+- **Testing:** four `PuzzleSession` cases with a mocked engine cover an accepted
+  alternative (both searches at the same depth), a refused move that leaves the threat, a
+  refused sidestep naming the reply, and a failed engine. A browser spec on Scholar's
+  mate covers …a6 refused with its reason, then a different real defence accepted on the
+  real engine. Results: vitest 24 passed in the puzzle store; Playwright puzzles and
+  hint-ladder, 8 passed.
+
+---
+
+## Addendum — Board overlays, and a coach that names the piece (2026-10-04)
+
+**Goal:** each overlay teaches one way of looking at a position, drawn on the board until
+the player sees it without help. The coach's "Improve your worst-placed piece" never said
+which piece.
+
+- **Five overlays** (`client/src/lib/overlays.ts`, board arithmetic on chess.js, no
+  engine):
+
+  | Overlay | What it marks |
+  |---|---|
+  | Loose pieces | attacked pieces the exchange count says are lost: red ring if nothing defends them, orange if not enough does |
+  | Control | squares White (light tint) or Black (dark tint) attacks more often |
+  | Pins | pieces that can't leave the line to their king (lift the piece, see which slider then hits the king), dashed purple, with a purple line from the pinning piece to the king |
+  | King safety | the squares around each king the other side attacks |
+  | Files | open files, and half-open ones, as a thin stripe |
+
+- **Where.** Chips under the hint-mode switch on Play, and under the move controls in
+  Review, where they apply to whatever position is on the board: the decision, a step
+  along a line, or an exploration.
+  - **Persistence:** the choice is saved (`displayPrefs.overlays`).
+  - **Off and zen:** overlays are help, so Off draws none and hides the chips, and zen
+    has no board furniture.
+  - **Rendering:** classes go through the board's `highlight.custom`. chessground joins
+    several classes on one square, and `boardHighlights` merges them with the notation
+    focus.
+  - **Fixed after release:** clicking a piece sometimes showed no move dots. The Files
+    stripe and the move dot are both background images, and the overlay rule came later
+    in the stylesheet at the same weight, so the stripe won. The Control and King-safety
+    tints likewise hid the selected and last-move squares. Every overlay rule is now
+    wrapped in `:where()`, which removes its weight, so the board's own move,
+    selection, last-move and check styles always paint over it. A browser spec selects
+    the g1 knight with Files, Control and King safety on, and checks that e2 (on the
+    striped e-file), f3 and h3 all keep their dot.
+- **The coach names the piece.** `safeSquares` counts where a piece can go without being
+  lost there. `leastActivePiece` picks the knight, bishop, rook or queen with the fewest,
+  when that is three or fewer. The middlegame fallback becomes "Your least active piece
+  is the knight on d2 (2 safe squares) — find it a better one." The slogan stays only
+  when every piece has room.
+- **Testing:**
+  - `overlays.test.ts` covers loose pieces on the play-tested position, hanging versus
+    under-defended, a pin appearing once the d-pawn moves, control at the start,
+    open/half-open files, king danger, safe squares, the least active piece (and none),
+    and merging the marks.
+  - A coach case for the named piece.
+  - `overlays.e2e.ts` covers three loose pieces after …Qh4, control, persistence across a
+    reload, Off hiding everything, and the Ruy Lopez pin drawn from b5 to e8.
+  - **Results:** vitest 547 passed. Playwright: overlays, play, review and insight-bar,
+    31 passed.
+
+---
+
+## Addendum — Guess the move through the landmark games (2026-10-04)
+
+**Goal:** Literature's landmark games could only be read. Guessing each move before seeing
+the master's is the classic way to think through a game, and it ties the reading material
+to the thinking the rest of the app trains.
+
+- **Where.** Each game card on Literature has a "Guess the moves" link to
+  `/literature/guess/[gameId]`. You play the winner's side by default; a toggle switches to
+  the other player. The other side's moves play themselves.
+- **Scoring** (`$lib/guess.ts`). A guess is weighed against the master's move by the
+  browser engine, both at depth 12, and scored by how far the guesser's winning chances
+  fall short. The bands are move grading's:
+
+  | Shortfall in win% points | Points |
+  |---|---|
+  | the master's move, or under 1 point | 5 |
+  | up to 2.5 | 4 |
+  | up to 5 | 3 |
+  | up to 10 | 1 |
+  | more | 0 |
+
+  A different move that is as good scores as well as the master's. The point is finding
+  good moves, not memorizing one game. In the Immortal Game, 2. Nf3 keeps 53% against
+  Anderssen's 2. f4 at 44%, and scores 5.
+- **The flow** (`GuessSession` in `stores/guess.svelte.ts`):
+  - **Guess:** make a move on the board.
+  - **Reveal:** the master's move is played, with the guess as a grey arrow beside the
+    master's green one, and a sentence like "Nc3 keeps 52%; Morphy's Nf3 keeps 55%.
+    3 points."
+  - **Next move:** plays the reply and moves on to the next guess.
+  - **Show the move:** gives the answer for no points.
+  - **The end:** a summary of points and exact matches. Nothing is stored.
+- **Testing:**
+  - `guess.test.ts` covers reading a game score, the bands including the sub-1-point
+    case, and the sentences.
+  - `guess.svelte.test.ts` mocks the engine. It covers starting on the player's first
+    move, an exact guess (no engine call), a weighed guess from the guesser's side, and
+    skipping to the end.
+  - `guess.e2e.ts` covers the Opera Game: an exact guess, a weighed one, a shown one, and
+    the score; also playing Black.
+  - **Results:** Playwright guess and literature specs, 3 passed.
+
+---
+
+## Addendum — Defence puzzles from your own games (2026-10-04)
+
+**Goal:** the puzzle generator made attacking puzzles only: punish the blunder, or find the
+tactic you missed. But the most common way to lose a game under 1400 is a threat left on
+the board, and nothing trained answering one.
+
+- **Where they come from.** A mistake whose cause is `missed_threat` becomes a defence
+  puzzle (`puzzle_generation.py`), in place of an attacking one: same position, the
+  engine's answer as the solution, motif `defence`. The opponent's threat is stored on
+  the puzzle (`puzzles.threat_move`, added by the migration) and served as `threat`.
+  `scripts/retag.py` backfills them for analyzed games, as for every personal puzzle.
+- **Two questions, in order** (`PuzzleSession.phase`):
+  - **Spot:** "Their last move threatens something. Click the square their threat lands
+    on — or the piece making it." The board takes clicks, not moves; `Board` gained an
+    `onselect` for chessground's square clicks.
+    - **After two misses** the threat is shown, which counts as hint level 2. The ladder
+      stays hidden until this step is done: it answers the second question.
+  - **Defend:** the threat is drawn as an orange arrow, as on Play, with "Found it:
+    Qxf7#. Now find the move that deals with it." The ladder's rungs become "Their last
+    move threatens Qxf7#" and "g6 deals with Qxf7#".
+- **Everything else is the existing queue.** Leitner scheduling, the `?motif=defence`
+  filter, and the Progress motif chart all apply, so a defence success rate shows up
+  beside the others with nothing new on the screen.
+- **Testing:**
+  - Server: a unit test turns Scholar's …Nf6 into a defence puzzle with its threat. An
+    engine-marked end-to-end test analyzes the game, then serves the puzzle with
+    `threat: h5f7`.
+  - Client: four `PuzzleSession` cases cover a move refused while spotting, the target
+    or the threatening piece as answers, the threat shown after two misses as a hint,
+    and other puzzles untouched.
+  - Browser: a Puzzles spec seeds the game, misses once, spots f7, and solves.
+  - **Results:** vitest 528 passed, pytest 648 passed. Playwright: puzzles and
+    hint-ladder specs, 7 passed.
+
+---
+
+## Addendum — The LLM gets facts, not a FEN (2026-10-04)
+
+**Goal:** the "Why" prompt sent the board as a raw FEN, which LLMs often misread, plus bare
+motif tag names. At 21. Be6 that meant asking the model to explain a deflection that was
+not there (a false tag, since fixed), from a board it might not read correctly.
+
+- **`build_prompt` now sends the facts in words** (`server/app/explanations.py`):
+  - **Position:** both sides' pieces by square ("White: King e1, Queen h5, Rooks a1 h1…").
+  - **The move:** its number and grade, and the mover's winning chances before and after.
+  - **Lines:** the engine's line and the line after the move played, numbered like a
+    scoresheet ("3... g6 4. Qf3 Nf6"). They come from the stored `best_line` and
+    `reply_line`.
+  - **The threat** the move had to answer, only when `threat_kind` says the screens
+    would show one.
+  - **Loose pieces:** the mover's pieces the exchange count says are lost after the move,
+    with the piece that takes each one.
+  - **The mistake cause** in words, and material won by the engine's move or the
+    opponent's reply, naming the piece taken.
+  - **Tactics, attributed:** each motif is tied to the move that carries it ("Tactics in
+    the opponent's reply …"), rather than a list the model had to assign.
+- **The system prompt** asks for pieces named the way the facts name them ("the knight on
+  d2"), only pieces that stand where they are said to stand, and a closing sentence
+  starting "Rule:" that the player can reuse.
+- **Invented boards are rejected.** `misplaced_pieces` finds every "piece on square" in
+  the reply and checks it against the positions the text may talk about: before and after
+  the move, and every position along both lines. Any mismatch means the model made part
+  of the board up.
+  - **What happens then:** the text is logged and not stored, and generation goes on to
+    the next move. A wrong square taught as fact is worse than no explanation.
+- **Not checked live.** The real API stays off in every suite and in verification, so the
+  prompt's effect on the texts themselves is still a manual check, as the Phase 5
+  checklist already says.
+- **Testing:** `test_explanations.py` now pins the prompt's facts on the hung-queen and
+  Scholar's-mate positions, that no FEN appears in it, the misplaced-piece check across
+  the lines, and that an invented knight is not stored while the next move's explanation
+  is. pytest: `test_explanations.py`, 19 passed.
+
+---
+
+## Addendum — Think first at critical moments (2026-10-04)
+
+**Goal:** the app graded moves, never the thinking behind them. At the positions that
+matter, Play now asks for candidate moves before the move, and grades the list: was a move
+as good as the engine's on it, and did one of them deal with the opponent's threat.
+
+- **Only at critical moments.** A position is critical when the engine's best line beats
+  its second-best by 10 or more of the player's win% points. The lines are the MultiPV-3
+  ones Play already searches for the Ideas row, so detection costs nothing. Asking
+  everywhere would teach the player to click through the prompt; asking where it matters
+  teaches when to slow down. A mate is no critical moment when everything else wins anyway.
+- **Marking candidates.** While the card is up, a move made on the board is marked, not
+  played: it is listed (up to three), drawn as a pale-blue arrow, and the piece snaps back
+  (the board's `syncKey`). "Check my candidates" weighs each with the browser engine at
+  depth 12. "Skip, just play" lets the move through.
+- **What is held back.** The Tactic row and the Engine row would hand over the answer, so
+  they wait while the move is held. The threat row stays: it is the first question.
+- **The grade** (`$lib/candidates.ts`):
+  - **Chances:** each candidate's winning chances are shown.
+  - **The engine's move:** whether it was on the list, or whether a candidate came within
+    2.5 points of it (the best/good bar). If neither, the move to find is named.
+  - **Their threat:** as in Review, a threat is answered, left on the board, or
+    sidestepped. Sidestepped means it is gone but the candidate trails the engine's move
+    by 10 or more points, and the grade names the reply that punishes it. On move 21 of
+    the play-tested game, Bxc8 answered …Bxf5, "Be6 gets out of it, but then their best
+    is …Bxe6", and Bd3 runs into …Bxh3. The first cut called all three answers.
+  - **Session record:** "Critical moments this session: 1 of 1 found".
+- **Where.** Nudge and Full, not Off (a real game), not zen (no panel to ask in), and not
+  friend games. The Settings toggle "Think first at critical moments" is on by default.
+- **E2E default.** The browser fixture turns Think first off for every spec but its own,
+  because which positions are critical is the engine's call. A spec about something else
+  would find its move turned into a candidate.
+- **Not yet stored.** The session record lives in the page. Counting it on Progress
+  ("critical moments found, over time") is the obvious next step.
+- **Testing:**
+  - `candidates.test.ts` covers the gap from each side, mates, one-line positions, finding
+    the move, a move as good as it, missing it, and the three threat outcomes.
+  - `think.e2e.ts` uses the hung-queen position. Two candidates are marked and not
+    played, and the answer rows wait. Checking finds Nxh4 and the rows come back, then
+    the move plays. Skipping, and Off, never hold a move.
+  - **Results:** vitest 524 passed. Playwright: think, play, insight-bar, zen and
+    hint-ladder specs, 33 passed.
+
+---
+
+## Addendum — An explorable Review (2026-10-04)
+
+**Goal:** Review was look-only. It showed the engine's first move as a green arrow and
+nothing about what followed, and the board could not answer "what if I'd played Nf3?"
+With the LLM off, a blunder's whole explanation was that arrow.
+
+- **Lines are stored.** The analysis job keeps two principal variations per move, 10 plies
+  each, as space-separated UCI. No extra search is needed, since each position is
+  searched once already.
+  - `best_line` starts from `fen_before`: the line the engine wanted. Its first move is
+    `best_move`.
+  - `reply_line` starts from `fen_after`: what follows the move played. It equals the
+    next move's `best_line`, and is null after a game's last move.
+
+  Older games show no lines until re-analyzed.
+- **Review shows the decision three ways** under the selected move:
+  - **Chances:** the mover's winning chances before and after, e.g. "White's winning
+    chances: 37% → 8%". This uses the same curve the grading uses, with a forced mate
+    counted as certain (`winChances` in `classification.ts`).
+  - **Engine:** the engine's line with move numbers ("21. Bxc8 Raxc8 22. Qd3 …").
+  - **Your move:** the played move followed by its reply line ("21. Be6 Bxe6 22. Qc3 …").
+    When the move was the engine's own, one line is shown.
+
+  Clicking any move of either line puts its position on the board, with that move's
+  arrow, and "Back to the decision" returns. Pointing at a move lights it up, as the
+  notation in coaching text does. `MoveLine.svelte` renders the lines from
+  `$lib/lines.ts`.
+- **"Try a move of your own."** The board becomes playable from the decision, for both
+  sides.
+  - **Engine answer:** after each move the browser engine (depth 14) gives the mover's
+    winning chances and its answer line.
+  - **Comparison:** on the first move it compares with the game: "White's winning
+    chances: 10% — in the game, Be6 left 8%".
+  - **Exit:** Undo steps back, and "Back to the game", or selecting another move, ends
+    the exploration.
+  - **Board remount:** the board is keyed on exploring, because chessground binds its
+    pointer events only on a board created movable. A view-only board switched to
+    movable in place silently takes no moves.
+- **Testing:**
+  - The engine-marked analysis test checks the chain: each `reply_line` equals the next
+    `best_line`, every line starts with `best_move` and is legal from its position, and
+    there is no line after mate.
+  - A migration check covers the new columns.
+  - `lines.test.ts` covers numbering, positions, lines that stop early, and SAN to UCI.
+    `winChances` cases include mates either way.
+  - A browser spec on Scholar's mate covers …Nf6's chances (to 0%) and its two lines, a
+    preview there and back, and trying …g6 with the engine's verdict compared to the
+    game, then undo and exit.
+  - **Results:** vitest 515 passed, pytest 643 passed, Playwright review spec 7 passed.
+
+---
+
+## Addendum — Mistake causes: which habit broke (2026-10-04)
+
+**Goal:** Progress said which motifs a player misses in puzzles, never which habit fails at
+the board. Each mistake and blunder now gets the first step of a thinking routine that
+would have caught it, and Progress counts them.
+
+- **The causes** (`server/app/mistakes.py`), in the routine's order:
+
+  | Cause | The step that broke |
+  |---|---|
+  | `missed_threat` | there was a threat, and it was still their best move after yours |
+  | `hung_piece` | their best reply takes something the exchange count says is lost |
+  | `allowed_reply` | their best reply is a check, a mate or a tactic, or the move walked into a forced mate |
+  | `missed_tactic` | your best move won material, ran a tactic or started a mate, and you played something else |
+  | `positional` | none of the above |
+
+  The threat comes first because it was on the board before the move was chosen. A
+  threatened piece moved onto a covered square is `hung_piece`, not `missed_threat`: the
+  threat was answered, and the move itself was the blunder (21. Be6).
+- **The threat classifier, ported.** "There was a threat" has to mean what the screens
+  show.
+  - `threat_kind` in `app/threats.py` ports `classifyThreat`'s kind (not its wording):
+    static exchange, the best-capture rescue correction, the 1.5 and 3 pawn bars, and the
+    motifs the client can name.
+  - `shared/threats.json` runs 16 classification cases and 9 exchange cases through both
+    sides.
+- **Stored, not recomputed.** `moves.mistake_cause` is filled by the analysis job after
+  tagging. It is derived from stored analysis only, so `scripts/retag.py` fills it in for
+  older games and re-derives it when the rules change.
+  - **The script itself** could not run: it never loaded the users table, so its first
+    flush failed on the owner foreign keys. It also needs `PYTHONPATH=.`, which its
+    docstring now says (as does `backfill_threats.py`'s).
+- **Progress.** "Why your mistakes happen" sits above the weakest motifs.
+  - **The headline** names the leading cause and the habit to practise, e.g. "2 of your 5
+    mistakes and blunders: drifted… Practise: compare two or three candidate moves".
+  - **Below it**, one bar per cause, blunders and mistakes stacked, each with a link to
+    its most recent move. Only the player's own side counts, as with CPL.
+  - **The words** live in `client/src/lib/mistakes.ts`.
+- **Review.** A Cause line under the selected move says what happened and what to do next
+  time. `?ply=N` opens a game on a move, which is what Progress's links use.
+- **On the play-tested game:**
+  - 21. Be6 left a piece hanging.
+  - 19. Rc1 allowed …Qf4's pin.
+  - 14. O-O missed White's own tactic.
+  - 13. Bd3 and 18. a4 drifted. …Qf4 before 18. a4 is worth about a pawn, under the
+    threat bar, so it is not counted as a missed threat. The Threat row doesn't show it
+    either.
+- **Testing:**
+  - Server: `test_mistakes.py` covers every cause, an answered threat, ungraded moves and
+    replies read off the next move. `test_threat_kind.py` runs the shared table. Progress
+    API tests cover counts, side, order, the latest example and the window. A migration
+    check covers the three new columns. The engine-marked Scholar's-mate test pins …Nf6
+    as `missed_threat`.
+  - Client: the shared table in `threats.test.ts`, and `mistakes.test.ts`.
+  - Browser: a Progress spec follows the example link into Review and finds the same
+    cause there.
+  - **Results:** pytest 643 passed, vitest 508 passed. Playwright: progress and review
+    specs, 9 passed.
+
+---
+
+## Addendum — Quick fixes from the play-tested review (2026-10-03)
+
+**Goal:** seven small changes from the teaching review, each of which stopped the app from
+teaching a wrong lesson.
+
+- **Book moves are graded "book".** 2. c4 got a live Mistake badge and Review called
+  1. Nf3 an inaccuracy, because grading ignored the opening book. A move into a book
+  position now grades `book` (a sixth label, with an open-book glyph in the compact
+  badge) unless it is a blunder. Some named lines are traps, and the Fool's Mate is in the
+  book.
+  - **One book, two readers.** The lichess TSVs moved from `client/scripts/` to
+    `shared/chess-openings/`. `build-openings.js` builds the client's `openings.json` from
+    them, and the new `server/app/openings.py` builds the server's book. Each takes every
+    position along a line, not just the named one at its end: 7,847 positions, and a test
+    pins that both sides count the same. Named positions keep their `[eco, name]`;
+    positions passed through map to `null`.
+  - **Docker.** The image never built `openings.json`, so a deploy from a clean checkout
+    had no opening names. The Dockerfile now runs the script.
+- **Grading uses winning chances, not centipawns.** Black took a free bishop while 6.5
+  pawns up, and Review called it a mistake. A move is now graded by how much it lowers the
+  mover's win% (Lichess's curve, `win% = 100 / (1 + e^(-0.00368208·cp))`).
+  - **Thresholds:** 1, 2.5, 5 and 10 points. They were picked so a level position grades
+    as the old 10/25/50/100 cp bars did. A pawn given away at +6.5 is now an inaccuracy
+    at most.
+  - **Shared rule.** The rule lives in `shared/classification.json`. A rewritten
+    conformance table (37 cases, plus the win% curve) runs through both
+    `classify_move` and `classifyMove`.
+- **Mates are kept, not clamped away.** Once mate was on the board, every move graded
+  Best (both evals sat at ±10), so Review printed "26. Rcd1 Best — best was b4".
+  - **Storage:** `mate_before`/`mate_after` are stored beside the clamped evals. Mate 0
+    means a mate on the board; the eval says whose.
+  - **Grading follows Lichess's mate rules, from the mover's side:**
+    - a mate that gets closer is best; one that is delayed is good;
+    - hastening your own mate is an inaccuracy;
+    - throwing a mate away, or walking into one, is graded by how much was left.
+  - **Live play** tracks the mate the same way.
+  - **Review wording:** when a move graded best or book differs from the engine's pick,
+    Review now says "the engine's pick was" instead of "best was".
+- **The deflection false positive is gone** (`motifs.py` and the `liveMotifs.ts` port, in
+  step). The bad case was 21. Bxc8, a plain bishop trade, tagged as deflecting the b7
+  pawn. A deflection now needs two things:
+  - the hitting piece must be safe where it lands;
+  - the defender must be unable to stay: hit by a cheaper piece, or worth at least what
+    it guards.
+
+  The shared suite gains three near-misses, among them the game position itself. It
+  turned out one of its positive cases was a false positive too: after c6, the guarded
+  knight on e5 simply takes the pawn. That case now has a pawn on b5 holding c6.
+- **Puzzle hints name the pieces.** The step-4 reason uses `explainMotif` on the position
+  the move is played in ("the queen on e5 is left undefended"). It falls back to the
+  template for Lichess themes outside the taxonomy, and for later moves of a line.
+- **The engine's answers are their own reveal.** "Stockfish prefers X" used to end every
+  coach sentence, and the Ideas chips (the engine's top three lines) sat beside it. Both
+  were on screen before any thinking had happened.
+  - **The Engine row:** under the coach, it asks you to pick your move first. Its "Show its
+    pick" button reveals the preference and the Ideas chips together, and resets each move.
+  - **Where it shows:** Full only, while either the Coach or the Ideas toggle is on.
+- **Review's arrows:** the played move is drawn red only when it cost something. A book
+  move, or a move graded best or good that differs from the engine's pick, gets a quiet
+  grey arrow beside the green one.
+- **Endgame captured-piece rows** counted every piece missing from a drill position as
+  captured. `Board` takes a `startFen`, and the drill screen passes its own.
+- **Existing games** keep their grades. `scripts/retag.py` now re-grades from the stored
+  evals before re-tagging. It applies book and win% grading; games analyzed before mates
+  were stored are graded on their clamped evals alone.
+- **Testing:**
+  - The conformance table runs on both sides, along with server `test_openings.py` and
+    `test_regrade.py`.
+  - The engine-marked analysis tests now pin Qxf7# as mate 0 and graded best, …Nf6 as a
+    blunder, and 1.e4 as book.
+  - New `PlaySession` cases cover a book move and a hastened mate at the clamp.
+  - The motif parity suite gained three cases.
+  - Browser specs cover:
+    - the e4 badge reading "book";
+    - the hint ladder naming the queen on e5;
+    - the engine row's reveal, which brings the Ideas chips with it and is absent in
+      Nudge and Off;
+    - empty captured rows at the start of a drill.
+  - **One spec depended on the engine.** The narrow-screen Ideas check asserted that the
+    three chips wrapped onto a second row. When the engine's top three are e4, d4 and c4
+    (all "Space") they fit on one row. It now asserts the container's `flex-wrap`
+    instead.
+  - **Results:** vitest 481 passed, pytest 604 passed. Playwright full suite: 89 of 90
+    passed, and the one failure was the engine-dependent spec above, which passes after
+    the fix.
+
+---
+
+## Addendum — Notation you can point at (2026-10-03)
+
+**Goal:** the coaching text names moves and squares ("Black threatens …Bxd1, winning
+material: the queen on d1 is worth more…"), and the player had to find each one on the
+board themselves. Now the notation is set apart in the text, and pointing at it lights it up.
+
+- **`client/src/lib/notation.ts`** finds moves ("…Bxd1", "Qd2", "21. Be6", castling) and
+  squares in prose, and resolves each move against the position the text is about.
+  - **Position order:** a move is tried first in the position right after the previous move
+    in the text, so a line resolves move by move. Then it is tried in each position the
+    caller names, most likely first. A threat's move belongs to the passed position; an
+    engine suggestion belongs to the current one.
+  - **Unresolved moves:** a move that fits none of them stays plain text, because there would
+    be nothing to show.
+- **Bare squares are squares unless the text says otherwise.** "d4" is both a pawn move and
+  a square. It is read as a move only after a move number or "…", after a word that
+  introduces a move ("prefers", "threatens", "line:"), or right after another move. Anywhere
+  else it is a square, so "the pawn on e4" lights up e4 instead of drawing e2–e4 because
+  that push happens to be legal. `linkWhy` in `summaryLinks.ts` guesses by legality and has
+  exactly that trap; it is left alone here because the Why panel's clicks depend on it.
+- **`NotationText.svelte`** renders the tokens as buttons in mono with a dotted underline,
+  and reports which one is pointed at.
+  - **Mouse or pen:** hover shows the target.
+  - **Keyboard:** focus shows it.
+  - **Touch:** a tap shows it until the next tap or move, because a finger can't hover and
+    pointerleave fires the moment it lifts.
+- **The board** gets a `highlights` prop (chessground's `highlight.custom`). The piece that
+  moves, or the square named, gets a blue fill and ring (`notation-focus` in `board.css`).
+  A move also gets a blue arrow. The map is always passed, empty when nothing is pointed at,
+  because chessground replaces it wholesale and that is what clears it.
+- **Where:** Play's Threat, Tactic and Coach rows and the hint ladder (also on Puzzles, where
+  the full line is resolved from the puzzle's first position). Review's threat line and its
+  outcome are covered too. The target clears on every move and on every ply selected in
+  Review. Zen mode shows no text, so it has nothing to point at.
+- **Testing:** `notation.test.ts` (9 cases) covers the threat sentence, square-versus-move
+  cues, lines with and without the flag, move numbers and ellipses, castling, unresolvable
+  moves, and no matches inside words or numbers. A Play browser spec hovers …Qh4# and asserts
+  the lit square and the arrow appear, then disappear when the pointer leaves. Results: vitest
+  446 passed; Playwright for the play, review, insight-bar, puzzles and hint-ladder specs,
+  34 passed.
+
+---
+
+## Addendum — Threats: what does their last move want? (2026-10-03)
+
+**Goal:** the app named the tactic the player *had* and never the one they *faced*. In a
+play-tested 28-move game the panel never once said what the opponent was threatening: at
+move 21 it described a deflection on b7 (a false positive) and told the player to "improve
+your worst-placed piece", while the bishop on f5 was attacked twice, defended once, and lost
+on the next move. Asking what the other side's last move wants is the first step of any
+thinking routine, and missing the answer is how most games under 1400 are lost.
+
+- **Found by passing.** Hand the move back to the opponent (a null move: flip the side to
+  move, drop the en passant square, refuse in check) and ask the engine what it would play
+  with it. Play runs that search on the WASM engine after every engine reply, at depth 12,
+  queued on the chain behind the eval it is weighed against. It is skipped if the user has
+  already moved when it starts, and dropped if they move while it runs (the same `fen` and
+  `boardEpoch` guards the eval uses). The analysis job runs the same search for every stored
+  position with native Stockfish (`app/threats.py`) and keeps the raw result on the move:
+  `threat_move`, `threat_cp`, `threat_mate`.
+- **The engine proposes; a board fact has to back it.** A free move is always worth
+  something, and the opponent's best use of one is often just tidying up.
+  `classifyThreat` (`client/src/lib/threats.ts`) reports four kinds and nothing else:
+
+  | Kind | Backed by |
+  |---|---|
+  | `mate` | the passed position is a forced mate for the opponent |
+  | `material` | the move is a capture that wins material by static exchange |
+  | `motif` | the move executes a detected tactic and is worth ≥ 1.5 pawns — or is a winning capture that also forks (…Nxf2 hitting both rooks is about the fork, not the pawn) |
+  | `attack` | nothing nameable, but worth ≥ 3 pawns |
+
+  "Worth" is the swing between the passed position and the real one. Each sentence names
+  pieces and squares, in the same voice as the tactic row: "Black threatens …Bxf5, winning
+  the bishop on f5 (attacked twice, defended once)." The static exchange count re-reads
+  the attackers after each capture, so a queen behind a rook joins in, and a king never
+  recaptures onto a defended square.
+- **A rescue is not a threat.** When the player can win a piece, the opponent's best free
+  move is to save it, and the eval swings by that piece without anything being threatened.
+  The swing is therefore taken net of the player's own best capture (`bestCaptureGain`). In
+  the test position where White can take a knight, the raw swing is 3.8 pawns, which would
+  have been reported as an attack. Net of the capture it is 0.8, below every bar.
+- **One classifier, two screens.** The server stores the engine's facts and nothing more.
+  Play and Review both call `classifyThreat` on them, so the two can't disagree about what
+  counts, and there is no Python port to keep in step. That changes once Progress needs
+  threat statistics server-side. The classifier would then be ported with a shared
+  conformance suite, the way `shared/motifs.json` keeps the motif detectors honest.
+- **Play.** A Threat row sits above the Tactic row, because it is the question to answer
+  first.
+  - **Full:** the threat is stated outright, with an orange arrow. That is chessground's
+    `yellow` brush; red and green already mean "played" and "best" in Review.
+  - **Nudge:** the row asks "What does their last move threaten?" with a Show me button.
+    That brings back a prompt on every move, which removing the static checks/captures/threats
+    banner took away, but this time the answer is specific to the position.
+  - **Off:** no row at all.
+  - **Other cases:** in check it says so. In a quiet position it says "No direct threat —
+    ignoring their last move loses you no material", which is only what was checked. Zen
+    mode gets no arrow, and friend games are untouched.
+- **Review.** The line under the selected move shows the threat that move had to answer,
+  with the arrow, and what became of it. That is read off the other side's best move in the
+  next stored position:
+  - still the threat: "left it on the board";
+  - something else, after a mistake or blunder: "After Be6, Black's best move became …Bxe6
+    instead";
+  - something else, after a sound move: "answered".
+
+  The first cut called every changed reply "answered", which would have told the player
+  that 24. Qg6??, a queen thrown away, had answered a mating threat.
+- **Existing data.** The three columns are added by the hand-rolled migration.
+  `scripts/backfill_threats.py` runs the searches for games analyzed before them, one
+  commit per game, and skips games that already have threats.
+- **Known gaps.** The thresholds come from one game's positions. Positional threats below
+  1.5 pawns are deliberately left unreported: in that game, …Qf4 (about 1.2 pawns) is not
+  mentioned. The deflection false positive at move 21 still shows in the Tactic row; it is
+  on the quick-fix list. Showing mistake causes on Progress ("most of your blunders left a
+  threat on the board") is the next step, and needs the server-side classifier above.
+- **Testing:** `threats.test.ts` covers the null move, static exchange (x-ray recaptures,
+  kings, even trades), every threat kind on positions and Stockfish scores from the
+  play-tested game, the rescue and the thresholds, and the three Review outcomes. Five new
+  `PlaySession` cases cover the search running after the engine reply, skipped and dropped
+  when the user has moved on, not run in check, and run on a restored game. Server
+  `test_threats.py` uses a stubbed engine for the position searched and white-POV scores.
+  The engine-marked analysis-job test pins 3…Nf6 facing Qxf7#: a mate in one, still White's
+  best reply. There is also a migration check for the columns. Browser specs cover Full,
+  Nudge and a quiet position on Play, and the ignored mate threat on Review. Results:
+  vitest 437 passed, pytest 561 passed (544 unit), Playwright 89 passed (full suite).
+
+---
+
 ## Addendum — Takeback on a live blunder, keyboard review nav (2026-07-27)
 
 **Goal:** two places where the app produced feedback the player couldn't act on. Review had

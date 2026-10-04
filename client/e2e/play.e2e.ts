@@ -26,15 +26,18 @@ test('toggling the eval bar does not resize the board', async ({ page }) => {
 });
 
 test('live classification badge appears within 500ms of a move', async ({ page }) => {
+	const book = page.waitForResponse('**/openings.json');
 	await page.goto('/');
 	await waitForEngineReady(page);
+	await book;
 
 	await move(page, 'e2', 'e4');
-	// the real requirement, not "eventually": depth-16 eval + badge in 500ms
+	// the real requirement, not "eventually": the badge in 500ms, from a search
+	// to depth 16 that stops early rather than miss that (BADGE_BUDGET_MS)
 	await expect(page.getByTestId('move-badge')).toBeVisible({ timeout: 500 });
-	await expect(page.getByTestId('move-list').getByTestId('move-badge')).toContainText(
-		/best|good|inaccuracy|mistake|blunder/
-	);
+	// 1.e4 is in the opening book, so it is graded "book" — not whatever a
+	// quarter-pawn wobble in the engine's eval would make of it
+	await expect(page.getByTestId('move-list').getByTestId('move-badge')).toHaveText('book');
 });
 
 test('a blundered move can be taken back, and Off withholds the offer', async ({ page }) => {
@@ -77,6 +80,10 @@ test('a blundered move can be taken back, and Off withholds the offer', async ({
 	expect(blundered).toBe(true);
 
 	await expect(offer).toBeVisible();
+	// The badge lands before the engine's reply (both orderings are live, see
+	// PlaySession.takeBack), so let the reply land before taking the snapshot
+	// the toggles are checked against — otherwise it can arrive in between.
+	await expect(panel).toContainText('white to move', { timeout: 15_000 });
 
 	// the hint-mode gate: Off is a real game, so the do-over goes away with
 	// the rest of the help — without the position changing underneath
@@ -137,6 +144,11 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	expect(['analyzing', 'complete']).toContain(game.analysis_status);
 	expect(game.moves).toHaveLength(2); // e4 and the engine's reply
 	expect(game.moves.at(0).san).toBe('e4');
+	// what Play's live check said rides along, for Review to compare with:
+	// a badge on the player's move only, an eval on both
+	expect(game.moves.at(0).live_classification).toEqual(expect.any(String));
+	expect(game.moves.at(1).live_classification).toBeNull();
+	for (const played of game.moves) expect(played.live_eval_after).toEqual(expect.any(Number));
 });
 
 test('winning shows a congratulatory overlay with confetti', async ({ page }) => {
@@ -312,6 +324,7 @@ test('Off shows no in-game help at all', async ({ page }) => {
 	// a real game: even though Nxh4 is a live tactic, nothing names it and the
 	// engine's own suggestions go too
 	await page.getByTestId('hint-mode-off').click();
+	await expect(page.getByTestId('threat-row')).toBeHidden();
 	await expect(page.getByTestId('tactic-row')).toBeHidden();
 	await expect(page.getByTestId('hint-ladder')).toBeHidden();
 	await expect(page.getByTestId('coach-line')).toBeHidden();
@@ -369,6 +382,80 @@ test('Full names the motif and why the position is one', async ({ page }) => {
 	await expect(page.getByTestId('tactic-why')).toHaveText('the queen on h4 is left undefended');
 	await expect(page.getByTestId('hint-reveal')).toHaveCount(0);
 
-	// Full is the mode that also hands over the engine's answer
+	// Full is the mode that also hands over the engine's answer, on request
+	await page.getByTestId('engine-reveal').click();
 	await expect(page.getByTestId('ideas-row')).toContainText('Nxh4');
+});
+
+/** Restore a game where White (the user) to move faces a mate in one: after
+ * 1.f3 e5 2.g4?? Nc6, Black's free move would be …Qh4#. A mate in one is found
+ * at any depth, so the threat search lands on it every time. */
+async function restoreMateThreat(page: import('@playwright/test').Page) {
+	await restoreActiveGame(page, { moves: ['f2f3', 'e7e5', 'g2g4', 'b8c6'] });
+}
+
+/** The threat arrow: chessground's yellow brush, an orange line. */
+function threatArrow(page: import('@playwright/test').Page) {
+	return page.locator('.cg-shapes line[stroke="#e68f00"]');
+}
+
+test('Full states the threat their last move made, with an arrow', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-full').click();
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens Qh4#, checkmate.', {
+		timeout: 15_000
+	});
+	await expect(page.getByTestId('threat-reveal')).toHaveCount(0);
+	await expect(threatArrow(page)).toHaveCount(1);
+});
+
+test('Nudge asks what their move threatens before saying', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-nudge').click();
+	const reveal = page.getByTestId('threat-reveal');
+	await expect(reveal).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId('threat-row')).toContainText('What does their last move threaten?');
+	await expect(page.getByTestId('threat-text')).toBeHidden();
+	await expect(threatArrow(page)).toHaveCount(0);
+
+	await reveal.click();
+	await expect(page.getByTestId('threat-text')).toHaveText('Black threatens Qh4#, checkmate.');
+	await expect(threatArrow(page)).toHaveCount(1);
+});
+
+test('a quiet move is called quiet rather than left blank', async ({ page }) => {
+	await restoreActiveGame(page, { moves: ['e2e4', 'e7e5'] });
+	await page.goto('/');
+	await waitForEngineReady(page);
+
+	await page.getByTestId('hint-mode-full').click();
+	await expect(page.getByTestId('threat-none')).toBeVisible({ timeout: 15_000 });
+	await expect(threatArrow(page)).toHaveCount(0);
+});
+
+test('pointing at a move in the panel lights up its piece', async ({ page }) => {
+	await restoreMateThreat(page);
+	await page.goto('/');
+	await waitForEngineReady(page);
+	await page.getByTestId('hint-mode-full').click();
+
+	const move = page.getByTestId('threat-text').getByTestId('notation').first();
+	await expect(move).toHaveText('Qh4#', { timeout: 15_000 });
+	const lit = page.locator('cg-board square.notation-focus');
+	const drawn = page.locator('.cg-shapes line[stroke="#003088"]');
+	await expect(lit).toHaveCount(0);
+
+	await move.hover();
+	await expect(lit).toHaveCount(1); // the queen on d8, the piece that moves
+	await expect(drawn).toHaveCount(1);
+
+	await page.mouse.move(0, 0);
+	await expect(lit).toHaveCount(0);
+	await expect(drawn).toHaveCount(0);
 });

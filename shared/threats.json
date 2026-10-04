@@ -1,0 +1,308 @@
+{
+	"_comment": "Cross-language conformance table for the threat classifier: client/src/lib/threats.ts::classifyThreat (kind only — the wording lives in threats.test.ts) and server/app/threats.py::threat_kind, which Progress's mistake causes count with. Scores are white's point of view, as the engine reports them; positions are the play-tested game's, with native Stockfish's scores, except where an id says the case is constructed. `exchangeCases` run the static exchange count both sides share.",
+	"cases": [
+		{
+			"id": "mate-in-one",
+			"fen": "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3",
+			"threatUci": "h5f7",
+			"threatScore": {
+				"mate": 1
+			},
+			"currentScore": {
+				"cp": -30
+			},
+			"kind": "mate"
+		},
+		{
+			"id": "first-move-of-a-longer-mate",
+			"fen": "r1b3rk/pp5p/2n2p2/3pp3/P7/1P3qPP/2Q2P2/2R2RK1 w - - 0 24",
+			"threatUci": "c8h3",
+			"threatScore": {
+				"mate": -3
+			},
+			"currentScore": {
+				"cp": -747
+			},
+			"kind": "mate"
+		},
+		{
+			"id": "attacked-more-than-defended",
+			"fen": "r1b3rk/pp3p1p/2n2p2/3p1B2/P4q2/1P5P/2QN1PP1/2R2RK1 w - - 5 21",
+			"threatUci": "c8f5",
+			"threatScore": {
+				"cp": -657
+			},
+			"currentScore": {
+				"cp": -156
+			},
+			"kind": "material"
+		},
+		{
+			"id": "undefended-piece",
+			"fen": "4k3/8/8/8/8/2b5/8/R6K w - - 0 1",
+			"threatUci": "c3a1",
+			"threatScore": {
+				"cp": -300
+			},
+			"currentScore": {
+				"cp": 200
+			},
+			"kind": "material"
+		},
+		{
+			"id": "taken-by-a-cheaper-piece",
+			"fen": "4k3/8/8/3p4/4N3/5P2/8/4K3 w - - 0 1",
+			"threatUci": "d5e4",
+			"threatScore": {
+				"cp": -150
+			},
+			"currentScore": {
+				"cp": 200
+			},
+			"kind": "material"
+		},
+		{
+			"id": "capture-that-forks-is-the-fork",
+			"fen": "r1b2rk1/ppq2ppp/2n1p3/3p4/2P1n3/PP1BbN1P/1BQN1PP1/3RK2R w K - 0 14",
+			"threatUci": "e4f2",
+			"threatScore": {
+				"cp": -332
+			},
+			"currentScore": {
+				"cp": 283
+			},
+			"kind": "motif"
+		},
+		{
+			"id": "fork-capturing-nothing",
+			"fen": "4k3/8/8/8/1n6/8/8/R3K3 w - - 0 1",
+			"threatUci": "b4c2",
+			"threatScore": {
+				"cp": -300
+			},
+			"currentScore": {
+				"cp": 200
+			},
+			"kind": "motif"
+		},
+		{
+			"id": "no-current-score-no-swing",
+			"fen": "4k3/8/8/8/1n6/8/8/R3K3 w - - 0 1",
+			"threatUci": "b4c2",
+			"threatScore": {
+				"cp": -300
+			},
+			"currentScore": null,
+			"kind": null
+		},
+		{
+			"id": "large-unnamed-swing",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "d2d4",
+			"threatScore": {
+				"cp": 500
+			},
+			"currentScore": {
+				"cp": 29
+			},
+			"kind": "attack"
+		},
+		{
+			"id": "below-the-bars",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "d2d4",
+			"threatScore": {
+				"cp": 95
+			},
+			"currentScore": {
+				"cp": 29
+			},
+			"kind": null
+		},
+		{
+			"id": "quiet-queen-move-aimed-at-the-king",
+			"fen": "r1b2r1k/ppq2p1p/2n2p2/3p4/P7/1P1B3P/2QN1PP1/3R1RK1 w - - 1 19",
+			"threatUci": "c7f4",
+			"threatScore": {
+				"cp": -129
+			},
+			"currentScore": {
+				"cp": -9
+			},
+			"kind": "attack"
+		},
+		{
+			"id": "constructed-same-move-worth-under-a-pawn",
+			"fen": "r1b2r1k/ppq2p1p/2n2p2/3p4/P7/1P1B3P/2QN1PP1/3R1RK1 w - - 1 19",
+			"threatUci": "c7f4",
+			"threatScore": {
+				"cp": -90
+			},
+			"currentScore": {
+				"cp": -9
+			},
+			"kind": null
+		},
+		{
+			"id": "constructed-quiet-move-then-a-winning-capture",
+			"fen": "4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1",
+			"threatUci": "h7b7",
+			"threatScore": {
+				"cp": -180
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": "attack"
+		},
+		{
+			"id": "constructed-same-setup-worth-under-a-pawn",
+			"fen": "4k3/7r/8/8/8/8/1N6/4K3 w - - 0 1",
+			"threatUci": "h7b7",
+			"threatScore": {
+				"cp": -80
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "constructed-small-swing-nothing-to-point-at",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "d2d4",
+			"threatScore": {
+				"cp": 160
+			},
+			"currentScore": {
+				"cp": 29
+			},
+			"kind": null
+		},
+		{
+			"id": "rescue-is-not-a-threat",
+			"fen": "6k1/5ppp/8/3n4/4P3/8/5PPP/6K1 w - - 0 1",
+			"threatUci": "d5f4",
+			"threatScore": {
+				"cp": -377
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "move-that-does-not-fit",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "e7e5",
+			"threatScore": {
+				"cp": 500
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "no-move",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": null,
+			"threatScore": {
+				"cp": 500
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "player-in-check",
+			"fen": "4k3/8/8/8/8/8/8/R3K2r w - - 0 1",
+			"threatUci": "h1a1",
+			"threatScore": {
+				"cp": -500
+			},
+			"currentScore": {
+				"cp": 0
+			},
+			"kind": null
+		},
+		{
+			"id": "mate-for-the-wrong-side",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"threatUci": "d2d4",
+			"threatScore": {
+				"mate": -4
+			},
+			"currentScore": {
+				"cp": 29
+			},
+			"kind": null
+		}
+	],
+	"exchangeCases": [
+		{
+			"id": "undefended",
+			"fen": "4k3/8/8/3n4/4P3/8/8/4K3 w - - 0 1",
+			"from": "e4",
+			"to": "d5",
+			"expected": 3
+		},
+		{
+			"id": "attackers-against-defenders",
+			"fen": "r1b3rk/pp3p1p/2n2p2/3p1B2/P4q2/1P5P/2QN1PP1/2R2RK1 b - - 5 21",
+			"from": "c8",
+			"to": "f5",
+			"expected": 3
+		},
+		{
+			"id": "even-trade",
+			"fen": "4k3/8/2p5/3n4/8/4N3/8/4K3 w - - 0 1",
+			"from": "e3",
+			"to": "d5",
+			"expected": 0
+		},
+		{
+			"id": "losing-capture",
+			"fen": "4k3/8/2p5/3n4/8/8/3R4/4K3 w - - 0 1",
+			"from": "d2",
+			"to": "d5",
+			"expected": -2
+		},
+		{
+			"id": "queen-for-a-pawn",
+			"fen": "4k3/8/2p5/3p4/8/8/3Q4/4K3 w - - 0 1",
+			"from": "d2",
+			"to": "d5",
+			"expected": -8
+		},
+		{
+			"id": "rook-alone",
+			"fen": "3rk3/8/8/3n4/8/8/3R4/4K3 w - - 0 1",
+			"from": "d2",
+			"to": "d5",
+			"expected": -2
+		},
+		{
+			"id": "queen-behind-the-rook",
+			"fen": "3rk3/8/8/3n4/8/8/3R4/3QK3 w - - 0 1",
+			"from": "d2",
+			"to": "d5",
+			"expected": 3
+		},
+		{
+			"id": "king-never-recaptures-onto-a-defended-square",
+			"fen": "r1b2rk1/ppq2ppp/2n1p3/3p4/2P1n3/PP1BbN1P/1BQN1PP1/3RK2R b K - 0 14",
+			"from": "e4",
+			"to": "f2",
+			"expected": 1
+		},
+		{
+			"id": "empty-target",
+			"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+			"from": "d7",
+			"to": "d5",
+			"expected": 0
+		}
+	]
+}

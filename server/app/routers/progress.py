@@ -14,10 +14,34 @@ from sqlalchemy.orm import Session
 
 from app.auth.backend import current_active_user
 from app.auth.models import User
-from app.cpl import aggregate_cpl, player_moves
+from app.cpl import TWO_SIDED_MODES, aggregate_cpl, player_moves
 from app.db import get_db
-from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt, utcnow
-from app.schemas import GameCplPoint, MotifProgress, ProgressOut
+from app.mistakes import CAUSES
+from app.motifs import FLAGGED_CLASSIFICATIONS
+from app.strategy import STRATEGIC_MOTIFS
+from app.routers.guessing import guess_summary
+from app.openings import left_book, opening_of
+from app.models import (
+    CriticalMoment,
+    EndgameDrillAttempt,
+    Game,
+    Puzzle,
+    PuzzleAttempt,
+    utcnow,
+)
+from app.schemas import (
+    GameCplPoint,
+    MistakeCauseCount,
+    MistakeExample,
+    MotifProgress,
+    MotifTrend,
+    PositionIdeaCount,
+    ProgressOut,
+    RepertoireExit,
+    RepertoireLine,
+    ThinkingSummary,
+    Tries,
+)
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -27,16 +51,21 @@ MIN_CALLOUT_ATTEMPTS = 3
 WEAKEST_LIMIT = 3
 
 
-def motif_progress(
+# A motif needs this many attempts in the window before Progress compares
+# its first tries with its latest: three a side, so one lucky or unlucky
+# attempt can't make the whole difference.
+MIN_TREND_ATTEMPTS = 6
+
+
+def motif_attempts(
     db: Session, user: User, since: datetime | None
-) -> list[MotifProgress]:
-    """All-attempt success rate per motif within the window, weakest first.
-    (The puzzle queue's "weakest" uses a recent-attempts window instead —
-    that one drives scheduling, this one reports totals.)"""
+) -> dict[str, list[bool]]:
+    """Each motif's attempt results within the window, oldest first."""
     query = (
         select(Puzzle.motif, PuzzleAttempt.correct)
         .join(Puzzle, PuzzleAttempt.puzzle_id == Puzzle.id)
         .where(PuzzleAttempt.user_id == user.id)
+        .order_by(PuzzleAttempt.attempted_at, PuzzleAttempt.id)
     )
     if since is not None:
         query = query.where(PuzzleAttempt.attempted_at >= since)
@@ -44,7 +73,13 @@ def motif_progress(
     by_motif: dict[str, list[bool]] = {}
     for motif, correct in db.execute(query):
         by_motif.setdefault(motif, []).append(correct)
+    return by_motif
 
+
+def motif_progress(by_motif: dict[str, list[bool]]) -> list[MotifProgress]:
+    """All-attempt success rate per motif within the window, weakest first.
+    (The puzzle queue's "weakest" uses a recent-attempts window instead —
+    that one drives scheduling, this one reports totals.)"""
     stats = [
         MotifProgress(
             motif=motif,
@@ -56,6 +91,36 @@ def motif_progress(
     ]
     stats.sort(key=lambda s: (s.success_rate, -s.attempts, s.motif))
     return stats
+
+
+def motif_trends(by_motif: dict[str, list[bool]]) -> list[MotifTrend]:
+    """Is the player getting better at each motif? Its attempts in the window,
+    split in two by time: the first tries against the latest (an odd middle
+    attempt counts as latest). Halves of the attempts rather than calendar
+    weeks, because a week of puzzles is often one or two attempts at a motif,
+    and a rate over one attempt is noise. Weakest latest first, like the
+    totals; motifs with too few attempts to compare are left out."""
+    trends = []
+    for motif, results in by_motif.items():
+        if len(results) < MIN_TREND_ATTEMPTS:
+            continue
+        half = len(results) // 2
+        earlier, recent = results[:half], results[half:]
+        trends.append(
+            MotifTrend(
+                motif=motif,
+                earlier=Tries(attempts=len(earlier), correct=sum(earlier)),
+                recent=Tries(attempts=len(recent), correct=sum(recent)),
+            )
+        )
+    trends.sort(
+        key=lambda t: (
+            t.recent.correct / t.recent.attempts,
+            -(t.earlier.attempts + t.recent.attempts),
+            t.motif,
+        )
+    )
+    return trends
 
 
 def game_cpl(game: Game) -> GameCplPoint | None:
@@ -73,6 +138,141 @@ def game_cpl(game: Game) -> GameCplPoint | None:
         opening_cpl=agg.opening_cpl,
         middlegame_cpl=agg.middlegame_cpl,
         endgame_cpl=agg.endgame_cpl,
+    )
+
+
+def mistake_causes(games: list[Game]) -> list[MistakeCauseCount]:
+    """Which step of the thinking routine broke, counted over the player's
+    own mistakes and blunders (`games` oldest first, as the trend reads
+    them). Motif rates say which patterns are missed in puzzles; this says
+    which habit fails at the board."""
+    counts = {
+        cause: MistakeCauseCount(cause=cause, mistakes=0, blunders=0, latest=None)
+        for cause in CAUSES
+    }
+    for game in games:
+        for move in player_moves(game):
+            count = counts.get(move.mistake_cause or "")
+            if count is None:
+                continue
+            if move.classification == "blunder":
+                count.blunders += 1
+            else:
+                count.mistakes += 1
+            count.latest = MistakeExample(
+                game_id=game.id, number=game.number, ply=move.ply, san=move.san
+            )
+    return sorted(
+        counts.values(),
+        key=lambda count: (
+            -(count.mistakes + count.blunders),
+            CAUSES.index(count.cause),
+        ),
+    )
+
+
+def position_ideas(games: list[Game]) -> list[PositionIdeaCount]:
+    """The position ideas (outpost, open file, weak back rank, weak pawns)
+    tagged on the player's own mistakes and blunders, most common first —
+    what "the position slipped" was about. `games` oldest first, so the
+    latest example wins."""
+    counts: dict[str, PositionIdeaCount] = {}
+    for game in games:
+        for move in player_moves(game):
+            if move.classification not in FLAGGED_CLASSIFICATIONS:
+                continue
+            for motif in move.motifs:
+                if motif not in STRATEGIC_MOTIFS:
+                    continue
+                example = MistakeExample(
+                    game_id=game.id, number=game.number, ply=move.ply, san=move.san
+                )
+                entry = counts.get(motif)
+                if entry is None:
+                    counts[motif] = PositionIdeaCount(motif=motif, count=1, latest=example)
+                else:
+                    entry.count += 1
+                    entry.latest = example
+    return sorted(
+        counts.values(),
+        key=lambda entry: (-entry.count, STRATEGIC_MOTIFS.index(entry.motif)),
+    )
+
+
+def repertoire(games: list[Game]) -> list[RepertoireLine]:
+    """Your openings, one line per (side, family), most played first.
+
+    Only games with a side of your own count — against the engine or a
+    friend — and a game that never reached a named position is no opening
+    to report. The exit is the move off the book you made most often in that
+    opening (ties to the earliest), with the book moves there.
+    """
+    lines: dict[tuple[str, str], RepertoireLine] = {}
+    exits: dict[tuple[str, str], dict[tuple[int, str], tuple[list[str], int]]] = {}
+    for game in games:  # oldest first
+        if game.mode not in TWO_SIDED_MODES:
+            continue
+        opening = opening_of(game.moves)
+        if opening is None:
+            continue
+        color = game.user_color or "white"
+        key = (color, opening.family)
+        line = lines.get(key) or RepertoireLine(
+            color=color, eco=opening.eco, family=opening.family, games=0, wins=0,
+            draws=0, losses=0, you_left=0, exit=None,
+            latest_game_id=game.id, latest_game_number=game.number,
+        )  # fmt: skip
+        lines[key] = line
+        line.games += 1
+        line.latest_game_id, line.latest_game_number = game.id, game.number
+        winner = {"1-0": "white", "0-1": "black"}.get(game.result)
+        if game.result == "1/2-1/2":
+            line.draws += 1
+        elif winner == color:
+            line.wins += 1
+        elif winner is not None:
+            line.losses += 1
+        left = left_book(game.moves)
+        if left is not None and (left.ply % 2 == 1) == (color == "white"):
+            line.you_left += 1
+            seen = exits.setdefault(key, {})
+            moves, times = seen.get((left.ply, left.san), (left.book_moves, 0))
+            seen[(left.ply, left.san)] = (moves, times + 1)
+    for key, seen in exits.items():
+        (ply, san), (moves, times) = max(
+            seen.items(), key=lambda item: (item[1][1], -item[0][0])
+        )
+        lines[key].exit = RepertoireExit(
+            ply=ply, san=san, book_moves=moves, times=times
+        )
+    return sorted(
+        lines.values(), key=lambda line: (-line.games, line.color, line.family)
+    )
+
+
+# Latest critical moments shown as the trend strip.
+RECENT_MOMENTS = 20
+
+
+def thinking_summary(
+    db: Session, user: User, since: datetime | None
+) -> ThinkingSummary:
+    """Think first, counted: the move to find on the list, threats answered."""
+    query = (
+        select(CriticalMoment)
+        .where(CriticalMoment.user_id == user.id)
+        .order_by(CriticalMoment.created_at, CriticalMoment.id)
+    )
+    if since is not None:
+        query = query.where(CriticalMoment.created_at >= since)
+    moments = list(db.scalars(query))
+    with_threat = [moment for moment in moments if moment.had_threat]
+    return ThinkingSummary(
+        moments=len(moments),
+        found=sum(moment.found for moment in moments),
+        threats=len(with_threat),
+        answered=sum(bool(moment.answered_threat) for moment in with_threat),
+        recent=[moment.found for moment in moments[-RECENT_MOMENTS:]],
     )
 
 
@@ -98,7 +298,8 @@ def get_progress(
     now = utcnow()
     since = now - timedelta(days=days) if days is not None else None
 
-    motifs = motif_progress(db, user, since)
+    attempts_by_motif = motif_attempts(db, user, since)
+    motifs = motif_progress(attempts_by_motif)
     # "Weakest" needs enough attempts to be a trend, and a perfect record —
     # however small the sample pool ranks it — isn't a weakness to drill.
     weakest = [
@@ -114,11 +315,8 @@ def get_progress(
     )
     if since is not None:
         games_query = games_query.where(Game.created_at >= since)
-    trend = [
-        point
-        for game in db.scalars(games_query)
-        if (point := game_cpl(game)) is not None
-    ]
+    games = list(db.scalars(games_query))
+    trend = [point for game in games if (point := game_cpl(game)) is not None]
 
     solved_query = select(PuzzleAttempt).where(
         PuzzleAttempt.user_id == user.id, PuzzleAttempt.correct.is_(True)
@@ -170,9 +368,15 @@ def get_progress(
     return ProgressOut(
         days=days,
         motifs=motifs,
+        motif_trends=motif_trends(attempts_by_motif),
         weakest_motifs=weakest,
         cpl_trend=trend,
         streak_days=day_streak(activity, now.date()),
         puzzles_solved=puzzles_solved,
         drills_passed=drills_passed,
+        mistake_causes=mistake_causes(games),
+        position_ideas=position_ideas(games),
+        thinking=thinking_summary(db, user, since),
+        repertoire=repertoire(games),
+        guessing=guess_summary(db, user, since),
     )

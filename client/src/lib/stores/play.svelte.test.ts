@@ -49,10 +49,13 @@ vi.mock('$lib/stores/session.svelte', () => ({ session: account }));
 vi.mock('$lib/openings', () => ({
 	loadOpenings: vi.fn(async () => false),
 	openingsReady: () => false,
-	openingForFens: vi.fn(() => null)
+	openingForFens: vi.fn(() => null),
+	inBook: vi.fn(() => false)
 }));
 
-import { ApiError } from '$lib/api/client';
+import { ApiError, type LiveGrade } from '$lib/api/client';
+import { inBook } from '$lib/openings';
+import { passTurn } from '$lib/threats';
 import { PlaySession } from './play.svelte';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -136,6 +139,25 @@ describe('live classification', () => {
 		engine.evaluate.mockResolvedValue(evalResult(-100, 'e7e5'));
 		await playWithReply(session, 'e2', 'e4');
 		expect(session.badges[0]).toBe('best');
+	});
+
+	it('grades a book move as book, whatever the eval did', async () => {
+		vi.mocked(inBook).mockImplementation((fen) => fen.startsWith('rnbqkbnr/pppppppp/8/8/4P3'));
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue(evalResult(-40, 'e7e5')); // a mistake off the book
+		await playWithReply(session, 'e2', 'e4');
+		expect(session.badges[0]).toBe('book');
+	});
+
+	it('tells a hastened mate apart, though both evals sit at the clamp', async () => {
+		const session = await startedSession();
+		engine.evaluate.mockResolvedValue({ ...evalResult(0, 'e7e5'), cp: undefined, mate: -3 });
+		await playWithReply(session, 'e2', 'e4'); // the engine's reply is evaluated at mate -3 too
+		engine.evaluate.mockResolvedValue({ ...evalResult(0, 'd8h4'), cp: undefined, mate: -1 });
+		engine.play.mockResolvedValue(evalResult(0, 'd8h4'));
+		await playWithReply(session, 'g2', 'g4');
+		expect(session.evals.slice(1, 3)).toEqual([-1000, -1000]);
+		expect(session.badges[2]).toBe('inaccuracy');
 	});
 });
 
@@ -456,6 +478,122 @@ describe('take back and think again', () => {
 	});
 });
 
+describe('threat search', () => {
+	/** After 1.e4 e5, the user (White) to move. */
+	const AFTER_E5 = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+	const THREAT_DEPTH = 12;
+
+	/** Live evals at the usual depth; the null-move search answers 'g8f6'. */
+	function engineWithThreat(threat: Promise<unknown> | null = null) {
+		engine.evaluate.mockImplementation(async (_fen: string, depth: number) => {
+			if (depth !== THREAT_DEPTH) return evalResult(25, 'g1f3');
+			return threat ?? { cp: 40, bestMove: 'g8f6', depth: THREAT_DEPTH, ms: 5, lines: [] };
+		});
+	}
+
+	function threatSearches(): string[] {
+		return engine.evaluate.mock.calls
+			.filter(([, depth]) => depth === THREAT_DEPTH)
+			.map(([fen]) => fen as string);
+	}
+
+	it('passes the move back to the engine after its reply, and keeps the scores', async () => {
+		engineWithThreat();
+		const session = await startedSession();
+		expect(session.threatSearch).toBeNull(); // nothing has been played at the user yet
+
+		await playWithReply(session, 'e2', 'e4');
+		await vi.waitFor(() => expect(session.threatSearch?.fen).toBe(AFTER_E5));
+
+		expect(threatSearches()).toEqual([passTurn(AFTER_E5)]);
+		expect(engine.evaluate).toHaveBeenCalledWith(passTurn(AFTER_E5), THREAT_DEPTH, 1);
+		expect(session.threatSearch).toEqual({
+			fen: AFTER_E5,
+			uci: 'g8f6',
+			score: { cp: 40, mate: undefined },
+			// the eval of the real position, from the search that just ran on it
+			current: { cp: 25, mate: undefined }
+		});
+
+		session.newGame();
+		expect(session.threatSearch).toBeNull();
+	});
+
+	it('skips the search when the user has already answered the move', async () => {
+		const replyEval = deferred<ReturnType<typeof evalResult>>();
+		engine.evaluate.mockImplementation(async (fen: string, depth: number) => {
+			if (fen === AFTER_E5 && depth !== THREAT_DEPTH) return replyEval.promise;
+			return evalResult(25, 'g1f3');
+		});
+		engine.play
+			.mockResolvedValueOnce(evalResult(0, 'e7e5'))
+			.mockReturnValueOnce(new Promise(() => {})); // no second reply needed
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+
+		session.handleBoardMove('g1' as never, 'f3' as never); // before the eval landed
+		replyEval.resolve(evalResult(25, 'g1f3'));
+		await settle();
+
+		expect(threatSearches()).not.toContain(passTurn(AFTER_E5));
+		expect(session.threatSearch).toBeNull();
+	});
+
+	it('drops a result that lands after the user has moved on', async () => {
+		const threat = deferred<unknown>();
+		engineWithThreat(threat.promise);
+		engine.play
+			.mockResolvedValueOnce(evalResult(0, 'e7e5'))
+			.mockReturnValueOnce(new Promise(() => {}));
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+		await vi.waitFor(() => expect(threatSearches()).toEqual([passTurn(AFTER_E5)]));
+
+		session.handleBoardMove('g1' as never, 'f3' as never);
+		threat.resolve({ cp: 40, bestMove: 'g8f6', depth: THREAT_DEPTH, ms: 5, lines: [] });
+		await settle();
+
+		expect(session.threatSearch).toBeNull();
+	});
+
+	it('does not search a position where the user is in check', async () => {
+		engineWithThreat();
+		engine.play
+			.mockResolvedValueOnce(evalResult(0, 'e7e5'))
+			.mockResolvedValueOnce(evalResult(0, 'd8h4')); // 2...Qh4+
+		const session = await startedSession();
+		await playWithReply(session, 'e2', 'e4');
+		await playWithReply(session, 'f2', 'f3');
+		const checked = session.game.fen;
+		await vi.waitFor(() => expect(session.threatSearch?.fen).toBe(checked));
+
+		expect(session.threatSearch?.uci).toBeNull();
+		expect(threatSearches()).toEqual([passTurn(AFTER_E5)]); // the earlier position only
+	});
+
+	it('searches the position a restored game resumes at', async () => {
+		engineWithThreat();
+		persistence.loadActiveGame.mockReturnValue({
+			version: 2,
+			owner: 'account-1',
+			engineSkill: 5,
+			playerColor: 'white',
+			moves: ['e2e4', 'e7e5'],
+			evals: [20, 15],
+			badges: ['good', null],
+			lastFeedback: null,
+			currentEval: 15,
+			serverGameId: 7,
+			completedGameId: null,
+			completedGameNumber: null
+		});
+		api.getGame.mockResolvedValue({ moves: [{}, {}] });
+		const session = await startedSession();
+
+		expect(session.threatSearch).toMatchObject({ fen: AFTER_E5, uci: 'g8f6' });
+	});
+});
+
 describe('playing as Black', () => {
 	it('flipping to black before the first move makes the engine open', async () => {
 		engine.play.mockResolvedValue(evalResult(20, 'e2e4'));
@@ -577,7 +715,16 @@ describe('finishing games', () => {
 
 		await vi.waitFor(() => expect(session.completedGameId).toBe(42));
 		expect(session.game.result).toBe('1-0');
-		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '1-0');
+		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '1-0', expect.any(Array));
+		// Play's own grades ride along for Review to compare with — the mating
+		// move's too, though the game ended before its grade was in: completion
+		// waits for it. Badges on the player's moves only.
+		const live: LiveGrade[] = api.completeGame.mock.calls[0][2];
+		expect(live.map((grade) => grade.ply)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+		expect(live.filter((grade) => grade.classification !== null).map((g) => g.ply)).toEqual([
+			1, 3, 5, 7
+		]);
+		expect(live.at(-1)!.eval_after).toBe(1000); // mate on the board, at the clamp
 		// "Saved as game #1" — the account's own count, taken from the server's
 		// answer rather than from the record's id
 		expect(session.completedGameNumber).toBe(1);
@@ -591,7 +738,10 @@ describe('finishing games', () => {
 
 		session.resign();
 		await settle();
-		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '0-1');
+		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '0-1', [
+			{ ply: 1, eval_after: expect.any(Number), classification: expect.any(String) },
+			{ ply: 2, eval_after: expect.any(Number), classification: null }
+		]);
 		expect(persistence.clearActiveGame).toHaveBeenCalled();
 		expect(persistence.saveActiveGame).not.toHaveBeenCalled(); // resigned games stay cleared
 	});

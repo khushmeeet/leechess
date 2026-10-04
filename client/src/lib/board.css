@@ -39,6 +39,12 @@ cg-board square.premove-dest:hover {
 cg-board square.last-move {
 	background-color: rgba(155, 199, 0, 0.41);
 }
+/** The piece (or square) a move or square in the coaching text names, lit up
+ * while the player points at it — the same blue as the arrow drawn with it. */
+cg-board square.notation-focus {
+	background-color: rgba(0, 72, 186, 0.32);
+	box-shadow: inset 0 0 0 3px rgba(0, 72, 186, 0.7);
+}
 cg-board square.selected {
 	background-color: rgba(20, 85, 30, 0.5);
 }
@@ -103,4 +109,76 @@ coords.squares:nth-of-type(even) :nth-child(odd) {
 coords.squares:nth-of-type(odd) :nth-child(odd),
 coords.squares:nth-of-type(even) :nth-child(even) {
 	color: var(--coord-on-dark, var(--sq-lt, #f0d9b5));
+}
+
+/* Board overlays ($lib/overlays): each a way of looking at the position.
+ * Tints for areas (control, files, the king's surroundings), rings for single
+ * pieces (loose, pinned), so a square can carry both and stay readable.
+ *
+ * Every rule is wrapped in :where(), which takes the overlay class out of the
+ * selector's weight: an overlay square is then no stronger than a bare one,
+ * and the board's own state — the dots for where a piece can go, the
+ * selected square, the last move, check — always paints over it. Without
+ * that, the Files stripe replaced the move dot (both are background images)
+ * and the tints hid the selected and last-move squares. */
+cg-board square:where(.ov-control-w) {
+	background-color: rgba(255, 255, 255, 0.28);
+}
+cg-board square:where(.ov-control-b) {
+	background-color: rgba(20, 20, 20, 0.22);
+}
+cg-board square:where(.ov-file-open) {
+	background-image: linear-gradient(
+		90deg,
+		transparent 44%,
+		rgba(0, 72, 186, 0.22) 44% 56%,
+		transparent 56%
+	);
+}
+cg-board square:where(.ov-file-white),
+cg-board square:where(.ov-file-black) {
+	background-image: linear-gradient(
+		90deg,
+		transparent 46%,
+		rgba(0, 72, 186, 0.14) 46% 54%,
+		transparent 54%
+	);
+}
+cg-board square:where(.ov-king) {
+	background-color: rgba(200, 30, 30, 0.22);
+}
+/* Structure — declared before the loose-piece rings so danger wins a tie */
+cg-board square:where(.ov-outpost-w) {
+	box-shadow: inset 0 0 0 3px rgba(23, 160, 111, 0.85);
+}
+cg-board square:where(.ov-outpost-b) {
+	box-shadow:
+		inset 0 0 0 3px rgba(23, 160, 111, 0.85),
+		inset 0 0 0 6px rgba(20, 20, 20, 0.35);
+}
+cg-board square:where(.ov-weak-pawn) {
+	outline: 3px dotted rgba(230, 143, 0, 0.95);
+	outline-offset: -5px;
+}
+cg-board square:where(.ov-bad-bishop) {
+	outline: 3px dashed rgba(230, 143, 0, 0.95);
+	outline-offset: -5px;
+}
+cg-board square:where(.ov-weak-back-rank) {
+	background-color: rgba(200, 30, 30, 0.3);
+}
+cg-board square:where(.ov-hanging) {
+	box-shadow: inset 0 0 0 4px rgba(200, 30, 30, 0.85);
+}
+cg-board square:where(.ov-underdefended) {
+	box-shadow: inset 0 0 0 4px rgba(230, 143, 0, 0.9);
+}
+cg-board square:where(.ov-pinned) {
+	outline: 3px dashed rgba(120, 40, 160, 0.9);
+	outline-offset: -5px;
+}
+/* pinned to a more valuable piece, not the king: it may move, at a price */
+cg-board square:where(.ov-pinned-relative) {
+	outline: 3px dotted rgba(120, 40, 160, 0.75);
+	outline-offset: -5px;
 }

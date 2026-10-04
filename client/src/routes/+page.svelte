@@ -11,6 +11,22 @@
 	import { strengthPresets } from '$lib/engine';
 	import { describeIdea, type Idea } from '$lib/ideas';
 	import { liveTactic as liveTacticFor, type LiveTactic } from '$lib/liveMotifs';
+	import { classifyThreat, passTurn, type Threat } from '$lib/threats';
+	import {
+		chancesFor,
+		gradeCandidates,
+		isCritical,
+		MAX_CANDIDATES,
+		type ThinkingGrade,
+		type WeighedCandidate
+	} from '$lib/candidates';
+	import { playLine } from '$lib/lines';
+	import OverlayToggles from '$lib/components/OverlayToggles.svelte';
+	import { boardHighlights, overlayMarks, type OverlayName } from '$lib/overlays';
+	import { stockfish } from '$lib/stores/stockfish';
+	import { recordCriticalMoment } from '$lib/api/client';
+	import NotationText from '$lib/components/NotationText.svelte';
+	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
 	import { rise } from '$lib/transitions';
 	import { displayPrefs, type HintMode } from '$lib/stores/displayPrefs.svelte';
@@ -58,7 +74,6 @@
 			ply: game.moves.length,
 			evalCp: session.currentEval,
 			lastUserClassification: session.lastFeedback?.classification ?? null,
-			bestMoveSan: candidateIdeas[0]?.san ?? null,
 			userColor: session.playerColor,
 			inBook: session.opening?.inBook ?? false
 		});
@@ -72,12 +87,183 @@
 		return liveTacticFor(game.fen, freshLines?.[0]?.pvUci);
 	});
 
+	// The opponent's threat in the position the user faces — "what does their
+	// last move want?", the first question of any thinking routine. Searched
+	// after every engine reply and trusted only for the position it was run
+	// on, like the candidate lines; a null `uci` means the user is in check.
+	const freshThreatSearch = $derived(
+		session.threatSearch?.fen === game.fen ? session.threatSearch : null
+	);
+	const threat = $derived.by((): Threat | null => {
+		if (!freshThreatSearch?.uci) return null;
+		return classifyThreat({
+			fen: game.fen,
+			threatUci: freshThreatSearch.uci,
+			threatScore: freshThreatSearch.score,
+			currentScore: freshThreatSearch.current
+		});
+	});
+	// From the opponent's first move on: before it there is no "their last
+	// move" to ask about. While the engine thinks, the row waits with a dash
+	// rather than coming and going on every move.
+	const showThreatRow = $derived(
+		displayPrefs.hintMode !== 'off' &&
+			!game.isGameOver &&
+			game.moves.length >= (session.playerColor === 'white' ? 2 : 1)
+	);
+
+	// ── Think first ─────────────────────────────────────────────────────────
+	// At a critical moment — one move much better than the rest — the move is
+	// held back: moves made on the board are marked as candidates (and snap
+	// back), and the engine grades the list before the real move is played.
+	// See $lib/candidates for what counts and what is graded.
+	const userIsWhite = $derived(session.playerColor === 'white');
+	const criticalNow = $derived(
+		displayPrefs.thinkFirst &&
+			displayPrefs.hintMode !== 'off' &&
+			!displayPrefs.zenMode &&
+			!game.isGameOver &&
+			game.turnColor === session.playerColor &&
+			freshLines !== null &&
+			isCritical(freshLines, userIsWhite)
+	);
+	interface Thinking {
+		fen: string;
+		status: 'marking' | 'weighing' | 'graded' | 'skipped';
+		candidates: { uci: string; san: string }[];
+		weighed: WeighedCandidate[];
+		grade: ThinkingGrade | null;
+	}
+	let thinking = $state<Thinking | null>(null);
+	/** This session's record at critical moments: how many, and how often
+	 * a move as good as the engine's was on the list. */
+	let thinkRecord = $state({ moments: 0, found: 0 });
+	$effect(() => {
+		if (criticalNow && thinking?.fen !== game.fen) {
+			thinking = { fen: game.fen, status: 'marking', candidates: [], weighed: [], grade: null };
+		}
+	});
+	const thinkingHere = $derived(criticalNow && thinking?.fen === game.fen ? thinking : null);
+	/** The move is held back: board moves are candidates, and the rows that
+	 * would give the answer away wait. */
+	const holdingMove = $derived(
+		thinkingHere !== null &&
+			(thinkingHere.status === 'marking' || thinkingHere.status === 'weighing')
+	);
+	// bumped to snap a marked candidate's piece back to where it stands
+	let boardSync = $state(0);
+
+	function markCandidate(orig: Key, dest: Key, promotion?: string) {
+		const current = thinkingHere;
+		if (!current || current.status !== 'marking') return;
+		boardSync += 1;
+		const [move] = playLine(game.fen, [orig + dest + (promotion ?? '')]);
+		if (!move) return;
+		if (current.candidates.some((candidate) => candidate.uci === move.uci)) return;
+		if (current.candidates.length >= MAX_CANDIDATES) return;
+		current.candidates = [...current.candidates, { uci: move.uci, san: move.san }];
+	}
+
+	function dropCandidate(uci: string) {
+		if (!thinkingHere || thinkingHere.status !== 'marking') return;
+		thinkingHere.candidates = thinkingHere.candidates.filter((c) => c.uci !== uci);
+	}
+
+	async function checkCandidates() {
+		const current = thinkingHere;
+		const lines = freshLines;
+		if (!current || current.status !== 'marking' || current.candidates.length === 0 || !lines) {
+			return;
+		}
+		current.status = 'weighing';
+		const weighed: WeighedCandidate[] = [];
+		for (const candidate of current.candidates) {
+			const [move] = playLine(current.fen, [candidate.uci]);
+			if (!move) continue;
+			const result = await stockfish.evaluate(move.fenAfter, 12, 1);
+			if (thinking !== current || game.fen !== current.fen) return; // moved on
+			const [reply] = result.bestMove ? playLine(move.fenAfter, [result.bestMove]) : [];
+			weighed.push({
+				...candidate,
+				chances: chancesFor(result, userIsWhite),
+				replyUci: reply?.uci ?? null,
+				replySan: reply
+					? reply.fenBefore.split(' ')[1] === 'b'
+						? `…${reply.san}`
+						: reply.san
+					: null
+			});
+		}
+		const bestUci = lines[0].pvUci[0];
+		const [bestMove] = playLine(current.fen, [bestUci]);
+		current.weighed = weighed;
+		current.grade = gradeCandidates(
+			weighed,
+			{ uci: bestUci, san: bestMove?.san ?? bestUci, chances: chancesFor(lines[0], userIsWhite) },
+			threat
+		);
+		current.status = 'graded';
+		thinkRecord = {
+			moments: thinkRecord.moments + 1,
+			found: thinkRecord.found + (current.grade?.closeEnough ? 1 : 0)
+		};
+		// kept for Progress — but anonymous play keeps nothing
+		const grade = current.grade;
+		if (grade && !account.anonymous) {
+			recordCriticalMoment({
+				fen: current.fen,
+				found: grade.closeEnough,
+				had_threat: threat !== null,
+				answered_threat: grade.answersThreat ? grade.answersThreat.length > 0 : null,
+				candidates: weighed.length
+			}).catch((error) => console.error('recording the critical moment failed:', error));
+		}
+	}
+
+	function skipThinking() {
+		if (thinkingHere) thinkingHere.status = 'skipped';
+	}
+
+	function boardMove(orig: Key, dest: Key, promotion?: string) {
+		if (holdingMove) markCandidate(orig, dest, promotion);
+		else session.handleBoardMove(orig, dest, promotion);
+	}
+
+	// the grade names candidates (this position), the threat (the passed
+	// one) and replies (after each candidate)
+	const thinkFens = $derived([
+		game.fen,
+		passTurn(game.fen) ?? game.fen,
+		...(thinkingHere?.weighed ?? []).flatMap((candidate) =>
+			playLine(game.fen, [candidate.uci]).map((move) => move.fenAfter)
+		)
+	]);
+
+	const candidateShapes = $derived.by((): DrawShape[] =>
+		thinkingHere && thinkingHere.status !== 'skipped'
+			? thinkingHere.candidates.map((candidate) => ({
+					orig: candidate.uci.slice(0, 2) as Key,
+					dest: candidate.uci.slice(2, 4) as Key,
+					brush: 'paleBlue'
+				}))
+			: []
+	);
+
 	// The engine-answer rows belong to Full alone. Off is a real game (spec
 	// user story 5 — no help at all, so the training can be tested), and Nudge
 	// makes you climb the ladder for the answer: "Stockfish prefers Nxf4" or an
 	// idea chip sitting alongside would skip every rung at once. Their own
 	// Settings toggles still apply on top, within Full.
 	const fullHints = $derived(displayPrefs.hintMode === 'full');
+	// The engine's own answers — its pick and the Ideas chips, its top lines —
+	// wait behind one button even in Full, so the player has a move of their
+	// own in mind before seeing them. Either toggle keeps the row.
+	const showEngineRow = $derived(
+		fullHints &&
+			!game.isGameOver &&
+			!holdingMove &&
+			(displayPrefs.showCoach || displayPrefs.showIdeas)
+	);
 
 	// Taking a move back is help, so it lives with the hints: Off is a real
 	// game (spec user story 5), and offering a do-over there would break the
@@ -100,13 +286,23 @@
 	// Reveal state is per position — a new move clears it, so hints never carry
 	// over from the position they were about.
 	let hintLevel = $state(0);
+	let threatRevealed = $state(false);
+	let enginePickRevealed = $state(false);
+	// The move or square in the panel's text the player is pointing at.
+	let notationTarget = $state<NotationTarget | null>(null);
 	let lastHintFen = game.fen;
 	$effect(() => {
 		if (game.fen !== lastHintFen) {
 			lastHintFen = game.fen;
 			hintLevel = 0;
+			threatRevealed = false;
+			enginePickRevealed = false;
+			notationTarget = null;
 		}
 	});
+	// A threat's moves are played in the passed position — the opponent's
+	// free move — so they resolve there first.
+	const threatFens = $derived([passTurn(game.fen) ?? game.fen, game.fen]);
 
 	let hoverUci = $state<string | null>(null);
 	// Level 3 circles the piece and its target; Level 4+ (move named in text)
@@ -121,7 +317,49 @@
 			{ orig: to, brush: 'blue' }
 		];
 	});
+	// The threat's move as an orange arrow, once the row says it out loud
+	// (always in Full, after "Show me" in Nudge). Not in zen: an arrow with no
+	// sentence beside it would be the engine pointing with nothing to say.
+	const threatShapes = $derived.by((): DrawShape[] => {
+		if (!threat || displayPrefs.zenMode || !(fullHints || threatRevealed)) return [];
+		return [
+			{
+				orig: threat.uci.slice(0, 2) as Key,
+				dest: threat.uci.slice(2, 4) as Key,
+				brush: 'yellow'
+			}
+		];
+	});
+	// Pointing at a move in the text draws it; pointing at a square (or the
+	// move's piece) lights that square up through the board's highlights.
+	const notationShapes = $derived.by((): DrawShape[] =>
+		notationTarget?.kind === 'move'
+			? [{ orig: notationTarget.from as Key, dest: notationTarget.to as Key, brush: 'blue' }]
+			: []
+	);
+	// Board overlays are help like the rest, so Off draws none — and zen has
+	// no board furniture at all.
+	const overlays = $derived(
+		displayPrefs.hintMode !== 'off' && !displayPrefs.zenMode && displayPrefs.overlays.length > 0
+			? overlayMarks(game.fen, new Set(displayPrefs.overlays as OverlayName[]))
+			: null
+	);
+	const notationHighlights = $derived(
+		boardHighlights(overlays?.classes, notationTarget ? targetSquare(notationTarget) : null) as
+			Map<Key, string> | undefined
+	);
+	const pinShapes = $derived<DrawShape[]>(
+		(overlays?.pinLines ?? []).map((pin) => ({
+			orig: pin.by as Key,
+			dest: pin.behind as Key,
+			brush: 'purple'
+		}))
+	);
 	const boardShapes = $derived<DrawShape[]>([
+		...pinShapes,
+		...candidateShapes,
+		...threatShapes,
+		...notationShapes,
 		...(hoverUci
 			? [{ orig: hoverUci.slice(0, 2) as Key, dest: hoverUci.slice(2, 4) as Key, brush: 'green' }]
 			: []),
@@ -304,8 +542,161 @@
 	{/if}
 {/snippet}
 
+{#snippet threatRow()}
+	{#if showThreatRow}
+		<div class="panel-row" data-testid="threat-row">
+			<span class="panel-row-label">Threat</span>
+			{#if !freshThreatSearch}
+				<span class="text-faint">…</span>
+			{:else if freshThreatSearch.uci === null}
+				<p class="min-w-0 text-body" data-testid="threat-text">
+					You’re in check — answering it comes first.
+				</p>
+			{:else if !fullHints && !threatRevealed}
+				<!-- Nudge: the question before the answer. Asking it every move is
+				     the habit; the button is for checking your own answer. -->
+				<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+					<span class="min-w-0">What does their last move threaten?</span>
+					<button
+						type="button"
+						data-testid="threat-reveal"
+						onclick={() => (threatRevealed = true)}
+						class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+					>
+						Show me
+					</button>
+				</p>
+			{:else if threat}
+				<p class="min-w-0 text-body" data-testid="threat-text">
+					<NotationText
+						text={threat.text}
+						fens={threatFens}
+						onhover={(target) => (notationTarget = target)}
+					/>
+				</p>
+			{:else}
+				<p class="min-w-0 text-muted" data-testid="threat-none">
+					No direct threat — ignoring their last move loses you no material.
+				</p>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+<!-- The engine's own pick, and the Ideas chips (its top lines), behind a
+     button even in Full: stated up front they arrived before any thinking had
+     happened, every single move. -->
+{#snippet enginePickRow()}
+	{#if showEngineRow}
+		<div class="panel-row" data-testid="engine-row">
+			<span class="panel-row-label">Engine</span>
+			{#if !candidateIdeas[0]}
+				<span class="text-faint">…</span>
+			{:else if !enginePickRevealed}
+				<p class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+					<span class="min-w-0 text-muted">Pick your move first, then compare.</span>
+					<button
+						type="button"
+						data-testid="engine-reveal"
+						onclick={() => (enginePickRevealed = true)}
+						class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+					>
+						Show its pick
+					</button>
+				</p>
+			{:else}
+				<p class="min-w-0 text-body" data-testid="engine-pick">
+					<NotationText
+						text={`Stockfish prefers ${candidateIdeas[0].san}.`}
+						fens={[game.fen]}
+						onhover={(target) => (notationTarget = target)}
+					/>
+				</p>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet thinkRow()}
+	{#if thinkingHere && thinkingHere.status !== 'skipped'}
+		{@const current = thinkingHere}
+		<div class="panel-row" data-testid="think-card" data-status={current.status}>
+			<span class="panel-row-label">Think</span>
+			<div class="flex min-w-0 flex-col gap-1.5 text-body">
+				{#if current.status === 'graded' && current.grade}
+					<p class="flex flex-wrap gap-1.5" data-testid="think-weighed">
+						{#each current.weighed as candidate (candidate.uci)}
+							<span
+								class="rounded-xs border border-line bg-paper px-1.5 py-0.5 font-mono text-xs"
+								data-testid="think-candidate"
+								>{candidate.san}
+								<span class="text-muted">{Math.round(candidate.chances)}%</span></span
+							>
+						{/each}
+					</p>
+					<p data-testid="think-grade">
+						{#each current.grade.lines as line, i (i)}
+							<span class="block"
+								><NotationText
+									text={line}
+									fens={thinkFens}
+									onhover={(target) => (notationTarget = target)}
+								/></span
+							>
+						{/each}
+					</p>
+					<p class="text-xs text-muted" data-testid="think-record">
+						Now play your move. Critical moments this session: {thinkRecord.found} of {thinkRecord.moments}
+						found{account.anonymous ? '' : ' — Progress keeps the count'}.
+					</p>
+				{:else}
+					<p>
+						<span class="font-semibold">Critical moment:</span> one move here is much better than the
+						rest. Try two or three candidates on the board first — they are marked, not played.
+					</p>
+					{#if current.candidates.length > 0}
+						<p class="flex flex-wrap gap-1.5">
+							{#each current.candidates as candidate (candidate.uci)}
+								<button
+									type="button"
+									class="rounded-xs border border-line bg-paper px-1.5 py-0.5 font-mono text-xs hover:border-accent-line"
+									data-testid="think-candidate"
+									title="Remove {candidate.san}"
+									disabled={current.status !== 'marking'}
+									onclick={() => dropCandidate(candidate.uci)}
+									>{candidate.san} <span aria-hidden="true" class="text-faint">×</span></button
+								>
+							{/each}
+						</p>
+					{/if}
+					<p class="flex flex-wrap gap-2">
+						<button
+							type="button"
+							data-testid="think-check"
+							disabled={current.candidates.length === 0 || current.status !== 'marking'}
+							onclick={checkCandidates}
+							class="rounded-xs border border-accent-line px-2 py-0.5 text-xs font-semibold text-accent hover:bg-accent-soft disabled:opacity-40"
+						>
+							{current.status === 'weighing' ? 'Weighing…' : 'Check my candidates'}
+						</button>
+						<button
+							type="button"
+							data-testid="think-skip"
+							disabled={current.status !== 'marking'}
+							onclick={skipThinking}
+							class="rounded-xs border border-line px-2 py-0.5 text-xs font-semibold text-ink hover:bg-paper"
+						>
+							Skip, just play
+						</button>
+					</p>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet tacticRow()}
-	{#if fullHints}
+	{#if fullHints && !holdingMove}
 		{#if liveTactic}
 			<!-- Full: the pattern stated outright, with the evidence for it. -->
 			<div class="panel-row" data-testid="tactic-row">
@@ -317,13 +708,25 @@
 					>
 						{liveTactic.motif}
 					</span>
-					<span data-testid="tactic-why">{liveTactic.why}</span>
+					<span data-testid="tactic-why"
+						><NotationText
+							text={liveTactic.why}
+							fens={[game.fen]}
+							onhover={(target) => (notationTarget = target)}
+						/></span
+					>
 				</p>
 			</div>
 		{/if}
 	{:else}
 		<!-- Nudge: the same answer, but earned a rung at a time. -->
-		<HintLadder hint={ladderHint} bind:level={hintLevel} standalone={false} />
+		<HintLadder
+			hint={ladderHint}
+			bind:level={hintLevel}
+			standalone={false}
+			fens={[game.fen]}
+			onnotationhover={(target) => (notationTarget = target)}
+		/>
 	{/if}
 {/snippet}
 
@@ -337,7 +740,9 @@
 			{movableColor}
 			orientation={session.playerColor}
 			autoShapes={boardShapes}
-			onmove={(orig, dest, promotion) => session.handleBoardMove(orig, dest, promotion)}
+			highlights={notationHighlights}
+			syncKey={boardSync}
+			onmove={boardMove}
 		/>
 
 		{#if resultOutcome}
@@ -495,6 +900,11 @@
 							{/each}
 						</div>
 					</div>
+					{#if displayPrefs.hintMode !== 'off'}
+						<div class="mt-2">
+							<OverlayToggles />
+						</div>
+					{/if}
 					<p class="mt-2 text-xs text-faint">
 						engine:
 						<span data-testid="engine-status" class="font-mono">
@@ -518,13 +928,18 @@
 							: 'loading'}
 					ply={game.moves.length}
 					takeback={takebackRow}
+					think={thinkRow}
+					threat={threatRow}
 					tactic={tacticRow}
 					showCoach={displayPrefs.showCoach && fullHints}
 					coach={coachText}
-					showIdeas={displayPrefs.showIdeas && fullHints}
+					enginePick={enginePickRow}
+					showIdeas={displayPrefs.showIdeas && fullHints && enginePickRevealed}
 					ideas={candidateIdeas}
 					gameOver={game.isGameOver}
 					onideahover={(uci) => (hoverUci = uci)}
+					fen={game.fen}
+					onnotationhover={(target) => (notationTarget = target)}
 				/>
 
 				<section
@@ -617,6 +1032,9 @@
 							>
 								open review
 							</a>
+						</p>
+						<p class="text-xs text-muted" data-testid="review-regrade-note">
+							Review checks every move again, more deeply. If a grade changes, Review says why.
 						</p>
 					{:else if session.serverGameId !== null && !session.serverError}
 						<!-- No number yet: a game in progress has not been saved, and the

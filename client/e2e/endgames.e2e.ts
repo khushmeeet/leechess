@@ -37,6 +37,11 @@ test('the drill screen serves a due drill with its goal and side', async ({ page
 	);
 	await expect(page.getByTestId('drill-side')).toContainText(drill.player_color);
 	await expect(page.getByTestId('drill-board')).toHaveAttribute('data-fen', drill.fen);
+	// nothing has been taken yet: the pieces a drill starts without were
+	// never on its board, so the captured rows stay empty
+	for (const color of ['white', 'black']) {
+		await expect(page.getByTestId(`eliminated-${color}`).locator('piece')).toHaveCount(0);
+	}
 });
 
 test('the catalog lists every drill with its Leitner state', async ({ page, request }) => {

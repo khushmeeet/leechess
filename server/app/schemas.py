@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -10,6 +11,7 @@ from pydantic import (
 )
 
 from app.cpl import move_loss
+from app.openings import left_book, opening_of
 
 RESULTS = {"1-0", "0-1", "1/2-1/2", "*"}
 
@@ -65,11 +67,26 @@ class MoveIn(BaseModel):
         return self
 
 
+Classification = Literal["book", "best", "good", "inaccuracy", "mistake", "blunder"]
+
+
+class LiveGrade(BaseModel):
+    """What Play's live check said about one ply: the eval after it (white
+    POV, centipawns, clamped as the analysis job clamps) and, on the player's
+    own moves, the badge shown."""
+
+    ply: int = Field(ge=1)
+    eval_after: float | None = Field(default=None, ge=-1000, le=1000)
+    classification: Classification | None = None
+
+
 class GameComplete(BaseModel):
     """Result is optional: the server derives checkmate/stalemate itself;
-    pass one explicitly for resignations/agreed draws."""
+    pass one explicitly for resignations/agreed draws. `live` carries Play's
+    own grades, kept beside the analysis job's (Move.live_*)."""
 
     result: str | None = None
+    live: list[LiveGrade] = Field(default_factory=list, max_length=MAX_IMPORTED_PLIES)
 
     @model_validator(mode="after")
     def validate_result(self) -> "GameComplete":
@@ -101,8 +118,18 @@ class MoveOut(BaseModel):
     fen_after: str
     eval_before: float | None
     eval_after: float | None
+    mate_before: int | None
+    mate_after: int | None
     classification: str | None
     best_move: str | None
+    best_line: str | None
+    reply_line: str | None
+    threat_move: str | None
+    threat_cp: float | None
+    threat_mate: int | None
+    mistake_cause: str | None
+    live_eval_after: float | None
+    live_classification: str | None
     motifs: list[str]
     explanation: str | None
 
@@ -236,6 +263,20 @@ class GameCplSummary(BaseModel):
     black: SideCpl
 
 
+class OpeningOut(BaseModel):
+    eco: str
+    family: str
+    variation: str | None
+
+
+class LeftBookOut(BaseModel):
+    """The first move off the book, and the book moves there instead."""
+
+    ply: int
+    san: str
+    book_moves: list[str]
+
+
 class GameDetail(GameOut):
     pgn: str
     moves: list[MoveOut]
@@ -247,6 +288,20 @@ class GameDetail(GameOut):
     def summary_text(cls, value: object) -> object:
         """The ORM hands over the CoachSummary row; the API serves its text."""
         return getattr(value, "text", value)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def opening(self) -> OpeningOut | None:
+        """The opening the game reached, named as Play names it."""
+        found = opening_of(self.moves)
+        return OpeningOut(**vars(found)) if found else None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def left_book(self) -> LeftBookOut | None:
+        """Where the game left the opening book (Review flags the move)."""
+        found = left_book(self.moves)
+        return LeftBookOut(**vars(found)) if found else None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -286,6 +341,9 @@ class PuzzleOut(BaseModel):
     # move first, opponent replies interleaved.
     solution: list[str]
     motif: str
+    # Defence puzzles: the opponent's threat to spot first, UCI in the
+    # position with the turn passed. None for every other puzzle.
+    threat: str | None = None
     difficulty: int | None
     source_move_id: int | None  # None = generic Lichess import
     box: int
@@ -390,6 +448,19 @@ class MotifProgress(BaseModel):
     success_rate: float  # correct / attempts, 0..1
 
 
+class Tries(BaseModel):
+    attempts: int
+    correct: int
+
+
+class MotifTrend(BaseModel):
+    """A motif's first tries in the window against its latest ones."""
+
+    motif: str
+    earlier: Tries
+    recent: Tries
+
+
 class GameCplPoint(BaseModel):
     """One analyzed game's average centipawn loss, from the player's side
     (engine games count only the side you played, per the game's user_color;
@@ -409,16 +480,157 @@ class GameCplPoint(BaseModel):
     endgame_cpl: float | None
 
 
+class MistakeExample(BaseModel):
+    """One move with a given cause, for the link to it in Review."""
+
+    game_id: int
+    number: int | None  # the account's game number
+    ply: int
+    san: str
+
+
+class MistakeCauseCount(BaseModel):
+    """How often one step of the thinking routine broke (app/mistakes.py),
+    over the player's own mistakes and blunders in the window."""
+
+    cause: str
+    mistakes: int
+    blunders: int
+    latest: MistakeExample | None  # the most recent move with this cause
+
+
+class PositionIdeaCount(BaseModel):
+    """How often one position idea (app/strategy.py) was behind the player's
+    own mistakes and blunders in the window."""
+
+    motif: str
+    count: int
+    latest: MistakeExample  # the most recent move tagged with it
+
+
+class CriticalMomentIn(BaseModel):
+    """One graded "Think first" check, as the client worked it out."""
+
+    fen: str = Field(max_length=100)
+    found: bool
+    had_threat: bool = False
+    answered_threat: bool | None = None
+    candidates: int = Field(ge=1, le=3)
+
+
+# Points for one guess at most — the client's MAX_POINTS ($lib/guess).
+GUESS_MAX_POINTS = 5
+
+
+class GuessRunIn(BaseModel):
+    """A guess-the-move run's totals so far, as the client scored them."""
+
+    game_id: str = Field(pattern=r"^[a-z0-9-]{1,64}$")
+    side: Literal["white", "black"]
+    points: int = Field(ge=0)
+    max_points: int = Field(ge=0)
+    matched: int = Field(ge=0)
+    guessed: int = Field(ge=1, le=MAX_IMPORTED_PLIES)
+    finished: bool = False
+
+    @model_validator(mode="after")
+    def consistent_totals(self) -> "GuessRunIn":
+        if self.max_points != GUESS_MAX_POINTS * self.guessed:
+            raise ValueError("max_points must be 5 per guess")
+        if self.points > self.max_points:
+            raise ValueError("points cannot exceed max_points")
+        if self.matched > self.guessed:
+            raise ValueError("matched cannot exceed guessed")
+        return self
+
+
+class GuessScore(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    points: int
+    max_points: int
+    matched: int
+    guessed: int
+    finished: bool
+    updated_at: datetime
+
+
+class GuessSummary(BaseModel):
+    """One landmark game from one side: how many runs, the best finished run
+    (by share of points; None until one is finished) and the latest run."""
+
+    game_id: str
+    side: str
+    runs: int
+    best: GuessScore | None
+    latest: GuessScore
+
+
+class ThinkingSummary(BaseModel):
+    """Critical moments in the window: how often the move to find was on the
+    list, how often a threat was answered, and the latest results in order
+    (oldest first) for the trend strip."""
+
+    moments: int
+    found: int
+    threats: int
+    answered: int
+    recent: list[bool]
+
+
+class RepertoireExit(BaseModel):
+    """Where you most often leave the book in one opening, and the book
+    moves that were there instead."""
+
+    ply: int
+    san: str
+    book_moves: list[str]
+    times: int
+
+
+class RepertoireLine(BaseModel):
+    """One opening you have played, from one side: how it went, and where
+    you tend to leave known theory."""
+
+    color: str  # "white" | "black" — your side
+    eco: str
+    family: str
+    games: int
+    wins: int
+    draws: int
+    losses: int
+    # games where you, not your opponent, made the first move off the book
+    you_left: int
+    exit: RepertoireExit | None
+    latest_game_id: int
+    latest_game_number: int | None
+
+
 class ProgressOut(BaseModel):
     """GET /progress response — everything computed on read (spec §4.5)."""
 
     days: int | None  # echo of the window filter; None = all-time
     motifs: list[MotifProgress]  # weakest first
+    # First tries against latest, per motif with enough attempts to compare;
+    # weakest latest first.
+    motif_trends: list[MotifTrend]
     weakest_motifs: list[MotifProgress]  # ≤3, enough attempts, <100% success
     cpl_trend: list[GameCplPoint]  # oldest → newest
     streak_days: int
     puzzles_solved: int  # correct attempts within the window
     drills_passed: int  # endgame drills converted/held within the window
+    # Every cause, most common first (ties in the routine's order); counts
+    # are zero until games analyzed with causes are in the window.
+    mistake_causes: list[MistakeCauseCount]
+    # The position ideas behind the mistakes no tactic explains, most common
+    # first; only ideas that came up.
+    position_ideas: list[PositionIdeaCount]
+    thinking: ThinkingSummary
+    # Openings you played as one side, most played first (games against the
+    # engine or a friend — a pass-and-play game has no side of your own).
+    repertoire: list[RepertoireLine]
+    # Guess the move, per landmark game and side, most recently played first.
+    guessing: list[GuessSummary]
 
 
 class WikibookPageOut(BaseModel):

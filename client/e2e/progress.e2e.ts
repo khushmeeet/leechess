@@ -109,3 +109,87 @@ test('the CPL tooltip reads out the point nearest the pointer, not the newest ga
 	await page.mouse.move(box.x + box.width * 0.02, midY);
 	await expect(page.getByTestId('cpl-tooltip')).toContainText(`Game #${oldest}`);
 });
+
+test('mistake causes name the habit that broke, and link to the move', async ({
+	page,
+	request
+}) => {
+	// Scholar's mate, played locally (both sides count): 3…Nf6?? left Qxf7#
+	// on the board — the threat the previous move made
+	const gameId = await seedGame(request, scholarsMateSans, '1-0');
+	await waitForAnalysis(request, gameId);
+
+	await page.goto('/progress');
+	const section = page.getByTestId('mistake-causes');
+	await expect(section).toBeVisible();
+	const row = section.locator('[data-cause="missed_threat"]');
+	await expect(row).toContainText('Missed their threat');
+	const example = row.getByTestId('mistake-cause-example');
+	await expect(example).toHaveText('3…Nf6');
+	await expect(example).toHaveAttribute('href', `/review/${gameId}?ply=6`);
+
+	// the link opens Review on that move, with the same cause beside it
+	await example.click();
+	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
+	await expect(page.getByTestId('review-cause-label')).toHaveText('Missed their threat.');
+	await expect(page.getByTestId('review-cause')).toContainText(
+		'ask what their last move threatens'
+	);
+});
+
+test('a motif’s first tries are compared with its latest', async ({ page, request }) => {
+	const gameId = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, gameId);
+	const puzzle = await (await request.get(`${API}/puzzles/next`)).json();
+	// missed the first three, solved the latest three
+	for (const correct of [false, false, false, true, true, true]) {
+		const response = await request.post(`${API}/puzzles/${puzzle.id}/attempt`, {
+			data: { correct }
+		});
+		expect(response.ok()).toBe(true);
+	}
+
+	await page.goto('/progress');
+	const row = page.getByTestId('motif-trend');
+	await expect(row).toHaveCount(1);
+	await expect(row).toContainText(puzzle.motif.replaceAll('_', ' '));
+	await expect(row).toContainText('0% → 100%');
+	// the whole reading, for the pointer and for screen readers
+	await expect(row).toHaveAttribute(
+		'title',
+		'First 3 tries: 0 solved (0%). Latest 3 tries: 3 solved (100%).'
+	);
+});
+
+test('the position ideas behind your mistakes are named, with the latest one linked', async ({
+	page,
+	request
+}) => {
+	// The tags come from the analysis job on positional mistakes, which no
+	// short seeded game makes on cue — so the real response gets one entry
+	// added on its way to the page (the counting is the server suite's).
+	const gameId = await seedGame(request, hungQueenSans);
+	await waitForAnalysis(request, gameId);
+	await page.route(`${API}/progress**`, async (route) => {
+		const response = await route.fetch();
+		const body = await response.json();
+		body.position_ideas = [
+			{
+				motif: 'isolated_pawn',
+				count: 2,
+				latest: { game_id: gameId, number: 1, ply: 5, san: 'Qh5' }
+			}
+		];
+		await route.fulfill({ response, json: body });
+	});
+
+	await page.goto('/progress');
+	const row = page.getByTestId('position-idea-row');
+	await expect(row).toHaveAttribute('data-motif', 'isolated_pawn');
+	await expect(row).toContainText('Isolated pawns · 2 mistakes');
+	await expect(row).toContainText('Ask: After this capture or push');
+	await expect(page.getByTestId('position-idea-example')).toHaveAttribute(
+		'href',
+		`/review/${gameId}?ply=5`
+	);
+});

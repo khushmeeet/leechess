@@ -1,5 +1,7 @@
 // Thin fetch wrappers for the FastAPI backend. In dev the API runs on :8000;
 // in production FastAPI serves this SPA, so requests are same-origin.
+import type { Classification } from '$lib/classification';
+
 const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 /** Where the backend is, for the one caller that needs more than `request`:
@@ -36,8 +38,39 @@ export interface MoveRecord {
 	fen_after: string;
 	eval_before: number | null;
 	eval_after: number | null;
+	/** A forced mate beside each eval: moves to mate, signed for White (0 is
+	 * a mate on the board). Null without one, and for games analyzed before
+	 * mates were stored. */
+	mate_before: number | null;
+	mate_after: number | null;
 	classification: string | null;
 	best_move: string | null;
+	/** The engine's principal variation from `fen_before` (its first move is
+	 * `best_move`), space-separated UCI. Null for games analyzed before lines
+	 * were stored. */
+	best_line: string | null;
+	/** The engine's principal variation from `fen_after` — what follows the
+	 * move played. Null after the last move of a finished game. */
+	reply_line: string | null;
+	/** The other side's best move in `fen_before` had the mover passed — the
+	 * threat this move had to answer, before `classifyThreat` judges whether
+	 * it is one. Null when the mover was in check, or for a game analyzed
+	 * before threats were recorded. */
+	threat_move: string | null;
+	/** The score after `threat_move`, white POV: centipawns (clamped like the
+	 * evals) or moves to mate — one of the two. */
+	threat_cp: number | null;
+	threat_mate: number | null;
+	/** For a mistake or blunder: the step of the thinking routine that broke
+	 * (see $lib/mistakes). Null for every other move, and for games analyzed
+	 * before causes were. */
+	mistake_cause: string | null;
+	/** What Play's live check said during the game (shallower than the
+	 * analysis): the eval after the move, white POV and clamped, and on the
+	 * player's own moves the badge Play showed. Null for imported games and
+	 * games completed before Play sent them (see $lib/gradeChange). */
+	live_eval_after: number | null;
+	live_classification: string | null;
 	motifs: string[];
 	/** Cached LLM "why" text — only flagged moves have one (Phase 5). */
 	explanation: string | null;
@@ -78,6 +111,11 @@ export interface GameDetail extends GameSummary {
 	summary: string | null;
 	/** Server-computed per-side stats — null until every move is analyzed. */
 	cpl_summary: GameCplSummary | null;
+	/** The opening the game reached, named as Play names it. */
+	opening: { eco: string; family: string; variation: string | null } | null;
+	/** The first move off the opening book, with the book moves there
+	 * instead; null for a game that never left it (or never reached it). */
+	left_book: { ply: number; san: string; book_moves: string[] } | null;
 }
 
 export class ApiError extends Error {
@@ -191,13 +229,26 @@ export function takeBackMoves(gameId: number, toPly: number): Promise<TakebackRe
 	});
 }
 
+/** One ply as Play's live check graded it: the eval after it (white POV,
+ * clamped) and, on the player's own moves, the badge shown. */
+export interface LiveGrade {
+	ply: number;
+	eval_after: number | null;
+	classification: Classification | null;
+}
+
 /** keepalive: completion often races page exit (resign, then close the tab) —
  * a resigned game is no longer persisted, so an aborted request would leave
- * an orphaned unfinished record with no resync to recover it. */
-export function completeGame(gameId: number, result: string): Promise<GameSummary> {
+ * an orphaned unfinished record with no resync to recover it. `live` is what
+ * Play showed during the game, kept beside the deeper analysis's grades. */
+export function completeGame(
+	gameId: number,
+	result: string,
+	live: LiveGrade[] = []
+): Promise<GameSummary> {
 	return request(`/games/${gameId}/complete`, {
 		method: 'POST',
-		body: JSON.stringify({ result }),
+		body: JSON.stringify(live.length > 0 ? { result, live } : { result }),
 		keepalive: true
 	});
 }
@@ -242,6 +293,9 @@ export interface PuzzleRecord {
 	/** UCI moves, solver's move first, opponent replies interleaved. */
 	solution: string[];
 	motif: string;
+	/** Defence puzzles: the opponent's threat to spot first, UCI in the
+	 * position with the turn passed. Null for every other puzzle. */
+	threat?: string | null;
 	difficulty: number | null;
 	source_move_id: number | null; // null = generic Lichess import
 	box: number;
@@ -336,11 +390,107 @@ export function recordDrillAttempt(
 	});
 }
 
+/** One graded "Think first" check from Play: was a move as good as the
+ * engine's among the candidates, and did one answer their threat. */
+export interface CriticalMomentResult {
+	fen: string;
+	found: boolean;
+	had_threat: boolean;
+	answered_threat: boolean | null;
+	candidates: number;
+}
+
+export function recordCriticalMoment(moment: CriticalMomentResult): Promise<{ id: number }> {
+	return request('/thinking/moments', { method: 'POST', body: JSON.stringify(moment) });
+}
+
+/** A guess-the-move run's totals so far (see $lib/guess). */
+export interface GuessRunTotals {
+	game_id: string;
+	side: 'white' | 'black';
+	points: number;
+	max_points: number;
+	matched: number;
+	guessed: number;
+	finished: boolean;
+}
+
+export function startGuessRun(totals: GuessRunTotals): Promise<{ id: number }> {
+	return request('/guess/runs', { method: 'POST', body: JSON.stringify(totals) });
+}
+
+export function updateGuessRun(id: number, totals: GuessRunTotals): Promise<{ id: number }> {
+	return request(`/guess/runs/${id}`, { method: 'PUT', body: JSON.stringify(totals) });
+}
+
+export interface GuessScore {
+	points: number;
+	max_points: number;
+	matched: number;
+	guessed: number;
+	finished: boolean;
+	updated_at: string;
+}
+
+/** One landmark game from one side: the best finished run (null until one
+ * is finished) and the latest run, finished or not. */
+export interface GuessSummary {
+	game_id: string;
+	side: 'white' | 'black';
+	runs: number;
+	best: GuessScore | null;
+	latest: GuessScore;
+}
+
+export function getGuessSummary(): Promise<GuessSummary[]> {
+	return request('/guess/summary');
+}
+
+/** One opening you play from one side (Progress's "Your openings"). */
+export interface RepertoireLine {
+	color: 'white' | 'black';
+	eco: string;
+	family: string;
+	games: number;
+	wins: number;
+	draws: number;
+	losses: number;
+	/** Games where you made the first move off the book. */
+	you_left: number;
+	/** Where you most often leave the book, and the book moves there. */
+	exit: { ply: number; san: string; book_moves: string[]; times: number } | null;
+	latest_game_id: number;
+	latest_game_number: number | null;
+}
+
+/** Critical moments in the Progress window; `recent` is the latest results,
+ * oldest first. */
+export interface ThinkingSummary {
+	moments: number;
+	found: number;
+	threats: number;
+	answered: number;
+	recent: boolean[];
+}
+
 export interface MotifProgress {
 	motif: string;
 	attempts: number;
 	correct: number;
 	success_rate: number; // 0..1
+}
+
+export interface Tries {
+	attempts: number;
+	correct: number;
+}
+
+/** A motif's first tries in the window against its latest ones — the
+ * attempts split in two by time. Only motifs with enough attempts to compare. */
+export interface MotifTrend {
+	motif: string;
+	earlier: Tries;
+	recent: Tries;
 }
 
 /** One analyzed game's avg centipawn loss from the player's side (engine
@@ -359,14 +509,46 @@ export interface GameCplPoint {
 	endgame_cpl: number | null;
 }
 
+/** One of the player's moves, for a link into Review. */
+export interface MistakeExample {
+	game_id: number;
+	number: number | null;
+	ply: number;
+	san: string;
+}
+
+/** How often one step of the thinking routine broke, over the player's own
+ * mistakes and blunders in the window. */
+export interface MistakeCauseCount {
+	cause: string;
+	mistakes: number;
+	blunders: number;
+	/** The most recent move with this cause, for a link into Review. */
+	latest: MistakeExample | null;
+}
+
+/** How often one position idea ($lib/positionIdeas) was behind the
+ * player's own mistakes and blunders, with the latest for the link. */
+export interface PositionIdeaCount {
+	motif: string;
+	count: number;
+	latest: MistakeExample;
+}
+
 export interface ProgressSummary {
 	days: number | null; // echo of the window filter; null = all-time
 	motifs: MotifProgress[]; // weakest first
+	motif_trends: MotifTrend[]; // weakest latest first
 	weakest_motifs: MotifProgress[]; // ≤3, enough attempts, <100% success
 	cpl_trend: GameCplPoint[]; // oldest → newest
 	streak_days: number;
 	puzzles_solved: number;
 	drills_passed: number; // endgame drills converted/held in the window
+	mistake_causes: MistakeCauseCount[]; // every cause, most common first
+	position_ideas: PositionIdeaCount[]; // only ideas that came up, most common first
+	thinking: ThinkingSummary;
+	repertoire: RepertoireLine[]; // most played first
+	guessing: GuessSummary[]; // most recently played first
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

@@ -206,3 +206,20 @@ def test_review_endpoint_serves_summary(claude, client, db_session, signed_in_us
 def test_review_endpoint_serves_null_before_generation(client):
     game_id = client.post("/games", json={}).json()["id"]
     assert client.get(f"/games/{game_id}/review").json()["summary"] is None
+
+
+
+def test_position_ideas_are_listed_apart_from_tactics():
+    from app.models import MotifTag
+
+    game = tagged_hung_queen_game()
+    blunder = game.moves[4]  # 3. Qxe5+
+    blunder.motif_tags = [
+        MotifTag(motif="hanging_piece", source="rule_based"),
+        MotifTag(motif="isolated_pawn", source="rule_based"),
+    ]
+    prompt = build_summary_prompt(game)
+    assert (
+        "- 3. Qxe5+ — blunder; engine preferred Nc3; motifs: hanging piece; "
+        "position idea: isolated pawn" in prompt
+    )

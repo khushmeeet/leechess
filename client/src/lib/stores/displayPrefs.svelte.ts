@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { OVERLAYS } from '$lib/overlays';
 
 const EVAL_BAR_KEY = 'leechess.showEvalBar';
 const COACH_KEY = 'leechess.showCoach';
@@ -6,6 +7,10 @@ const IDEAS_KEY = 'leechess.showIdeas';
 const OPENING_THEORY_KEY = 'leechess.showOpeningTheory';
 const HINT_MODE_KEY = 'leechess.hintMode';
 const ZEN_MODE_KEY = 'leechess.zenMode';
+const THINK_FIRST_KEY = 'leechess.thinkFirst';
+const OVERLAYS_KEY = 'leechess.overlays';
+// from the overlay list itself, so a new overlay survives a reload
+const OVERLAY_NAMES: string[] = OVERLAYS.map((overlay) => overlay.name);
 const FRIEND_EVAL_BAR_KEY = 'leechess.friendEvalBar';
 const FRIEND_MOVE_LIST_KEY = 'leechess.friendMoveList';
 /** Live move badges in friend games, removed. Named only to be cleared: every
@@ -35,6 +40,13 @@ class DisplayPrefs {
 	 * them. Scoped to Play by the layout: the other screens are reading
 	 * screens, and hiding the nav on one would leave no way off it. */
 	zenMode = $state(false);
+	/** At a critical moment (one move much better than the rest), ask for
+	 * candidate moves before the move itself — see $lib/candidates. Not in
+	 * Off, which is a real game. */
+	thinkFirst = $state(true);
+	/** Board overlays switched on ($lib/overlays) — Play (outside Off) and
+	 * Review draw them. */
+	overlays = $state<string[]>([]);
 
 	// ── Friend games ───────────────────────────────────────────────────────
 	// A game against a person is a different thing from a game against the
@@ -66,6 +78,15 @@ class DisplayPrefs {
 		if (localStorage.getItem(IDEAS_KEY) === 'false') this.showIdeas = false;
 		if (localStorage.getItem(OPENING_THEORY_KEY) === 'true') this.showOpeningTheory = true;
 		if (localStorage.getItem(ZEN_MODE_KEY) === 'true') this.zenMode = true;
+		if (localStorage.getItem(THINK_FIRST_KEY) === 'false') this.thinkFirst = false;
+		try {
+			const overlays = JSON.parse(localStorage.getItem(OVERLAYS_KEY) ?? '[]');
+			if (Array.isArray(overlays)) {
+				this.overlays = overlays.filter((name) => OVERLAY_NAMES.includes(name));
+			}
+		} catch {
+			// a corrupt value is simply no overlays
+		}
 		if (localStorage.getItem(FRIEND_EVAL_BAR_KEY) === 'true') this.friendEvalBar = true;
 		if (localStorage.getItem(FRIEND_MOVE_LIST_KEY) === 'false') this.friendMoveList = false;
 		const hintMode = localStorage.getItem(HINT_MODE_KEY);
@@ -82,6 +103,18 @@ class DisplayPrefs {
 	setHintMode(value: HintMode) {
 		this.hintMode = value;
 		if (browser) localStorage.setItem(HINT_MODE_KEY, value);
+	}
+
+	toggleOverlay(name: string) {
+		this.overlays = this.overlays.includes(name)
+			? this.overlays.filter((other) => other !== name)
+			: [...this.overlays, name];
+		if (browser) localStorage.setItem(OVERLAYS_KEY, JSON.stringify(this.overlays));
+	}
+
+	setThinkFirst(value: boolean) {
+		this.thinkFirst = value;
+		if (browser) localStorage.setItem(THINK_FIRST_KEY, String(value));
 	}
 
 	setEvalBar(value: boolean) {

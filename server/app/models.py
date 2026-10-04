@@ -144,8 +144,41 @@ class Move(Base):
     # Populated by the Phase 1 analysis job; nullable until then.
     eval_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     eval_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # A forced mate beside each eval, moves to mate signed for White (0: mate
+    # on the board, the clamped eval says whose). The evals sit at the clamp
+    # either way; grading needs to know a mate from a big advantage.
+    mate_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mate_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classification: Mapped[str | None] = mapped_column(String, nullable=True)
     best_move: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The engine's principal variations, space-separated UCI, a few moves
+    # deep: from fen_before (the line it wanted — best_move is its first
+    # move) and from fen_after (what follows the move actually played). Null
+    # for a game analyzed before lines were stored; reply_line is null after
+    # the last move of a finished game.
+    best_line: Mapped[str | None] = mapped_column(String, nullable=True)
+    reply_line: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The opponent's threat in fen_before: what the other side would play if
+    # the mover passed (app/threats.py), and the score after it, white POV —
+    # centipawns clamped like the evals, or moves to mate. Raw engine facts;
+    # whether they add up to a threat is decided client-side. All null when
+    # there was nothing to search (the mover was in check) or the game was
+    # analyzed before threats were.
+    threat_move: Mapped[str | None] = mapped_column(String, nullable=True)
+    threat_cp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    threat_mate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # For a mistake or blunder: the step of a thinking routine that broke —
+    # missed_threat, hung_piece, allowed_reply, missed_tactic or positional
+    # (app/mistakes.py). Derived from the columns above, never from the engine.
+    mistake_cause: Mapped[str | None] = mapped_column(String, nullable=True)
+    # What Play's live check said during the game — the browser engine, which
+    # searches shallower than the analysis job: the eval after the move (white
+    # POV, clamped like eval_after) and, on the player's own moves, the badge
+    # Play showed. Sent with the game's completion so Review can say where the
+    # deeper check changed a grade, and why. Null for imported games, games
+    # played without an engine, and anything completed before this existed.
+    live_eval_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    live_classification: Mapped[str | None] = mapped_column(String, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="moves")
     motif_tags: Mapped[list["MotifTag"]] = relationship(
@@ -249,6 +282,10 @@ class Puzzle(Base):
     # interleaved for multi-move solutions.
     solution: Mapped[str] = mapped_column(String)
     motif: Mapped[str] = mapped_column(String, index=True)
+    # Defence puzzles (motif "defence") only: the opponent's threat in `fen`,
+    # UCI in the position with the turn passed — the move the solver must
+    # spot before finding the answer to it.
+    threat_move: Mapped[str | None] = mapped_column(String, nullable=True)
     # Lichess rating for imported puzzles; personal ones have no difficulty.
     difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -377,6 +414,53 @@ class EndgameDrillAttempt(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     drill: Mapped[EndgameDrill] = relationship(back_populates="attempts")
+
+
+class CriticalMoment(Base):
+    """One "Think first" check on Play: a critical moment (one move much
+    better than the rest) where the player listed candidates and had them
+    graded. Kept so Progress can say how often the move to find was on the
+    list, and how often their threat was answered — the thinking, not the
+    moves. The client grades (it has the engine); the server only counts."""
+
+    __tablename__ = "critical_moments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
+    fen: Mapped[str] = mapped_column(String)
+    # A move as good as the engine's was among the candidates.
+    found: Mapped[bool] = mapped_column(Boolean)
+    # The opponent's last move threatened something the screens would show.
+    had_threat: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ...and a candidate dealt with it; null without a threat.
+    answered_threat: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    candidates: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class GuessRun(Base):
+    """One pass at guessing the moves of a Literature landmark game from one
+    side (the client's $lib/guess scores each guess with its own engine).
+    Written after every scored guess, so a run left halfway is kept too;
+    `finished` once the game's last move is behind it. Literature and
+    Progress show the best finished run and the latest one per game."""
+
+    __tablename__ = "guess_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
+    # The landmark game's id in the client's catalog (lib/literature/games.ts).
+    game_id: Mapped[str] = mapped_column(String, index=True)
+    side: Mapped[str] = mapped_column(String)
+    points: Mapped[int] = mapped_column(Integer)
+    max_points: Mapped[int] = mapped_column(Integer)
+    # Guesses that were the master's own move, and guesses made at all
+    # (moves shown without a guess count in neither).
+    matched: Mapped[int] = mapped_column(Integer)
+    guessed: Mapped[int] = mapped_column(Integer)
+    finished: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class WikibookCache(Base):

@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
 	getNextPuzzle: vi.fn(),
 	recordAttempt: vi.fn()
 }));
+const engine = vi.hoisted(() => ({ evaluate: vi.fn() }));
+vi.mock('$lib/stores/stockfish', () => ({ stockfish: engine }));
 
 vi.mock('$lib/api/client', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/api/client')>();
@@ -140,13 +142,17 @@ describe('multi-ply solutions', () => {
 		// the reply beat means looking one move past the board.
 		const session = new PuzzleSession();
 		await session.load();
-		expect(session.nextPlayerMove).toEqual({ san: 'Qxg2+', uci: 'h3g2' });
+		const start = session.fen;
+		expect(session.nextPlayerMove).toEqual({ san: 'Qxg2+', uci: 'h3g2', fen: start });
 
 		session.handleBoardMove('h3', 'g2');
-		expect(session.nextPlayerMove).toEqual({ san: 'Rh2+', uci: 'h4h2' });
+		// the move is played after the reply, so that is the position named
+		const second = session.nextPlayerMove;
+		expect(second).toMatchObject({ san: 'Rh2+', uci: 'h4h2' });
+		expect(second?.fen).not.toBe(session.fen);
 
 		await vi.advanceTimersByTimeAsync(400);
-		expect(session.nextPlayerMove).toEqual({ san: 'Rh2+', uci: 'h4h2' });
+		expect(session.nextPlayerMove).toEqual({ ...second, fen: session.fen });
 	});
 
 	it('ignores board input while the opponent reply is still pending', async () => {
@@ -342,5 +348,132 @@ describe('overlapping loads', () => {
 		await first;
 		expect(session.status).toBe('empty');
 		expect(session.puzzle).toBeNull();
+	});
+});
+
+/** Scholar's mate, 3.Qh5: Black to move, Qxf7# is threatened, and …g6 is
+ * the defence the analysis found. */
+const defencePuzzle = {
+	id: 3,
+	fen: 'r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3',
+	solution: ['g7g6'],
+	motif: 'defence',
+	threat: 'h5f7',
+	difficulty: null,
+	source_move_id: 9,
+	box: 1,
+	due_at: '2026-01-01T00:00:00Z'
+};
+
+describe('defence puzzles', () => {
+	beforeEach(() => {
+		api.getNextPuzzle.mockResolvedValue({ ...defencePuzzle });
+	});
+
+	it('asks where the threat lands before taking a move', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		expect(session.phase).toBe('spot');
+
+		session.handleBoardMove('g7', 'g6'); // the right move, asked too early
+		expect(session.status).toBe('solving');
+		expect(api.recordAttempt).not.toHaveBeenCalled();
+
+		session.spotSquare('f7'); // where Qxf7# lands
+		expect(session.spotted).toBe('found');
+		expect(session.phase).toBe('solve');
+		expect(session.hintLevel).toBe(0);
+
+		session.handleBoardMove('g7', 'g6');
+		expect(session.status).toBe('solved');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, true, 0);
+	});
+
+	it('takes the piece making the threat as an answer too', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('h5');
+		expect(session.spotted).toBe('found');
+	});
+
+	it('shows the threat after two misses, and counts it as a hint', async () => {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('a1');
+		expect(session.phase).toBe('spot');
+		expect(session.spotMisses).toBe(1);
+		session.spotSquare('b2');
+		expect(session.spotted).toBe('shown');
+		expect(session.phase).toBe('solve');
+		expect(session.hintLevel).toBe(2);
+	});
+
+	it('leaves every other puzzle to the move alone', async () => {
+		api.getNextPuzzle.mockResolvedValue({ ...underpromotionPuzzle });
+		const session = new PuzzleSession();
+		await session.load();
+		expect(session.phase).toBe('solve');
+		session.spotSquare('e8');
+		expect(session.spotted).toBeNull();
+	});
+});
+
+describe('defence puzzles: any defence that works counts', () => {
+	beforeEach(() => {
+		api.getNextPuzzle.mockResolvedValue({ ...defencePuzzle });
+	});
+
+	/** The engine's view after the tried move, then after the stored g6. */
+	function weighs(tried: object, stored: object = { cp: 30, bestMove: 'h5f3' }) {
+		engine.evaluate
+			.mockResolvedValueOnce({ depth: 12, lines: [], ...tried })
+			.mockResolvedValueOnce({ depth: 12, lines: [], ...stored });
+	}
+
+	async function spotted() {
+		const session = new PuzzleSession();
+		await session.load();
+		session.spotSquare('f7');
+		return session;
+	}
+
+	it('accepts another move that takes the threat off the board', async () => {
+		weighs({ cp: 40, bestMove: 'g1f3' }); // …Qe7: about as good as …g6
+		const session = await spotted();
+		session.handleBoardMove('d8', 'e7');
+		expect(session.checking).toBe('Qe7');
+		await vi.waitFor(() => expect(session.status).toBe('solved'));
+		expect(session.alternative).toBe('Qe7');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, true, 0);
+		// both positions were weighed at the same depth
+		expect(engine.evaluate.mock.calls.map((call) => call[1])).toEqual([12, 12]);
+	});
+
+	it('refuses a move that leaves the threat on the board, and says so', async () => {
+		weighs({ mate: 1, bestMove: 'h5f7' });
+		const session = await spotted();
+		session.handleBoardMove('a7', 'a6');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.status).toBe('solving');
+		expect(session.refusal).toBe('a6 leaves Qxf7# on the board.');
+		expect(api.recordAttempt).toHaveBeenCalledExactlyOnceWith(3, false, 0);
+	});
+
+	it('refuses a move that dodges the threat only to lose more, naming the reply', async () => {
+		weighs({ cp: 400, bestMove: 'd2d4' }); // far worse for Black than …g6
+		const session = await spotted();
+		session.handleBoardMove('g8', 'h6');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.refusal).toBe('Nh6 gets out of it, but then their best is d4.');
+		expect(session.wrong).toBe(true);
+	});
+
+	it('falls back to the stored answer alone when the engine fails', async () => {
+		engine.evaluate.mockRejectedValue(new Error('worker died'));
+		const session = await spotted();
+		session.handleBoardMove('d8', 'e7');
+		await vi.waitFor(() => expect(session.checking).toBeNull());
+		expect(session.status).toBe('solving');
+		expect(session.wrong).toBe(true);
 	});
 });

@@ -29,13 +29,18 @@ export const E2E_PASSWORD = 'correct-horse';
  *    `test.use({ signedIn: false })`.
  *
  * Browser state needs no equivalent hook — Playwright already gives each test
- * its own context, so localStorage starts empty.
+ * its own context, so localStorage starts empty. One preference is set in it
+ * all the same: "Think first" (on for a real player) holds a move back
+ * wherever the engine finds a critical moment, and which positions those are
+ * is the engine's call — a spec about something else would find its move
+ * turned into a candidate. The spec about Think first turns it back on.
  */
 export const test = base.extend<{ signedIn: boolean; cleanDatabase: void }>({
 	signedIn: [true, { option: true }],
 
 	cleanDatabase: [
 		async ({ request, context, signedIn }, use) => {
+			await context.addInitScript(() => localStorage.setItem('leechess.thinkFirst', 'false'));
 			const response = await request.post(`${API}/testing/reset`);
 			if (response.status() === 404) {
 				throw new Error(
