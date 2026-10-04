@@ -5,7 +5,8 @@ import {
 	getGame,
 	postMove,
 	startGame,
-	takeBackMoves
+	takeBackMoves,
+	type LiveGrade
 } from '$lib/api/client';
 import {
 	classifyMove,
@@ -286,7 +287,11 @@ export class PlaySession {
 			if (this.game.isGameOver && this.completedGameId === null) {
 				let saved;
 				try {
-					saved = await completeGame(this.serverGameId, this.game.result);
+					saved = await completeGame(
+						this.serverGameId,
+						this.game.result,
+						await this.settledLiveGrades()
+					);
 				} catch (error) {
 					// 409: completed right before the refresh — same review id, and
 					// the number it was given is on the record already
@@ -588,10 +593,38 @@ export class PlaySession {
 		this.inSync(async () => {
 			// completedGameId set: a restore resync already completed the game
 			if (this.serverGameId === null || this.completedGameId !== null) return;
-			const saved = await completeGame(this.serverGameId, result);
-			this.completedGameId = this.serverGameId;
+			// Held across the wait for the last grade: "New game" right after a
+			// resignation clears serverGameId, and this game still has to be
+			// completed — only the fresh one's state is off limits.
+			const gameId = this.serverGameId;
+			const generation = this.generation;
+			const live = await this.settledLiveGrades();
+			const saved = await completeGame(gameId, result, live);
+			if (generation !== this.generation) return;
+			this.completedGameId = gameId;
 			this.completedGameNumber = saved.number;
 			this.save();
+		});
+	}
+
+	/** What the live check said about each ply, for the server to keep beside
+	 * the deeper analysis (Review explains where they differ). Waits for the
+	 * engine chain first: the game-ending move is still being graded when the
+	 * game ends, and its badge is the one most likely to be talked about. The
+	 * chain never rejects (inChain catches), and a hung search rejects inside
+	 * it, so this cannot wait forever. */
+	private async settledLiveGrades(): Promise<LiveGrade[]> {
+		// this game's lists, not whatever a "New game" during the wait puts in
+		// their place (it assigns fresh ones rather than clearing these)
+		const moves = [...this.game.moves];
+		const evals = this.evals;
+		const badges = this.badges;
+		await this.chain;
+		return moves.flatMap((move, index): LiveGrade[] => {
+			const evalAfter = evals[index] ?? null;
+			const classification = badges[index] ?? null;
+			if (evalAfter === null && classification === null) return [];
+			return [{ ply: move.ply, eval_after: evalAfter, classification }];
 		});
 	}
 

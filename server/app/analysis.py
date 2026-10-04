@@ -2,7 +2,10 @@
 
 Classification constants load from shared/classification.json — the single
 source the client bundles too (client/src/lib/classification.ts), so live
-badges and post-game review never disagree.
+badges and post-game review grade by the same rules. They can still differ on
+a move: Play's browser engine searches shallower than this job. Play sends its
+grades with the game's completion (Move.live_*), and Review says where the
+deeper search changed one.
 """
 
 import json

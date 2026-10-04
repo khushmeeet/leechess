@@ -1,5 +1,7 @@
 // Thin fetch wrappers for the FastAPI backend. In dev the API runs on :8000;
 // in production FastAPI serves this SPA, so requests are same-origin.
+import type { Classification } from '$lib/classification';
+
 const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 /** Where the backend is, for the one caller that needs more than `request`:
@@ -63,6 +65,12 @@ export interface MoveRecord {
 	 * (see $lib/mistakes). Null for every other move, and for games analyzed
 	 * before causes were. */
 	mistake_cause: string | null;
+	/** What Play's live check said during the game (shallower than the
+	 * analysis): the eval after the move, white POV and clamped, and on the
+	 * player's own moves the badge Play showed. Null for imported games and
+	 * games completed before Play sent them (see $lib/gradeChange). */
+	live_eval_after: number | null;
+	live_classification: string | null;
 	motifs: string[];
 	/** Cached LLM "why" text — only flagged moves have one (Phase 5). */
 	explanation: string | null;
@@ -221,13 +229,26 @@ export function takeBackMoves(gameId: number, toPly: number): Promise<TakebackRe
 	});
 }
 
+/** One ply as Play's live check graded it: the eval after it (white POV,
+ * clamped) and, on the player's own moves, the badge shown. */
+export interface LiveGrade {
+	ply: number;
+	eval_after: number | null;
+	classification: Classification | null;
+}
+
 /** keepalive: completion often races page exit (resign, then close the tab) —
  * a resigned game is no longer persisted, so an aborted request would leave
- * an orphaned unfinished record with no resync to recover it. */
-export function completeGame(gameId: number, result: string): Promise<GameSummary> {
+ * an orphaned unfinished record with no resync to recover it. `live` is what
+ * Play showed during the game, kept beside the deeper analysis's grades. */
+export function completeGame(
+	gameId: number,
+	result: string,
+	live: LiveGrade[] = []
+): Promise<GameSummary> {
 	return request(`/games/${gameId}/complete`, {
 		method: 'POST',
-		body: JSON.stringify({ result }),
+		body: JSON.stringify(live.length > 0 ? { result, live } : { result }),
 		keepalive: true
 	});
 }

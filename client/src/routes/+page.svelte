@@ -1033,6 +1033,9 @@
 								open review
 							</a>
 						</p>
+						<p class="text-xs text-muted" data-testid="review-regrade-note">
+							Review checks every move again, more deeply. If a grade changes, Review says why.
+						</p>
 					{:else if session.serverGameId !== null && !session.serverError}
 						<!-- No number yet: a game in progress has not been saved, and the
 					     row id it is being written under is not one anybody has a use

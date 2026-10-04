@@ -147,6 +147,43 @@ def test_complete_accepts_resignation_result(client, no_analysis):
     assert done.json()["result"] == "0-1"
 
 
+def test_complete_keeps_plays_live_grades(client, no_analysis):
+    """Play sends what its live check said; Review shows it beside the
+    analysis job's grade. A ply past the record is dropped, not an error."""
+    game_id = client.post("/games", json={}).json()["id"]
+    for san in ["e4", "e5", "Qh5"]:
+        client.post(f"/games/{game_id}/moves", json={"san": san})
+    live = [
+        {"ply": 1, "eval_after": 30, "classification": "book"},
+        {"ply": 2, "eval_after": 25},
+        {"ply": 3, "eval_after": -40, "classification": "inaccuracy"},
+        {"ply": 9, "eval_after": 0, "classification": "best"},
+    ]
+    done = client.post(f"/games/{game_id}/complete", json={"result": "1/2-1/2", "live": live})
+    assert done.status_code == 200
+
+    moves = client.get(f"/games/{game_id}").json()["moves"]
+    assert [(m["live_eval_after"], m["live_classification"]) for m in moves] == [
+        (30, "book"),
+        (25, None),
+        (-40, "inaccuracy"),
+    ]
+
+
+def test_complete_rejects_a_live_grade_that_is_not_one(client, no_analysis):
+    game_id = client.post("/games", json={}).json()["id"]
+    client.post(f"/games/{game_id}/moves", json={"san": "e4"})
+    for bad in (
+        {"ply": 1, "classification": "brilliant"},
+        {"ply": 0, "eval_after": 0},
+        {"ply": 1, "eval_after": 5000},
+    ):
+        response = client.post(f"/games/{game_id}/complete", json={"live": [bad]})
+        assert response.status_code == 422, bad
+    # nothing half-applied: the game is still open
+    assert client.post(f"/games/{game_id}/complete", json={}).status_code == 200
+
+
 def test_complete_rejects_empty_game_and_double_complete(client, no_analysis):
     game_id = client.post("/games", json={}).json()["id"]
     assert client.post(f"/games/{game_id}/complete", json={}).status_code == 422

@@ -121,6 +121,10 @@ def test_mate_cause_and_line_columns_are_added(legacy_engine):
     } <= _columns(legacy_engine, "moves")
 
 
+def test_live_grade_columns_are_added(legacy_engine):
+    assert {"live_eval_after", "live_classification"} <= _columns(legacy_engine, "moves")
+
+
 def test_the_scheduling_columns_are_gone(legacy_engine):
     """They are NOT NULL with no server default, so leaving them behind makes
     every insert fail — see the next test."""

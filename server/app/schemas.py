@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -66,11 +67,26 @@ class MoveIn(BaseModel):
         return self
 
 
+Classification = Literal["book", "best", "good", "inaccuracy", "mistake", "blunder"]
+
+
+class LiveGrade(BaseModel):
+    """What Play's live check said about one ply: the eval after it (white
+    POV, centipawns, clamped as the analysis job clamps) and, on the player's
+    own moves, the badge shown."""
+
+    ply: int = Field(ge=1)
+    eval_after: float | None = Field(default=None, ge=-1000, le=1000)
+    classification: Classification | None = None
+
+
 class GameComplete(BaseModel):
     """Result is optional: the server derives checkmate/stalemate itself;
-    pass one explicitly for resignations/agreed draws."""
+    pass one explicitly for resignations/agreed draws. `live` carries Play's
+    own grades, kept beside the analysis job's (Move.live_*)."""
 
     result: str | None = None
+    live: list[LiveGrade] = Field(default_factory=list, max_length=MAX_IMPORTED_PLIES)
 
     @model_validator(mode="after")
     def validate_result(self) -> "GameComplete":
@@ -112,6 +128,8 @@ class MoveOut(BaseModel):
     threat_cp: float | None
     threat_mate: int | None
     mistake_cause: str | None
+    live_eval_after: float | None
+    live_classification: str | None
     motifs: list[str]
     explanation: str | None
 

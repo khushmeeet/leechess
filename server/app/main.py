@@ -174,7 +174,8 @@ def _migrate_existing_tables(bind=None) -> None:
         # them keeps its grades, and scripts/retag.py re-grades it on its
         # clamped evals alone. Mistake causes are derived, and retag.py fills
         # them in for older games too. The engine lines need a re-analysis;
-        # Review simply shows none for a game analyzed before them.
+        # Review simply shows none for a game analyzed before them. Play's
+        # live grades exist only for games completed after they were sent.
         for column, sql_type in (
             ("threat_move", "VARCHAR"),
             ("threat_cp", "FLOAT"),
@@ -184,6 +185,8 @@ def _migrate_existing_tables(bind=None) -> None:
             ("mistake_cause", "VARCHAR"),
             ("best_line", "VARCHAR"),
             ("reply_line", "VARCHAR"),
+            ("live_eval_after", "FLOAT"),
+            ("live_classification", "VARCHAR"),
         ):
             if column not in columns_of("moves"):
                 conn.execute(text(f"ALTER TABLE moves ADD COLUMN {column} {sql_type}"))

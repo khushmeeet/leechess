@@ -143,6 +143,11 @@ test('finished game auto-saves, completes, and queues analysis', async ({ page, 
 	expect(['analyzing', 'complete']).toContain(game.analysis_status);
 	expect(game.moves).toHaveLength(2); // e4 and the engine's reply
 	expect(game.moves.at(0).san).toBe('e4');
+	// what Play's live check said rides along, for Review to compare with:
+	// a badge on the player's move only, an eval on both
+	expect(game.moves.at(0).live_classification).toEqual(expect.any(String));
+	expect(game.moves.at(1).live_classification).toBeNull();
+	for (const played of game.moves) expect(played.live_eval_after).toEqual(expect.any(Number));
 });
 
 test('winning shows a congratulatory overlay with confetti', async ({ page }) => {

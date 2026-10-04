@@ -14,6 +14,48 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Live grades and Review grades, reconciled (2026-10-04)
+
+**Goal:** Play could show "Mistake" on a move that Review then called "Blunder", with
+nothing to say why. Both grade by the same rules (`shared/classification.json`), but
+Play's browser engine searches to depth 16 and the analysis job to depth 18 with native
+Stockfish, so the two can see different things. They cannot be made to agree on every
+move, so Review now says when they disagree, and why.
+
+- **Play sends its grades with the game** (`completeGame(id, result, live)`): the eval
+  after every ply and the badge on each of the player's moves. Completion first waits
+  for the engine chain, so the game-ending move's grade is included. The game id and
+  the grade lists are held across that wait, so "New game" straight after a
+  resignation cannot strand the old game.
+- **The server keeps them beside its own** (`Move.live_eval_after`,
+  `Move.live_classification`, migrated in). `GameComplete.live` checks each grade: the
+  ply is at least 1, the grade is a real one, and the eval is within the clamp. A ply
+  past the record is dropped.
+- **Review explains a change** (`$lib/gradeChange`): an "In play" row under the move.
+  Example: "During the game, Play's quick check called Nf6 an inaccuracy (4 points of
+  winning chances lost). The deeper check after the game sees more: it is a blunder
+  (N points of winning chances lost)." Each check's loss comes from its own evals; a
+  number is left out when an eval is not on record (the first move has no live eval
+  before it).
+  - It appears only when one of the two grades is an inaccuracy or worse. Book, best
+    and good count as one tier, because a one-point swing across the best/good line
+    is noise.
+- **Play's game-over panel** now says that Review checks every move again and explains
+  any change.
+- **Testing:**
+  - `test_games_api.py`: grades are stored, an out-of-range ply is dropped, and three
+    kinds of bad grade are rejected with nothing half-applied.
+  - `test_migration.py`: the two new columns are added.
+  - `gradeChange.test.ts`: losses from each side, harsher and milder changes, the tier
+    rule, missing grades, and the sentence.
+  - Play store tests: the mating move's grade is sent, and badges go on the player's
+    moves only.
+  - `review.e2e.ts`: a game completed with 3…Nf6 graded "inaccuracy" live shows the
+    note, and a move both checks agree on shows none.
+  - `play.e2e.ts`: a resigned game's record carries the live grades.
+
+---
+
 ## Addendum — Opening repertoire tracker (2026-10-04)
 
 **Goal:** the architecture doc's V2 list asked for an opening repertoire "tied to your

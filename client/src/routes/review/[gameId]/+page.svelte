@@ -30,6 +30,7 @@
 	import { linkMoves, linkWhy, type WhyAction } from '$lib/summaryLinks';
 	import NotationText from '$lib/components/NotationText.svelte';
 	import { isMistakeCause, MISTAKE_CAUSES } from '$lib/mistakes';
+	import { gradeChange, gradeChangeText } from '$lib/gradeChange';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import {
 		classifyThreat,
@@ -128,6 +129,10 @@
 	});
 
 	const selectedMove = $derived(game?.moves[selectedPly - 1] ?? null);
+	/** Where the deeper analysis changed the badge Play showed during the game. */
+	const selectedGradeChange = $derived(
+		selectedMove ? gradeChange(selectedMove, game?.moves[selectedMove.ply - 2]) : null
+	);
 
 	// The two lines from the decision under review, as stored by the analysis
 	// job: what the engine wanted, and what followed the move that was
@@ -769,6 +774,19 @@
 					<span class="font-semibold" data-testid="review-cause-label">{cause.label}.</span>
 					{cause.what}
 					<span class="text-muted">Next time: {cause.habit}</span>
+				</p>
+			{/if}
+
+			{#if selectedMove && selectedGradeChange}
+				<!-- Play's badge came from a quicker search; say so when this one
+				     disagrees, rather than contradicting it without a word. -->
+				<p class="mt-2 text-sm text-body" data-testid="review-grade-change">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">In play</span>
+					<NotationText
+						text={gradeChangeText(selectedGradeChange, selectedMove.san)}
+						fens={[selectedMove.fen_before]}
+						onhover={(target) => (notationTarget = target)}
+					/>
 				</p>
 			{/if}
 

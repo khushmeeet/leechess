@@ -1,6 +1,6 @@
 import { type APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { API, boardPosition, gameNumber, move, scholarsMateSans } from './helpers';
+import { API, boardPosition, gameNumber, move, scholarsMateSans, waitForAnalysis } from './helpers';
 
 // Phase 1 Review screen: a completed game's analysis job runs end-to-end
 // (real Stockfish, low depth via LEECHESS_ANALYSIS_DEPTH in the e2e server),
@@ -55,6 +55,43 @@ test('completed game gets analyzed and reviewed', async ({ page, request }) => {
 	await expect(page.getByTestId('selected-move')).toContainText('Nf6');
 	await expect(page.getByTestId('best-move-hint')).toBeVisible();
 	await expect(page.getByTestId('best-move-hint')).toContainText('best was');
+});
+
+test('a grade the deeper check changed says so, with what Play showed', async ({
+	page,
+	request
+}) => {
+	// Scholar's Mate as Play would send it, with 3…Nf6?? (ply 6) graded only
+	// an inaccuracy live — it hangs mate in one, so the analysis job's grade
+	// is a blunder at any depth.
+	const created = await request.post(`${API}/games`, { data: { mode: 'local' } });
+	const gameId = (await created.json()).id;
+	for (const san of scholarsMateSans) {
+		await request.post(`${API}/games/${gameId}/moves`, { data: { san } });
+	}
+	const live = [
+		{ ply: 5, eval_after: -20, classification: null },
+		{ ply: 6, eval_after: 20, classification: 'inaccuracy' },
+		{ ply: 4, eval_after: 30, classification: 'book' }
+	];
+	const completed = await request.post(`${API}/games/${gameId}/complete`, {
+		data: { live }
+	});
+	expect(completed.ok()).toBe(true);
+	await waitForAnalysis(request, gameId);
+
+	await page.goto(`/review/${gameId}`);
+	await page.getByTestId('move-list').getByRole('button', { name: /Nf6/ }).click();
+	const note = page.getByTestId('review-grade-change');
+	await expect(note).toContainText(
+		'Play’s quick check called Nf6 an inaccuracy (4 points of winning chances lost)'
+	);
+	await expect(note).toContainText('The deeper check after the game sees more: it is a blunder');
+
+	// a move both checks agree on has no note
+	await page.getByTestId('move-list').getByRole('button', { name: /Nc6/ }).click();
+	await expect(page.getByTestId('selected-move')).toContainText('Nc6');
+	await expect(note).toBeHidden();
 });
 
 test('each move shows the threat it had to answer, and whether it did', async ({

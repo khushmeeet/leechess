@@ -715,7 +715,16 @@ describe('finishing games', () => {
 
 		await vi.waitFor(() => expect(session.completedGameId).toBe(42));
 		expect(session.game.result).toBe('1-0');
-		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '1-0');
+		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '1-0', expect.any(Array));
+		// Play's own grades ride along for Review to compare with — the mating
+		// move's too, though the game ended before its grade was in: completion
+		// waits for it. Badges on the player's moves only.
+		const live = api.completeGame.mock.calls[0][2]!;
+		expect(live.map((grade) => grade.ply)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+		expect(live.filter((grade) => grade.classification !== null).map((g) => g.ply)).toEqual([
+			1, 3, 5, 7
+		]);
+		expect(live.at(-1)!.eval_after).toBe(1000); // mate on the board, at the clamp
 		// "Saved as game #1" — the account's own count, taken from the server's
 		// answer rather than from the record's id
 		expect(session.completedGameNumber).toBe(1);
@@ -729,7 +738,10 @@ describe('finishing games', () => {
 
 		session.resign();
 		await settle();
-		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '0-1');
+		expect(api.completeGame).toHaveBeenCalledExactlyOnceWith(42, '0-1', [
+			{ ply: 1, eval_after: expect.any(Number), classification: expect.any(String) },
+			{ ply: 2, eval_after: expect.any(Number), classification: null }
+		]);
 		expect(persistence.clearActiveGame).toHaveBeenCalled();
 		expect(persistence.saveActiveGame).not.toHaveBeenCalled(); // resigned games stay cleared
 	});

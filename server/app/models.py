@@ -171,6 +171,14 @@ class Move(Base):
     # missed_threat, hung_piece, allowed_reply, missed_tactic or positional
     # (app/mistakes.py). Derived from the columns above, never from the engine.
     mistake_cause: Mapped[str | None] = mapped_column(String, nullable=True)
+    # What Play's live check said during the game — the browser engine, which
+    # searches shallower than the analysis job: the eval after the move (white
+    # POV, clamped like eval_after) and, on the player's own moves, the badge
+    # Play showed. Sent with the game's completion so Review can say where the
+    # deeper check changed a grade, and why. Null for imported games, games
+    # played without an engine, and anything completed before this existed.
+    live_eval_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    live_classification: Mapped[str | None] = mapped_column(String, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="moves")
     motif_tags: Mapped[list["MotifTag"]] = relationship(
