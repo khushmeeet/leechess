@@ -41,6 +41,16 @@ MISSED_TACTIC = "missed_tactic"
 POSITIONAL = "positional"
 CAUSES = (MISSED_THREAT, HUNG_PIECE, ALLOWED_REPLY, MISSED_TACTIC, POSITIONAL)
 
+# The causes in words, for the LLM prompt (app/explanations.py). The client's
+# $lib/mistakes.ts has the screen's own wording.
+CAUSE_WORDS = {
+    MISSED_THREAT: "their last move threatened something, and this move left it on the board.",
+    HUNG_PIECE: "this move left a piece where it can be taken for free.",
+    ALLOWED_REPLY: "this move allowed a forcing reply: a check, a mate or a tactic.",
+    MISSED_TACTIC: "the player had a tactic or a free capture, and played something else.",
+    POSITIONAL: "no single tactic; the position slipped.",
+}
+
 
 def _legal(board: chess.Board, uci: str | None) -> chess.Move | None:
     if not uci:

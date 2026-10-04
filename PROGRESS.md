@@ -14,6 +14,45 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — The LLM gets facts, not a FEN (2026-10-04)
+
+**Goal:** the "Why" prompt sent the board as a raw FEN, which LLMs often misread, plus bare
+motif tag names. At 21. Be6 that meant asking the model to explain a deflection that was
+not there (a false tag, since fixed), from a board it might not read correctly.
+
+- **`build_prompt` now sends the facts in words** (`server/app/explanations.py`):
+  - **Position:** both sides' pieces by square ("White: King e1, Queen h5, Rooks a1 h1…").
+  - **The move:** its number and grade, and the mover's winning chances before and after.
+  - **Lines:** the engine's line and the line after the move played, numbered like a
+    scoresheet ("3... g6 4. Qf3 Nf6"). They come from the stored `best_line` and
+    `reply_line`.
+  - **The threat** the move had to answer, only when `threat_kind` says the screens
+    would show one.
+  - **Loose pieces:** the mover's pieces the exchange count says are lost after the move,
+    with the piece that takes each one.
+  - **The mistake cause** in words, and material won by the engine's move or the
+    opponent's reply, naming the piece taken.
+  - **Tactics, attributed:** each motif is tied to the move that carries it ("Tactics in
+    the opponent's reply …"), rather than a list the model had to assign.
+- **The system prompt** asks for pieces named the way the facts name them ("the knight on
+  d2"), only pieces that stand where they are said to stand, and a closing sentence
+  starting "Rule:" that the player can reuse.
+- **Invented boards are rejected.** `misplaced_pieces` finds every "piece on square" in
+  the reply and checks it against the positions the text may talk about: before and after
+  the move, and every position along both lines. Any mismatch means the model made part
+  of the board up.
+  - **What happens then:** the text is logged and not stored, and generation goes on to
+    the next move. A wrong square taught as fact is worse than no explanation.
+- **Not checked live.** The real API stays off in every suite and in verification, so the
+  prompt's effect on the texts themselves is still a manual check, as the Phase 5
+  checklist already says.
+- **Testing:** `test_explanations.py` now pins the prompt's facts on the hung-queen and
+  Scholar's-mate positions, that no FEN appears in it, the misplaced-piece check across
+  the lines, and that an invented knight is not stored while the next move's explanation
+  is. pytest: `test_explanations.py`, 19 passed.
+
+---
+
 ## Addendum — Think first at critical moments (2026-10-04)
 
 **Goal:** the app graded moves, never the thinking behind them. At the positions that
