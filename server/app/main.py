@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app import openings
 from app.analysis import reset_stale_analyses
 from app.auth import router as auth_router
 from app.auth.backend import fastapi_users
@@ -66,6 +68,9 @@ async def lifespan(app: FastAPI):
     # into Game rows when they ended, so what is left is links nobody took up
     # and boards both players walked away from.
     sweep_abandoned()
+    # The opening book (app/openings.py) takes most of a second to build;
+    # build it now, off the request path, rather than in the first review.
+    threading.Thread(target=openings.warm, name="opening-book", daemon=True).start()
     sweeper = asyncio.create_task(_sweep_periodically())
     try:
         yield

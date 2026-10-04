@@ -103,6 +103,11 @@ export interface GameDetail extends GameSummary {
 	summary: string | null;
 	/** Server-computed per-side stats — null until every move is analyzed. */
 	cpl_summary: GameCplSummary | null;
+	/** The opening the game reached, named as Play names it. */
+	opening: { eco: string; family: string; variation: string | null } | null;
+	/** The first move off the opening book, with the book moves there
+	 * instead; null for a game that never left it (or never reached it). */
+	left_book: { ply: number; san: string; book_moves: string[] } | null;
 }
 
 export class ApiError extends Error {
@@ -378,6 +383,23 @@ export function recordCriticalMoment(moment: CriticalMomentResult): Promise<{ id
 	return request('/thinking/moments', { method: 'POST', body: JSON.stringify(moment) });
 }
 
+/** One opening you play from one side (Progress's "Your openings"). */
+export interface RepertoireLine {
+	color: 'white' | 'black';
+	eco: string;
+	family: string;
+	games: number;
+	wins: number;
+	draws: number;
+	losses: number;
+	/** Games where you made the first move off the book. */
+	you_left: number;
+	/** Where you most often leave the book, and the book moves there. */
+	exit: { ply: number; san: string; book_moves: string[]; times: number } | null;
+	latest_game_id: number;
+	latest_game_number: number | null;
+}
+
 /** Critical moments in the Progress window; `recent` is the latest results,
  * oldest first. */
 export interface ThinkingSummary {
@@ -431,6 +453,7 @@ export interface ProgressSummary {
 	drills_passed: number; // endgame drills converted/held in the window
 	mistake_causes: MistakeCauseCount[]; // every cause, most common first
 	thinking: ThinkingSummary;
+	repertoire: RepertoireLine[]; // most played first
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

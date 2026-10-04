@@ -239,6 +239,60 @@
 		</section>
 	{/if}
 
+	{#if progress.repertoire.length > 0}
+		<!-- Your openings: how each one goes, and where you leave known theory —
+		     the move to look up before the next game in it. -->
+		<section class="mb-6" data-testid="repertoire">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Your openings
+			</h2>
+			<div class="overflow-x-auto rounded-xs border border-line bg-card">
+				<table class="w-full text-left text-sm">
+					<thead class="text-xs text-muted">
+						<tr class="border-b border-line">
+							<th class="px-3 py-1.5 font-normal">Opening</th>
+							<th class="px-2 py-1.5 font-normal">You</th>
+							<th class="px-2 py-1.5 font-normal">Games</th>
+							<th class="px-2 py-1.5 font-normal">W–D–L</th>
+							<th class="px-3 py-1.5 font-normal">Where you leave the book</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each progress.repertoire as line (`${line.color}-${line.family}`)}
+							<tr class="border-b border-line last:border-0" data-testid="repertoire-line">
+								<td class="px-3 py-1.5">
+									<span class="mr-1 font-mono text-xs text-accent">{line.eco}</span>
+									<a
+										class="text-ink hover:underline"
+										href={resolve('/review/[gameId]', { gameId: String(line.latest_game_id) })}
+										title="Your latest game in it">{line.family}</a
+									>
+								</td>
+								<td class="px-2 py-1.5 capitalize">{line.color}</td>
+								<td class="px-2 py-1.5 tabular-nums">{line.games}</td>
+								<td class="px-2 py-1.5 tabular-nums">{line.wins}–{line.draws}–{line.losses}</td>
+								<td class="px-3 py-1.5" data-testid="repertoire-exit">
+									{#if line.exit}
+										<span class="font-mono font-semibold"
+											>{Math.ceil(line.exit.ply / 2)}{line.exit.ply % 2 ? '.' : '…'}{line.exit
+												.san}</span
+										>
+										{line.exit.times > 1 ? `(${line.exit.times}×)` : ''}
+										{#if line.exit.book_moves.length > 0}
+											<span class="text-muted">— book: {line.exit.book_moves.join(', ')}</span>
+										{/if}
+									{:else}
+										<span class="text-faint">your opponent left it first</span>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	{#if progress.weakest_motifs.length > 0}
 		<section class="mb-6" data-testid="weakest-motifs">
 			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">

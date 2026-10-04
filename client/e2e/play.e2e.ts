@@ -79,6 +79,10 @@ test('a blundered move can be taken back, and Off withholds the offer', async ({
 	expect(blundered).toBe(true);
 
 	await expect(offer).toBeVisible();
+	// The badge lands before the engine's reply (both orderings are live, see
+	// PlaySession.takeBack), so let the reply land before taking the snapshot
+	// the toggles are checked against — otherwise it can arrive in between.
+	await expect(panel).toContainText('white to move', { timeout: 15_000 });
 
 	// the hint-mode gate: Off is a real game, so the do-over goes away with
 	// the rest of the help — without the position changing underneath

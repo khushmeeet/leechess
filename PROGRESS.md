@@ -14,6 +14,56 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Opening repertoire tracker (2026-10-04)
+
+**Goal:** the architecture doc's V2 list asked for an opening repertoire "tied to your
+actual games, flags when you left book and what the book move was". Review named no
+opening at all; Play showed one only during the game.
+
+- **The server names openings now** (`app/openings.py`). The book loader keeps each line's
+  name as well as its positions, read from the same TSVs as the client, first name wins.
+  - `opening_of(moves)` ports the client's `openingForFens`: the deepest named position
+    names the line, and a family-only entry never erases a variation named earlier. So
+    Review and Progress name an opening exactly as Play does.
+  - `left_book(moves)` finds the first move into a position no line has, from one that
+    was on a line, with the legal moves there that stay on one (`book_moves`). A game
+    set up off the book, like an endgame drill, never "leaves" it.
+- **Review** (`GameDetail.opening` and `left_book`, computed from the moves):
+  - **Header:** "A13 English Opening: Agincourt Defense · left the book at 5…c5". The
+    link jumps to that move.
+  - **Move list:** an "off book" marker on that move.
+  - **Under the move:** "c5 left the opening book. Book moves here: O-O." Each book move
+    can be pointed at on the board; they are resolved one by one, because a bare "e5" in
+    a list reads as a square.
+- **Progress: "Your openings"** lists one row per side and opening family, most played
+  first.
+  - **Columns:** games, W–D–L from your side, and where you leave the book (your most
+    frequent first move off it, how often, and the book moves there). If the opponent
+    always left first, it says so.
+  - **What counts:** only games with a side of your own, against the engine or a friend.
+  - **Link:** the opening's name opens your latest game in it.
+- **Fixed on the way:** building the book took 2.6 s, paid by whichever request needed it
+  first; the first Review page after a restart sat on "Loading game…" past a browser
+  test's timeout. Lines share their first moves, so each position is now reached once
+  and reused (0.85 s). The book is also built in a background thread at boot, behind a
+  lock so a request arriving mid-build waits instead of building it again.
+- **Testing:**
+  - `test_openings_review.py` covers naming (including the Sicilian rule), the move off
+    the book and its book moves, a game still in the book, a set-up position, the review
+    endpoint's two fields, and the repertoire: per side, W–D–L, your exit counted twice,
+    the opponent leaving first, and local games left out. The empty-progress test
+    includes the new block.
+  - `openings.e2e.ts` covers the Review header, marker, link and book moves, and the
+    Progress row. It passed six runs in a row after the speed-up.
+  - **A race fixed in the takeback spec.** It took its snapshot of the move list as soon
+    as the takeback offer appeared, but the badge lands before the engine's reply. When
+    1. g4 itself graded a blunder, …e5 arrived between the snapshot and the comparison.
+    The spec now waits for the reply first; it passed four repeated runs.
+  - **Results:** pytest 663 passed, vitest 551 passed. Playwright full suite: 102 of 103
+    passed; the one failure was that race, fixed above.
+
+---
+
 ## Addendum — Think first results are kept and counted (2026-10-04)
 
 **Goal:** a Think-first check ended in "Critical moments this session: 1 of 1 found", and

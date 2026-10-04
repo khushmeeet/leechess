@@ -10,6 +10,7 @@ from pydantic import (
 )
 
 from app.cpl import move_loss
+from app.openings import left_book, opening_of
 
 RESULTS = {"1-0", "0-1", "1/2-1/2", "*"}
 
@@ -244,6 +245,20 @@ class GameCplSummary(BaseModel):
     black: SideCpl
 
 
+class OpeningOut(BaseModel):
+    eco: str
+    family: str
+    variation: str | None
+
+
+class LeftBookOut(BaseModel):
+    """The first move off the book, and the book moves there instead."""
+
+    ply: int
+    san: str
+    book_moves: list[str]
+
+
 class GameDetail(GameOut):
     pgn: str
     moves: list[MoveOut]
@@ -255,6 +270,20 @@ class GameDetail(GameOut):
     def summary_text(cls, value: object) -> object:
         """The ORM hands over the CoachSummary row; the API serves its text."""
         return getattr(value, "text", value)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def opening(self) -> OpeningOut | None:
+        """The opening the game reached, named as Play names it."""
+        found = opening_of(self.moves)
+        return OpeningOut(**vars(found)) if found else None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def left_book(self) -> LeftBookOut | None:
+        """Where the game left the opening book (Review flags the move)."""
+        found = left_book(self.moves)
+        return LeftBookOut(**vars(found)) if found else None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -461,6 +490,34 @@ class ThinkingSummary(BaseModel):
     recent: list[bool]
 
 
+class RepertoireExit(BaseModel):
+    """Where you most often leave the book in one opening, and the book
+    moves that were there instead."""
+
+    ply: int
+    san: str
+    book_moves: list[str]
+    times: int
+
+
+class RepertoireLine(BaseModel):
+    """One opening you have played, from one side: how it went, and where
+    you tend to leave known theory."""
+
+    color: str  # "white" | "black" — your side
+    eco: str
+    family: str
+    games: int
+    wins: int
+    draws: int
+    losses: int
+    # games where you, not your opponent, made the first move off the book
+    you_left: int
+    exit: RepertoireExit | None
+    latest_game_id: int
+    latest_game_number: int | None
+
+
 class ProgressOut(BaseModel):
     """GET /progress response — everything computed on read (spec §4.5)."""
 
@@ -475,6 +532,9 @@ class ProgressOut(BaseModel):
     # are zero until games analyzed with causes are in the window.
     mistake_causes: list[MistakeCauseCount]
     thinking: ThinkingSummary
+    # Openings you played as one side, most played first (games against the
+    # engine or a friend — a pass-and-play game has no side of your own).
+    repertoire: list[RepertoireLine]
 
 
 class WikibookPageOut(BaseModel):

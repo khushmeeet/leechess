@@ -539,6 +539,30 @@
 		<p class="text-sm text-muted">
 			{game.white} vs {game.black} · {outcome ? OUTCOME_LABELS[outcome] : game.result} · {game.mode}
 		</p>
+		{#if game.opening}
+			<!-- The opening, and where the game left known theory: the move to
+			     look at when the opening is the part that went wrong. -->
+			<p class="w-full text-sm text-body" data-testid="review-opening">
+				<span
+					class="mr-1 inline-flex items-center rounded-xs border border-accent-line px-1.5 py-0.5 align-[1px] text-[10px] font-semibold tracking-[0.09em] text-accent"
+					>{game.opening.eco}</span
+				>
+				<span class="font-semibold text-ink"
+					>{game.opening.family}{game.opening.variation ? `: ${game.opening.variation}` : ''}</span
+				>
+				{#if game.left_book}
+					{@const left = game.left_book}
+					·
+					<button
+						type="button"
+						class="text-accent hover:underline"
+						data-testid="review-left-book-link"
+						onclick={() => select(left.ply)}
+						>left the book at {Math.ceil(left.ply / 2)}{left.ply % 2 ? '.' : '…'}{left.san}</button
+					>
+				{/if}
+			</p>
+		{/if}
 		{#if game.analysis_status === 'complete'}
 			<div class="flex flex-wrap items-center gap-3 sm:ml-auto">
 				{#if practiceQueued !== null}
@@ -745,6 +769,28 @@
 					<span class="font-semibold" data-testid="review-cause-label">{cause.label}.</span>
 					{cause.what}
 					<span class="text-muted">Next time: {cause.habit}</span>
+				</p>
+			{/if}
+
+			{#if selectedMove && game.left_book?.ply === selectedMove.ply}
+				{@const left = game.left_book}
+				<p class="mt-2 text-sm text-body" data-testid="review-left-book">
+					<span class="mr-1 text-xs font-semibold tracking-wide text-muted uppercase">Book</span>
+					<NotationText
+						text={`${left.san} left the opening book.`}
+						fens={[selectedMove.fen_before]}
+						onhover={(target) => (notationTarget = target)}
+					/>
+					{#if left.book_moves.length > 0}
+						<!-- each one its own move: a bare "e5" in a list would read as a square -->
+						Book moves here:
+						{#each left.book_moves as san, i (san)}<NotationText
+								text={san}
+								fens={[selectedMove.fen_before]}
+								line
+								onhover={(target) => (notationTarget = target)}
+							/>{i < left.book_moves.length - 1 ? ', ' : '.'}{/each}
+					{/if}
 				</p>
 			{/if}
 
@@ -970,6 +1016,13 @@
 													classification={move.classification as Classification}
 													compact
 												/>
+											{/if}
+											{#if game.left_book?.ply === move.ply}
+												<span
+													class="text-[10px] font-semibold tracking-wide text-muted uppercase"
+													title="The first move off the opening book"
+													data-testid="move-left-book">off book</span
+												>
 											{/if}
 											{#if move.motifs.length > 0}
 												<span

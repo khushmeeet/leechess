@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.backend import current_active_user
 from app.auth.models import User
-from app.cpl import aggregate_cpl, player_moves
+from app.cpl import TWO_SIDED_MODES, aggregate_cpl, player_moves
 from app.db import get_db
 from app.mistakes import CAUSES
+from app.openings import left_book, opening_of
 from app.models import (
     CriticalMoment,
     EndgameDrillAttempt,
@@ -31,6 +32,8 @@ from app.schemas import (
     MistakeExample,
     MotifProgress,
     ProgressOut,
+    RepertoireExit,
+    RepertoireLine,
     ThinkingSummary,
 )
 
@@ -118,6 +121,57 @@ def mistake_causes(games: list[Game]) -> list[MistakeCauseCount]:
             -(count.mistakes + count.blunders),
             CAUSES.index(count.cause),
         ),
+    )
+
+
+def repertoire(games: list[Game]) -> list[RepertoireLine]:
+    """Your openings, one line per (side, family), most played first.
+
+    Only games with a side of your own count — against the engine or a
+    friend — and a game that never reached a named position is no opening
+    to report. The exit is the move off the book you made most often in that
+    opening (ties to the earliest), with the book moves there.
+    """
+    lines: dict[tuple[str, str], RepertoireLine] = {}
+    exits: dict[tuple[str, str], dict[tuple[int, str], tuple[list[str], int]]] = {}
+    for game in games:  # oldest first
+        if game.mode not in TWO_SIDED_MODES:
+            continue
+        opening = opening_of(game.moves)
+        if opening is None:
+            continue
+        color = game.user_color or "white"
+        key = (color, opening.family)
+        line = lines.get(key) or RepertoireLine(
+            color=color, eco=opening.eco, family=opening.family, games=0, wins=0,
+            draws=0, losses=0, you_left=0, exit=None,
+            latest_game_id=game.id, latest_game_number=game.number,
+        )  # fmt: skip
+        lines[key] = line
+        line.games += 1
+        line.latest_game_id, line.latest_game_number = game.id, game.number
+        winner = {"1-0": "white", "0-1": "black"}.get(game.result)
+        if game.result == "1/2-1/2":
+            line.draws += 1
+        elif winner == color:
+            line.wins += 1
+        elif winner is not None:
+            line.losses += 1
+        left = left_book(game.moves)
+        if left is not None and (left.ply % 2 == 1) == (color == "white"):
+            line.you_left += 1
+            seen = exits.setdefault(key, {})
+            moves, times = seen.get((left.ply, left.san), (left.book_moves, 0))
+            seen[(left.ply, left.san)] = (moves, times + 1)
+    for key, seen in exits.items():
+        (ply, san), (moves, times) = max(
+            seen.items(), key=lambda item: (item[1][1], -item[0][0])
+        )
+        lines[key].exit = RepertoireExit(
+            ply=ply, san=san, book_moves=moves, times=times
+        )
+    return sorted(
+        lines.values(), key=lambda line: (-line.games, line.color, line.family)
     )
 
 
@@ -245,4 +299,5 @@ def get_progress(
         drills_passed=drills_passed,
         mistake_causes=mistake_causes(games),
         thinking=thinking_summary(db, user, since),
+        repertoire=repertoire(games),
     )
