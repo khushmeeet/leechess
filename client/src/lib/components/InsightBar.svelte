@@ -20,6 +20,9 @@
 		 * the tactic row because it is the question to answer first: your own
 		 * tactic is no good if theirs lands before it. */
 		threat?: Snippet;
+		/** "Think first" at a critical moment: candidates before the move.
+		 * Above the threat row — while it is up, the move waits on it. */
+		think?: Snippet;
 		/** The live tactic row, rendered under the opening line. */
 		tactic?: Snippet;
 		/** The "take back and think again" offer, shown while the last move
@@ -48,6 +51,7 @@
 		openingState,
 		ply,
 		threat,
+		think,
 		tactic,
 		takeback,
 		showCoach,
@@ -118,6 +122,8 @@
 	</div>
 
 	{@render takeback?.()}
+
+	{@render think?.()}
 
 	{@render threat?.()}
 

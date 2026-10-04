@@ -349,6 +349,16 @@
 						/>
 					</label>
 					<label class="flex items-center justify-between gap-2">
+						<span class="text-ink">Think first at critical moments</span>
+						<input
+							type="checkbox"
+							checked={displayPrefs.thinkFirst}
+							onchange={(event) => displayPrefs.setThinkFirst(event.currentTarget.checked)}
+							data-testid="think-first-toggle"
+							class="h-4 w-4"
+						/>
+					</label>
+					<label class="flex items-center justify-between gap-2">
 						<span class="text-ink">Opening theory (Review)</span>
 						<input
 							type="checkbox"

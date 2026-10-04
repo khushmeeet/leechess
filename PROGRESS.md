@@ -14,6 +14,51 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Think first at critical moments (2026-10-04)
+
+**Goal:** the app graded moves, never the thinking behind them. At the positions that
+matter, Play now asks for candidate moves before the move, and grades the list: was a move
+as good as the engine's on it, and did one of them deal with the opponent's threat.
+
+- **Only at critical moments.** A position is critical when the engine's best line beats
+  its second-best by 10 or more of the player's win% points. The lines are the MultiPV-3
+  ones Play already searches for the Ideas row, so detection costs nothing. Asking
+  everywhere would teach the player to click through the prompt; asking where it matters
+  teaches when to slow down. A mate is no critical moment when everything else wins anyway.
+- **Marking candidates.** While the card is up, a move made on the board is marked, not
+  played: it is listed (up to three), drawn as a pale-blue arrow, and the piece snaps back
+  (the board's `syncKey`). "Check my candidates" weighs each with the browser engine at
+  depth 12. "Skip, just play" lets the move through.
+- **What is held back.** The Tactic row and the Engine row would hand over the answer, so
+  they wait while the move is held. The threat row stays: it is the first question.
+- **The grade** (`$lib/candidates.ts`):
+  - **Chances:** each candidate's winning chances are shown.
+  - **The engine's move:** whether it was on the list, or whether a candidate came within
+    2.5 points of it (the best/good bar). If neither, the move to find is named.
+  - **Their threat:** as in Review, a threat is answered, left on the board, or
+    sidestepped. Sidestepped means it is gone but the candidate trails the engine's move
+    by 10 or more points, and the grade names the reply that punishes it. On move 21 of
+    the play-tested game, Bxc8 answered …Bxf5, "Be6 gets out of it, but then their best
+    is …Bxe6", and Bd3 runs into …Bxh3. The first cut called all three answers.
+  - **Session record:** "Critical moments this session: 1 of 1 found".
+- **Where.** Nudge and Full, not Off (a real game), not zen (no panel to ask in), and not
+  friend games. The Settings toggle "Think first at critical moments" is on by default.
+- **E2E default.** The browser fixture turns Think first off for every spec but its own,
+  because which positions are critical is the engine's call. A spec about something else
+  would find its move turned into a candidate.
+- **Not yet stored.** The session record lives in the page. Counting it on Progress
+  ("critical moments found, over time") is the obvious next step.
+- **Testing:**
+  - `candidates.test.ts` covers the gap from each side, mates, one-line positions, finding
+    the move, a move as good as it, missing it, and the three threat outcomes.
+  - `think.e2e.ts` uses the hung-queen position. Two candidates are marked and not
+    played, and the answer rows wait. Checking finds Nxh4 and the rows come back, then
+    the move plays. Skipping, and Off, never hold a move.
+  - **Results:** vitest 524 passed. Playwright: think, play, insight-bar, zen and
+    hint-ladder specs, 33 passed.
+
+---
+
 ## Addendum — An explorable Review (2026-10-04)
 
 **Goal:** Review was look-only. It showed the engine's first move as a green arrow and
