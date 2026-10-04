@@ -364,6 +364,30 @@ export function recordDrillAttempt(
 	});
 }
 
+/** One graded "Think first" check from Play: was a move as good as the
+ * engine's among the candidates, and did one answer their threat. */
+export interface CriticalMomentResult {
+	fen: string;
+	found: boolean;
+	had_threat: boolean;
+	answered_threat: boolean | null;
+	candidates: number;
+}
+
+export function recordCriticalMoment(moment: CriticalMomentResult): Promise<{ id: number }> {
+	return request('/thinking/moments', { method: 'POST', body: JSON.stringify(moment) });
+}
+
+/** Critical moments in the Progress window; `recent` is the latest results,
+ * oldest first. */
+export interface ThinkingSummary {
+	moments: number;
+	found: number;
+	threats: number;
+	answered: number;
+	recent: boolean[];
+}
+
 export interface MotifProgress {
 	motif: string;
 	attempts: number;
@@ -406,6 +430,7 @@ export interface ProgressSummary {
 	puzzles_solved: number;
 	drills_passed: number; // endgame drills converted/held in the window
 	mistake_causes: MistakeCauseCount[]; // every cause, most common first
+	thinking: ThinkingSummary;
 }
 
 export function getProgress(days?: number | null): Promise<ProgressSummary> {

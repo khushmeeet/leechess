@@ -24,7 +24,16 @@ from app.endgame_drills import seed_catalog
 from app.legacy_ownership import claim_legacy_rows
 from app.limits import BodySizeLimit
 from app.live import sweep_abandoned
-from app.routers import endgames, games, live, progress, puzzles, testing, wikibook
+from app.routers import (
+    endgames,
+    games,
+    live,
+    progress,
+    puzzles,
+    testing,
+    thinking,
+    wikibook,
+)
 from app.seeding import maybe_autoseed
 
 logger = logging.getLogger(__name__)
@@ -356,6 +365,7 @@ app.include_router(games.router)
 app.include_router(live.router)
 app.include_router(puzzles.router)
 app.include_router(progress.router)
+app.include_router(thinking.router)
 app.include_router(endgames.router)
 app.include_router(wikibook.router)
 

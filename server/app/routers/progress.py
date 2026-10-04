@@ -17,13 +17,21 @@ from app.auth.models import User
 from app.cpl import aggregate_cpl, player_moves
 from app.db import get_db
 from app.mistakes import CAUSES
-from app.models import EndgameDrillAttempt, Game, Puzzle, PuzzleAttempt, utcnow
+from app.models import (
+    CriticalMoment,
+    EndgameDrillAttempt,
+    Game,
+    Puzzle,
+    PuzzleAttempt,
+    utcnow,
+)
 from app.schemas import (
     GameCplPoint,
     MistakeCauseCount,
     MistakeExample,
     MotifProgress,
     ProgressOut,
+    ThinkingSummary,
 )
 
 router = APIRouter(prefix="/progress", tags=["progress"])
@@ -110,6 +118,32 @@ def mistake_causes(games: list[Game]) -> list[MistakeCauseCount]:
             -(count.mistakes + count.blunders),
             CAUSES.index(count.cause),
         ),
+    )
+
+
+# Latest critical moments shown as the trend strip.
+RECENT_MOMENTS = 20
+
+
+def thinking_summary(
+    db: Session, user: User, since: datetime | None
+) -> ThinkingSummary:
+    """Think first, counted: the move to find on the list, threats answered."""
+    query = (
+        select(CriticalMoment)
+        .where(CriticalMoment.user_id == user.id)
+        .order_by(CriticalMoment.created_at, CriticalMoment.id)
+    )
+    if since is not None:
+        query = query.where(CriticalMoment.created_at >= since)
+    moments = list(db.scalars(query))
+    with_threat = [moment for moment in moments if moment.had_threat]
+    return ThinkingSummary(
+        moments=len(moments),
+        found=sum(moment.found for moment in moments),
+        threats=len(with_threat),
+        answered=sum(bool(moment.answered_threat) for moment in with_threat),
+        recent=[moment.found for moment in moments[-RECENT_MOMENTS:]],
     )
 
 
@@ -210,4 +244,5 @@ def get_progress(
         puzzles_solved=puzzles_solved,
         drills_passed=drills_passed,
         mistake_causes=mistake_causes(games),
+        thinking=thinking_summary(db, user, since),
     )

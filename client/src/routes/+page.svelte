@@ -24,6 +24,7 @@
 	import OverlayToggles from '$lib/components/OverlayToggles.svelte';
 	import { boardHighlights, overlayMarks, type OverlayName } from '$lib/overlays';
 	import { stockfish } from '$lib/stores/stockfish';
+	import { recordCriticalMoment } from '$lib/api/client';
 	import NotationText from '$lib/components/NotationText.svelte';
 	import { targetSquare, type NotationTarget } from '$lib/notation';
 	import { gameOutcome, type GameOutcome } from '$lib/result';
@@ -206,6 +207,17 @@
 			moments: thinkRecord.moments + 1,
 			found: thinkRecord.found + (current.grade?.closeEnough ? 1 : 0)
 		};
+		// kept for Progress — but anonymous play keeps nothing
+		const grade = current.grade;
+		if (grade && !account.anonymous) {
+			recordCriticalMoment({
+				fen: current.fen,
+				found: grade.closeEnough,
+				had_threat: threat !== null,
+				answered_threat: grade.answersThreat ? grade.answersThreat.length > 0 : null,
+				candidates: weighed.length
+			}).catch((error) => console.error('recording the critical moment failed:', error));
+		}
 	}
 
 	function skipThinking() {
@@ -635,7 +647,7 @@
 					</p>
 					<p class="text-xs text-muted" data-testid="think-record">
 						Now play your move. Critical moments this session: {thinkRecord.found} of {thinkRecord.moments}
-						found.
+						found{account.anonymous ? '' : ' — Progress keeps the count'}.
 					</p>
 				{:else}
 					<p>

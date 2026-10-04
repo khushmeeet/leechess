@@ -42,7 +42,8 @@
 		progress !== null &&
 			progress.motifs.length === 0 &&
 			progress.cpl_trend.length === 0 &&
-			progress.drills_passed === 0
+			progress.drills_passed === 0 &&
+			progress.thinking.moments === 0
 	);
 
 	// Which step of the thinking routine broke, most common first. The bars
@@ -192,6 +193,47 @@
 				<p class="mt-2 flex gap-3 text-xs text-muted">
 					<span><span class="mr-1 inline-block h-2 w-2 bg-err"></span>blunders</span>
 					<span><span class="mr-1 inline-block h-2 w-2 bg-mist"></span>mistakes</span>
+				</p>
+			</div>
+		</section>
+	{/if}
+
+	{#if progress.thinking.moments > 0}
+		{@const thinking = progress.thinking}
+		<!-- Think first: the thinking at critical moments, not the moves. -->
+		<section class="mb-6" data-testid="thinking">
+			<h2 class="mb-2 text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+				Thinking at critical moments
+			</h2>
+			<div class="rounded-xs border border-line bg-card p-3 text-sm">
+				<p class="text-ink" data-testid="thinking-found">
+					<span class="font-semibold"
+						>{thinking.found} of {thinking.moments}
+						{thinking.moments === 1 ? 'critical moment' : 'critical moments'}:</span
+					>
+					a move as good as the engine’s was on your list of candidates.
+				</p>
+				{#if thinking.threats > 0}
+					<p class="mt-1 text-body" data-testid="thinking-threats">
+						When their last move threatened something, one of your candidates dealt with it
+						{thinking.answered} of {thinking.threats} times.
+					</p>
+				{/if}
+				<div
+					class="mt-2 flex items-center gap-1"
+					aria-label="Latest critical moments, oldest first"
+				>
+					<span class="mr-1 text-xs text-muted">Latest:</span>
+					{#each thinking.recent as found, i (i)}
+						<span
+							class="inline-block h-2.5 w-2.5 rounded-full {found ? 'bg-ok' : 'bg-err'}"
+							title={found ? 'found' : 'missed'}
+							data-testid="thinking-dot"
+						></span>
+					{/each}
+				</div>
+				<p class="mt-2 text-xs text-muted">
+					Critical moments come up on Play in Nudge and Full, with “Think first” on in Settings.
 				</p>
 			</div>
 		</section>

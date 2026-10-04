@@ -408,6 +408,28 @@ class EndgameDrillAttempt(Base):
     drill: Mapped[EndgameDrill] = relationship(back_populates="attempts")
 
 
+class CriticalMoment(Base):
+    """One "Think first" check on Play: a critical moment (one move much
+    better than the rest) where the player listed candidates and had them
+    graded. Kept so Progress can say how often the move to find was on the
+    list, and how often their threat was answered — the thinking, not the
+    moves. The client grades (it has the engine); the server only counts."""
+
+    __tablename__ = "critical_moments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[UserId | None] = _owner_column()
+    fen: Mapped[str] = mapped_column(String)
+    # A move as good as the engine's was among the candidates.
+    found: Mapped[bool] = mapped_column(Boolean)
+    # The opponent's last move threatened something the screens would show.
+    had_threat: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ...and a candidate dealt with it; null without a threat.
+    answered_threat: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    candidates: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class WikibookCache(Base):
     """One fetched Wikibooks opening-theory page, keyed by our computed page
     title. html is NULL when Wikibooks has no page for the line ("out of

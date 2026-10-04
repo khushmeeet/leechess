@@ -14,6 +14,37 @@ One entry per phase; newest first. Update this doc when a phase's exit criteria 
 
 ---
 
+## Addendum — Think first results are kept and counted (2026-10-04)
+
+**Goal:** a Think-first check ended in "Critical moments this session: 1 of 1 found", and
+the count was gone when the page closed. The thinking was the one thing Progress could
+not show.
+
+- **Stored.** After grading, Play posts each critical moment to `POST /thinking/moments`
+  (new `critical_moments` table, created by `create_all`, owner-stamped like attempts).
+  The client grades and the server only counts, the trust model puzzles and drills
+  already use. Anonymous play posts nothing. Each record holds:
+  - whether a move as good as the engine's was on the list;
+  - whether their last move threatened something, and whether a candidate dealt with it;
+  - the candidate count.
+- **Progress: "Thinking at critical moments"** sits above the weakest motifs. It shows
+  "3 of 5 critical moments: a move as good as the engine's was on your list of
+  candidates", how often a threat was answered when there was one, and a row of dots for
+  the latest 20 (green found, red missed, oldest first). It follows the 30/90/all-time
+  window.
+- **Fixed on the way:** Progress showed "Nothing to chart yet" until a game finished
+  analysis, even with moments recorded. Moments now count as something to chart.
+- **Testing:**
+  - `test_thinking.py` covers the record and its owner, 401 without an account, the
+    candidate count checked, an answer without a threat not kept, the Progress counts
+    and order, and the window. The empty-progress test includes the new block.
+  - The Think-first browser spec now waits for the 201 and finds "1 of 1 critical
+    moment" and one dot on Progress.
+  - **Results:** pytest `test_thinking.py` and `test_progress_api.py`, 32 passed.
+    Playwright think and progress specs, 5 passed.
+
+---
+
 ## Addendum — Defence puzzles take any defence that works (2026-10-04)
 
 **Goal:** a defence puzzle stored one answer, the engine's, and refused every other move.

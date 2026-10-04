@@ -36,6 +36,7 @@ test('a critical moment asks for candidates, weighs them, then lets the move thr
 	await expect(candidates).toHaveText([/^d3/, /^Nxh4/]);
 	await expect(page.getByTestId('move-list')).not.toContainText('d3');
 
+	const recorded = page.waitForResponse('**/thinking/moments');
 	await card.getByTestId('think-check').click();
 	await expect(card).toHaveAttribute('data-status', 'graded', { timeout: 30_000 });
 	await expect(card.getByTestId('think-grade')).toContainText(
@@ -46,6 +47,12 @@ test('a critical moment asks for candidates, weighs them, then lets the move thr
 	await expect(page.getByTestId('tactic-row')).toBeVisible();
 	await move(page, 'f3', 'h4');
 	await expect(page.getByTestId('move-list')).toContainText('Nxh4');
+
+	// the result is kept, and Progress counts it
+	expect((await recorded).status()).toBe(201);
+	await page.goto('/progress');
+	await expect(page.getByTestId('thinking-found')).toContainText('1 of 1 critical moment:');
+	await expect(page.getByTestId('thinking-dot')).toHaveCount(1);
 });
 
 test('skipping lets the move through at once, and Off never asks', async ({ page }) => {

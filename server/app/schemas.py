@@ -439,6 +439,28 @@ class MistakeCauseCount(BaseModel):
     latest: MistakeExample | None  # the most recent move with this cause
 
 
+class CriticalMomentIn(BaseModel):
+    """One graded "Think first" check, as the client worked it out."""
+
+    fen: str = Field(max_length=100)
+    found: bool
+    had_threat: bool = False
+    answered_threat: bool | None = None
+    candidates: int = Field(ge=1, le=3)
+
+
+class ThinkingSummary(BaseModel):
+    """Critical moments in the window: how often the move to find was on the
+    list, how often a threat was answered, and the latest results in order
+    (oldest first) for the trend strip."""
+
+    moments: int
+    found: int
+    threats: int
+    answered: int
+    recent: list[bool]
+
+
 class ProgressOut(BaseModel):
     """GET /progress response — everything computed on read (spec §4.5)."""
 
@@ -452,6 +474,7 @@ class ProgressOut(BaseModel):
     # Every cause, most common first (ties in the routine's order); counts
     # are zero until games analyzed with causes are in the window.
     mistake_causes: list[MistakeCauseCount]
+    thinking: ThinkingSummary
 
 
 class WikibookPageOut(BaseModel):
